@@ -1,13 +1,25 @@
 [project]
 name = "ocrnhat"
 version = "0.1.0"
-description = "OCR PDF/ảnh chỉ lấy tiếng Nhật (RapidOCR, chạy offline)"
+description = "OCR PDF/ảnh chỉ lấy tiếng Nhật (NDLOCR-Lite, chạy offline)"
 requires-python = ">=3.10"
-dependencies = ["rapidocr>=3.0", "onnxruntime", "pypdfium2", "opencv-python-headless", "numpy", "Pillow"]
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
 [project.scripts]
 ocrnhat = "ocrnhat.cli:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

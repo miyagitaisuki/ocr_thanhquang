@@ -10,7 +10,7 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 - Ưu tiên công cụ miễn phí. Ưu tiên giấy phép thoáng (NDLOCR-Lite là CC BY 4.0).
 
 ## Kiến trúc (src/ocrnhat)
-- `model.py`: Page/Block/Line chung cho mọi engine. `engines/`: `base.py` (giao diện `OcrEngine`), `__init__.py` (đăng ký, `--engine`), `ndlocr.py`, `chandra.py` (PLACEHOLDER, chưa cài đặt; ghi sẵn các bước làm). Thêm engine: kế thừa `OcrEngine`, thêm vào `_LOADERS` và `_engine_version` (pipeline.py).
+- `model.py`: Page/Block/Line chung cho mọi engine. `engines/`: `base.py` (giao diện `OcrEngine`), `__init__.py` (đăng ký, `--engine`), `ndlocr.py`, `chandra.py` (PLACEHOLDER, chưa cài đặt; ghi sẵn các bước làm). Thêm engine: kế thừa `OcrEngine`, thêm tên vào `_NAMES` và nhánh vào `_cls` (engines/__init__.py); phiên bản đọc từ thuộc tính `version` của lớp (khóa cache).
 - `gpu.py`: dò card NVIDIA bằng nvidia-smi (đã bỏ AMD theo quyết định chủ dự án). `--engine auto` (mặc định) chọn chandra chỉ khi có GPU đủ VRAM và Chandra dùng được; hiện Chandra là placeholder và đã TẠM DỪNG phát triển nên auto luôn ra ndlocr. `ocrnhat --gpu-info` để xem.
 - Thiết bị NDLOCR: `--device auto|cpu|cuda` (GUI: ô "Thiết bị"). `gpu.resolve_device` chọn cuda chỉ khi onnxruntime có CUDAExecutionProvider; không thì lùi về CPU và in lý do. Exe trong CI dùng onnxruntime CPU nên GPU chưa chạy được trong exe: cần bản build dùng onnxruntime-gpu + CUDA/cuDNN (chưa làm; chưa thử trên máy có GPU). Bản GPU: `.github/workflows/build-exe-gpu.yml` (workflow_dispatch) cài onnxruntime-gpu, tạo `OCR-Nhat-GPU` và `ocrnhat-cli-gpu`; bản CPU `build-exe.yml` giữ nguyên.
 - `engines/ndlocr.py`: bọc NDLOCR-Lite (ONNX), đọc XML trang -> Block/Line (text, table 表組, ruby ルビ, 柱, ノンブル). Commit ghim: xem `scripts/fetch_ndlocr.py`.
@@ -21,7 +21,9 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 
 ## Build / kiểm tra
 - CI: `.github/workflows/build-exe.yml` (windows-latest, PyInstaller onedir). Có smoke test và bước chạy thử chính file exe. Chạy bằng workflow_dispatch.
-- Cục bộ: `pip install -r requirements.txt && pip install -e .` rồi `ocrnhat file.pdf -o out --pages 1-5`.
+- CI: `.github/workflows/test.yml` (ubuntu, chạy mỗi push/PR): `pytest` (test không cần model) + smoke test.
+- Cục bộ: `pip install -r requirements.txt && pip install -e ".[test]"` rồi `pytest` và `ocrnhat file.pdf -o out --pages 1-5`.
+- Dependency: `requirements.txt` là nguồn duy nhất (`pyproject.toml` đọc từ đó). Chỉ thêm gói mà đường chạy thật sự import.
 - Không build được exe từ Linux; dùng GitHub Actions.
 
 ## Lưu ý kỹ thuật đã gặp

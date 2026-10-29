@@ -64,6 +64,9 @@ class Table:
 
 # ---------- lọc dòng ----------
 
+_TEXT_KINDS = ("text", "other", "figure")
+
+
 def _inside(l: Line, b: Block, m: float = 4) -> bool:
     return b.x - m <= l.cx <= b.x + b.w + m and b.y - m <= l.cy <= b.y + b.h + m
 
@@ -233,18 +236,25 @@ def _merge_close(v: list[float], tol: float) -> list[float]:
     return out
 
 
-def _detect_grid(gray: np.ndarray, box: Block):
+def _ruling_masks(gray: np.ndarray, div: int) -> tuple[np.ndarray, np.ndarray]:
+    """Mặt nạ đường kẻ ngang/dọc. Đường kẻ dài cỡ 1/div chiều vùng; nét chữ ngắn hơn thì bị loại."""
     import cv2
+    H, W = gray.shape
+    paper = float(np.median(gray))                    # độ sáng nền giấy
+    b = (gray < paper - 40).astype(np.uint8) * 255    # bắt cả đường kẻ xám mờ
+    hor = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, W // div), 1)))
+    ver = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, H // div))))
+    return hor, ver
+
+
+def _detect_grid(gray: np.ndarray, box: Block):
     x, y, w, h = int(box.x), int(box.y), int(box.w), int(box.h)
     x = max(0, x - 6); y = max(0, y - 6)
     crop = gray[y:y + h + 12, x:x + w + 12]
     if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
         return None
-    paper = float(np.median(crop))                     # độ sáng nền giấy
-    b = (crop < paper - 40).astype(np.uint8) * 255   # bắt cả đường kẻ xám mờ
-    H, W = b.shape
-    hor = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, W // 10), 1)))
-    ver = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, H // 10))))
+    H, W = crop.shape
+    hor, ver = _ruling_masks(crop, 4)
     ys = _merge_close(_runs((hor > 0).sum(axis=1) / W, 0.35), 8)
     xs = _merge_close(_runs((ver > 0).sum(axis=0) / H, 0.30), 8)
     if len(ys) < 2 or len(xs) < 2:
@@ -381,6 +391,24 @@ def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
     return _table_by_clustering(ls)
 
 
+def _grid_regions(gray: np.ndarray) -> list[Block]:
+    """Vùng có lưới đường kẻ trên cả trang (mỗi bảng có đường kẻ là một thành phần liên thông).
+    Không dựa vào nhãn `表組` của NDLOCR: bảng bị nhận nhầm là text vẫn được dựng."""
+    import cv2
+    hor, ver = _ruling_masks(gray, 20)
+    n, _, stats, _ = cv2.connectedComponentsWithStats(hor | ver, connectivity=8)
+    out = []
+    for i in range(1, n):
+        x, y, w, h, _ = stats[i]
+        if w < 100 or h < 60:
+            continue
+        box = Block("table", float(x), float(y), float(w), float(h))
+        g = _detect_grid(gray, box)
+        if g and len(g["ys"]) >= 3 and len(g["xs"]) >= 3:   # ít nhất 2 hàng và 2 cột
+            out.append(box)
+    return out
+
+
 def _table_by_clustering(ls: list[Line]) -> Table | None:
     """Dự phòng khi bảng không có đường kẻ: hàng theo dải y, cột theo cụm x."""
     H = statistics.median(l.size for l in ls) or 1
@@ -413,11 +441,22 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> lis
     flt = _Filter(page)
     flt.collect_ruby(page)
     items: list[tuple[int, Para | Table]] = []
+    taken: set[int] = set()   # dòng đã thuộc một bảng theo lưới đường kẻ
+    if gray is not None:
+        for region in _grid_regions(gray):
+            inside = [l for b in page.blocks if b.kind in _TEXT_KINDS for l in b.lines
+                      if id(l) not in taken and _inside(l, region)]
+            if len(inside) < 2:
+                continue
+            taken.update(id(l) for l in inside)
+            t = _table(Block("table", region.x, region.y, region.w, region.h, inside), flt, gray)
+            if t: items.append((min(l.order for l in inside), t))
     for b in page.blocks:
         if b.kind == "table":
             t = _table(b, flt, gray, img_rgb, reocr)
             if t: items.append((b.order, t))
-        elif b.kind in ("text", "other", "figure"):
-            for p in _paragraphs(b, flt): items.append((b.order, p))
+        elif b.kind in _TEXT_KINDS:
+            rest = [l for l in b.lines if id(l) not in taken]
+            for p in _paragraphs(Block(b.kind, b.x, b.y, b.w, b.h, rest, b.label), flt): items.append((b.order, p))
     items.sort(key=lambda it: it[0])
     return [it for _, it in _merge_paras(items)]

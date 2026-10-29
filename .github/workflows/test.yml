@@ -1,0 +1,24 @@
+name: Tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Font tiếng Nhật (cho smoke test)
+        run: sudo apt-get update -q && sudo apt-get install -y -q fonts-noto-cjk
+      - name: Tải NDLOCR-Lite (commit đã ghim)
+        run: python scripts/fetch_ndlocr.py
+      - name: Cài thư viện
+        run: pip install -e ".[test]"
+      - name: Unit test
+        run: pytest -q
+      - name: Smoke test (OCR ảnh mẫu, dựng bảng)
+        run: python scripts/smoke_test.py

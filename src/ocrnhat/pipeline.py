@@ -24,14 +24,6 @@ def get_engine(name: str | None = None, device: str = "cpu"):
         return _engines[key]
 
 
-def _engine_version(name: str) -> str:
-    """Phiên bản engine cho khóa cache, lấy không cần nạp model."""
-    if name == "ndlocr":
-        from .engines.ndlocr import NDL_COMMIT
-        return NDL_COMMIT[:8]
-    return "0"
-
-
 def parse_pages(spec: str | None) -> list[int] | None:
     """'1-5,8,10-12' -> [1,2,3,4,5,8,10,11,12]"""
     if not spec or not spec.strip():
@@ -125,7 +117,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     pre_tag = f"c{','.join(map(str, crop))}" if crop else ""
     if upscale and upscale != 1.0:
         pre_tag += f"u{upscale:g}"
-    cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, _engine_version(engine)) if use_cache else None
+    cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
     eng = get_engine(engine, dev) if not (cache and all(cache.has(p) for p in (pages or range(1, total + 1)))) else None
 

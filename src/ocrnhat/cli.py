@@ -53,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Thiết bị sẽ dùng: %s (%s)" % gpu_mod.resolve_device(a.device))
         print("onnxruntime CUDA:", "có" if gpu_mod.ort_cuda_available() else "không")
         return 0
+    if not a.inputs:
+        ap.error("cần ít nhất một file PDF/ảnh hoặc thư mục (xem --help)")
     files = collect(a.inputs)
     if not files:
         return 1
