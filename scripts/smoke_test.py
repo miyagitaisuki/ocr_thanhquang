@@ -1,5 +1,6 @@
 """Kiểm tra nhanh trong CI: vẽ ảnh có chữ Nhật + một bảng, OCR, dựng docx, so kết quả."""
 import sys
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
