@@ -42,7 +42,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --collect-all onnxruntime --collect-all docx
           run_gui.py
-      - name: Kiểm tra exe GPU (chạy trên runner không có GPU: phải lùi về CPU và vẫn OCR đúng)
+      - name: "Kiểm tra exe GPU (runner không có GPU: phải lùi về CPU và vẫn OCR đúng)"
         shell: pwsh
         run: |
           ./dist/ocrnhat-cli-gpu/ocrnhat-cli-gpu.exe smoke.png -o exe_out --device auto
