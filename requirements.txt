@@ -1,3 +1,4 @@
+# Runtime thật của đường chạy NDLOCR-Lite + dựng docx (đã đối chiếu import trong vendor/ndlocr-lite/src)
 onnxruntime>=1.18
 numpy
 opencv-python-headless
@@ -6,10 +7,5 @@ pypdfium2
 python-docx
 PyYAML
 lxml
-networkx
-ordered-set
-pyparsing
 tqdm
-dill
-reportlab
-pypdf
+networkx

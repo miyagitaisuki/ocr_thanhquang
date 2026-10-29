@@ -20,7 +20,9 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 
 ## Build / kiểm tra
 - CI: `.github/workflows/build-exe.yml` (windows-latest, PyInstaller onedir). Có smoke test và bước chạy thử chính file exe. Chạy bằng workflow_dispatch.
-- Cục bộ: `pip install -r requirements.txt && pip install -e .` rồi `ocrnhat file.pdf -o out --pages 1-5`.
+- CI: `.github/workflows/test.yml` (ubuntu, chạy mỗi push/PR): `pytest` (test không cần model) + smoke test.
+- Cục bộ: `pip install -r requirements.txt && pip install -e ".[test]"` rồi `pytest` và `ocrnhat file.pdf -o out --pages 1-5`.
+- Dependency: `requirements.txt` là nguồn duy nhất (`pyproject.toml` đọc từ đó). Chỉ thêm gói mà đường chạy thật sự import.
 - Không build được exe từ Linux; dùng GitHub Actions.
 
 ## Lưu ý kỹ thuật đã gặp
