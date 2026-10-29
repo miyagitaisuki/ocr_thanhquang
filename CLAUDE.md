@@ -29,6 +29,8 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 - `gh workflow run` dùng GraphQL bị chặn: dùng `gh api -X POST repos/.../actions/workflows/build-exe.yml/dispatches -f ref=main`.
 - Engine có thể đọc chữ hai ô liền kề thành một dòng xuyên qua đường kẻ; bảng thử tổng hợp trong smoke test chỉ kiểm tra đường ống, không kiểm tra nội dung ô.
 
+- Ảnh chụp màn hình/chữ nhỏ: `--crop x0,y0,x1,y1` cắt vùng trang trước OCR, `--upscale 2` phóng to. Trang 38 (ảnh chụp điện thoại 1290x2796): không có hai tùy chọn này chỉ ra được tiêu đề; có thì đọc được 17 dòng (độ tin cậy 0,65–0,94). Ruby/furigana chưa được giữ trong trường hợp này. Chưa có trong GUI. Khóa cache đã gồm crop/upscale.
+
 ## Kết quả thử trên sổ tay mẫu (136 trang)
 ~4–6 giây/trang CPU; 19 bảng; 11 trang rỗng (trang thuần Việt/trống). Lỗi còn lại: nhận sai chữ (私見→私覚), vài furigana sót trong ô bảng, thứ tự dòng đôi khi đảo, chữ dọc xuất theo chiều ngang.
 
