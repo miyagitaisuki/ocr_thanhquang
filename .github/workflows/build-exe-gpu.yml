@@ -1,0 +1,61 @@
+name: Build Windows exe (GPU NVIDIA)
+# Bản riêng cho máy có card NVIDIA: dùng onnxruntime-gpu (CUDA). Bản CPU vẫn ở build-exe.yml.
+# Người dùng cần driver NVIDIA; file zip đã kèm các thư viện CUDA/cuDNN mà onnxruntime-gpu yêu cầu.
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Tải NDLOCR-Lite (commit đã ghim)
+        run: python scripts/fetch_ndlocr.py
+      - name: Cài thư viện (onnxruntime-gpu thay onnxruntime CPU)
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt pyinstaller
+          pip uninstall -y onnxruntime
+          pip install onnxruntime-gpu
+          pip install -e .
+      - name: Kiểm tra onnxruntime có CUDA
+        run: |
+          python -c "import onnxruntime as o; p=o.get_available_providers(); print(p); assert 'CUDAExecutionProvider' in p"
+      - name: Smoke test (OCR ảnh mẫu, dựng docx)
+        run: python scripts/smoke_test.py
+      - name: Build exe (giao diện GPU)
+        run: >
+          pyinstaller --noconfirm --onedir --windowed --name OCR-Nhat-GPU
+          --paths src --paths vendor/ndlocr-lite/src
+          --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
+          --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
+          --collect-all onnxruntime --collect-all docx
+          run_gui.py
+      - name: Build exe (dòng lệnh GPU)
+        run: >
+          pyinstaller --noconfirm --onedir --console --name ocrnhat-cli-gpu
+          --paths src --paths vendor/ndlocr-lite/src
+          --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
+          --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
+          --collect-all onnxruntime --collect-all docx
+          run_gui.py
+      - name: Kiểm tra exe GPU (chạy trên runner không có GPU: phải lùi về CPU và vẫn OCR đúng)
+        shell: pwsh
+        run: |
+          ./dist/ocrnhat-cli-gpu/ocrnhat-cli-gpu.exe smoke.png -o exe_out --device auto
+          if (-not (Test-Path exe_out/smoke.docx)) { throw "exe GPU không tạo ra docx" }
+          $t = Get-Content exe_out/smoke.txt -Encoding UTF8 -Raw
+          Write-Host $t
+          if ($t -notmatch "日本語") { throw "exe GPU không OCR được" }
+      - name: Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/OCR-Nhat-GPU/* -DestinationPath OCR-Nhat-GPU-windows.zip
+          Compress-Archive -Path dist/ocrnhat-cli-gpu/* -DestinationPath ocrnhat-cli-gpu-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OCR-Nhat-GPU-windows
+          path: "*.zip"
