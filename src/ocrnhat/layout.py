@@ -12,6 +12,16 @@ from .model import Block, Line, Page
 _JP = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 _KANJI = re.compile(r"[㐀-䶿一-鿿]")
 _KANA_ONLY = re.compile(r"^[぀-ヿー・、。\s]+$")
+# ký tự rác engine hay gộp vào dòng furigana: chữ/số ASCII, ký hiệu, khoảng trắng
+_NOISE = re.compile(r"[A-Za-z0-9$＄#*%&@^~|/\\_<>=+\-.,:;!?()（）\[\]{}\s]")
+
+
+def _kana_core(text: str) -> str:
+    """Chuỗi sau khi bỏ ký tự rác: 'きょう OC' -> 'きょう', '$ ちょうしつ' -> 'ちょうしつ'.
+    Dòng có dấu câu hoặc nhiều chữ Latin (nhãn như 'b. いつ') không được coi là rác: trả về rỗng."""
+    if re.search(r"[.:;]", text) or len(re.findall(r"[A-Za-z]", text)) > 2:
+        return ""
+    return _NOISE.sub("", text)
 _LATIN_WORD = re.compile(r"[A-Za-zÀ-ỹ]{3,}")
 _SENT_END = re.compile(r"[。！？!?」』）)]$")
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
@@ -88,7 +98,7 @@ class _Filter:
         self.ruby: dict[int, list[tuple[float, float, str]]] = {}
         for b in page.blocks:
             for l in b.lines:
-                t = l.text.replace(" ", "")
+                t = _kana_core(l.text)
                 if b.kind == "ruby":
                     pass
                 elif b.kind in ("text", "table") and _KANA_ONLY.match(t) and len(t) <= 30 and self.furigana(l):
@@ -102,7 +112,8 @@ class _Filter:
                     self.ruby.setdefault(id(base), []).append((l.x, l.x1, t))
 
     def furigana(self, l: Line) -> bool:
-        if not _KANA_ONLY.match(l.text.replace(" ", "")): 
+        core = _kana_core(l.text)
+        if not core or not _KANA_ONLY.match(core):
             return False
         if any(_inside(l, b) for b in self.rubies):
             return True
