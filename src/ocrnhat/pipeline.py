@@ -10,12 +10,13 @@ IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 _engines: dict = {}
 
 
-def get_engine(name: str | None = None):
+def get_engine(name: str | None = None, device: str = "cpu"):
     from . import engines
     name = engines.resolve(name or engines.DEFAULT)[0]
-    if name not in _engines:
-        _engines[name] = engines.create(name)
-    return _engines[name]
+    key = (name, device)
+    if key not in _engines:
+        _engines[key] = engines.create(name, device=device)
+    return _engines[key]
 
 
 def _engine_version(name: str) -> str:
@@ -69,7 +70,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  progress: Callable[[int, int, str], None] | None = None,
                  cancel: Callable[[], bool] | None = None,
                  review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
-                 engine: str | None = None, ruby: bool = False) -> dict:
+                 engine: str | None = None, ruby: bool = False, device: str = "auto") -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -79,8 +80,10 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     total = len(pages) if pages else page_count(path)
     from . import engines
     engine, why = engines.resolve(engine or engines.DEFAULT)
+    from .gpu import resolve_device
+    dev, dev_why = resolve_device(device)
     if progress:
-        progress(0, total, f"Engine: {engine} ({why})")
+        progress(0, total, f"Engine: {engine} ({why}); thiết bị: {dev} ({dev_why})")
     eng = None
     cache = PageCache(out_dir / ".cache", file_hash(path), dpi, engine, _engine_version(engine)) if use_cache else None
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
@@ -89,7 +92,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             break
         page = cache.get(pno) if cache else None
         if page is None:
-            eng = eng or get_engine(engine)
+            eng = eng or get_engine(engine, dev)
             page = eng.ocr(img, f"{path.stem}_{pno}.png")
             if cache:
                 cache.put(pno, page)

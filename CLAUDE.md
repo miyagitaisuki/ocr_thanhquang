@@ -12,6 +12,7 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 ## Kiến trúc (src/ocrnhat)
 - `model.py`: Page/Block/Line chung cho mọi engine. `engines/`: `base.py` (giao diện `OcrEngine`), `__init__.py` (đăng ký, `--engine`), `ndlocr.py`, `chandra.py` (PLACEHOLDER, chưa cài đặt; ghi sẵn các bước làm). Thêm engine: kế thừa `OcrEngine`, thêm vào `_LOADERS` và `_engine_version` (pipeline.py).
 - `gpu.py`: dò card NVIDIA bằng nvidia-smi (đã bỏ AMD theo quyết định chủ dự án). `--engine auto` (mặc định) chọn chandra chỉ khi có GPU đủ VRAM và Chandra dùng được; hiện Chandra là placeholder và đã TẠM DỪNG phát triển nên auto luôn ra ndlocr. `ocrnhat --gpu-info` để xem.
+- Thiết bị NDLOCR: `--device auto|cpu|cuda` (GUI: ô "Thiết bị"). `gpu.resolve_device` chọn cuda chỉ khi onnxruntime có CUDAExecutionProvider; không thì lùi về CPU và in lý do. Exe trong CI dùng onnxruntime CPU nên GPU chưa chạy được trong exe: cần bản build dùng onnxruntime-gpu + CUDA/cuDNN (chưa làm; chưa thử trên máy có GPU).
 - `engines/ndlocr.py`: bọc NDLOCR-Lite (ONNX), đọc XML trang -> Block/Line (text, table 表組, ruby ルビ, 柱, ノンブル). Commit ghim: xem `scripts/fetch_ndlocr.py`.
 - `layout.py`: lọc tiếng Nhật, bỏ furigana, gộp đoạn, nhận tiêu đề, dựng bảng từ đường kẻ (OpenCV) kèm ô gộp; dự phòng theo cụm tọa độ.
 - `docx_out.py`: xuất Word (font Yu Mincho, Heading, bảng) và txt.
