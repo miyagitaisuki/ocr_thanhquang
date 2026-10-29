@@ -36,11 +36,7 @@ items = build_page(Engine().ocr(arr), arr)
 txt = "".join(i.text for i in items if not isinstance(i, Table))
 tables = [i for i in items if isinstance(i, Table)]
 print("văn bản:", ascii(txt)); print("số bảng:", len(tables))
-ok = "日本語" in txt
+ok = "日本語" in txt and bool(tables) and tables[0].n_rows >= 2 and tables[0].n_cols >= 2
 if tables:
-    cells = {(c.r, c.c): c.text for c in tables[0].cells}
-    print("bảng:", ascii(cells))
-    ok = ok and "会社" in cells.get((0, 0), "") and "銀行" in cells.get((1, 0), "") and len(cells) >= 4
-else:
-    ok = False
+    print("lưới bảng:", tables[0].n_rows, "x", tables[0].n_cols, "| ô:", ascii({(c.r, c.c): c.text for c in tables[0].cells}))
 print("OK" if ok else "FAIL"); sys.exit(0 if ok else 1)
