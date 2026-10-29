@@ -18,14 +18,6 @@ def get_engine(name: str | None = None):
     return _engines[name]
 
 
-def _engine_version(name: str) -> str:
-    """Phiên bản engine cho khóa cache, lấy không cần nạp model."""
-    if name == "ndlocr":
-        from .engines.ndlocr import NDL_COMMIT
-        return NDL_COMMIT[:8]
-    return "0"
-
-
 def parse_pages(spec: str | None) -> list[int] | None:
     """'1-5,8,10-12' -> [1,2,3,4,5,8,10,11,12]"""
     if not spec or not spec.strip():
@@ -82,7 +74,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     if progress:
         progress(0, total, f"Engine: {engine} ({why})")
     eng = None
-    cache = PageCache(out_dir / ".cache", file_hash(path), dpi, engine, _engine_version(engine)) if use_cache else None
+    cache = PageCache(out_dir / ".cache", file_hash(path), dpi, engine, engines.engine_version(engine)) if use_cache else None
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
     for pno, img in iter_pages(path, dpi, pages):
         if cancel and cancel():

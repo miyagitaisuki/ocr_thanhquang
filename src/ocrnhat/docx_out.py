@@ -33,9 +33,10 @@ def _add_ruby(p, base: str, reading: str, size: float = 10.5):
         return (f'<w:r><w:rPr><w:rFonts w:ascii="{FONT}" w:hAnsi="{FONT}" w:eastAsia="{FONT}"/>'
                 f'<w:sz w:val="{sz}"/></w:rPr><w:t>{t}</w:t></w:r>')
 
-    xml = (f'<w:r {ns}><w:ruby><w:rubyPr><w:rubyAlign w:val="distributeSpace"/><w:hps w:val="{rt_sz}"/>'
+    # w:ruby là phần tử cấp đoạn (con trực tiếp của w:p), không đặt trong w:r
+    xml = (f'<w:ruby {ns}><w:rubyPr><w:rubyAlign w:val="distributeSpace"/><w:hps w:val="{rt_sz}"/>'
            f'<w:hpsRaise w:val="{half - 3}"/><w:hpsBaseText w:val="{half}"/><w:lid w:val="ja-JP"/></w:rubyPr>'
-           f'<w:rt>{run(rt_sz, reading)}</w:rt><w:rubyBase>{run(half, base)}</w:rubyBase></w:ruby></w:r>')
+           f'<w:rt>{run(rt_sz, reading)}</w:rt><w:rubyBase>{run(half, base)}</w:rubyBase></w:ruby>')
     p._p.append(parse_xml(xml))
 
 

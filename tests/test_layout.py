@@ -1,0 +1,75 @@
+"""Test dựng đoạn/bảng từ tọa độ dòng. Không cần model: dùng Page tổng hợp và ảnh vẽ bằng tay."""
+import numpy as np
+from PIL import Image, ImageDraw
+
+from ocrnhat.layout import Para, Table, build_page
+from ocrnhat.model import Block, Line, Page
+from ocrnhat.pipeline import parse_pages
+
+RUNS = {(0, 0): "会社", (0, 1): "株式会社", (1, 0): "銀行", (1, 1): "電話番号"}
+
+
+def _grid_image(x0=100, y0=100, cw=400, rh=200, rows=2, cols=2) -> np.ndarray:
+    img = Image.new("RGB", (1000, 600), "white")
+    d = ImageDraw.Draw(img)
+    for i in range(rows + 1):
+        d.line([(x0, y0 + i * rh), (x0 + cols * cw, y0 + i * rh)], fill="black", width=3)
+    for j in range(cols + 1):
+        d.line([(x0 + j * cw, y0), (x0 + j * cw, y0 + rows * rh)], fill="black", width=3)
+    return np.array(img)
+
+
+def _line(text, x, y, order):
+    return Line(text, float(x), float(y), 40.0 * len(text), 40.0, 0.95, "", order)
+
+
+def _table_page(extra_paragraph: bool = False) -> Page:
+    # 2x2 ô, mỗi ô 400x200 bắt đầu từ (100, 100)
+    lines = [_line(t, 100 + c * 400 + 40, 100 + r * 200 + 60, r * 2 + c + 1) for (r, c), t in RUNS.items()]
+    if extra_paragraph:
+        lines.insert(0, _line("これは本文です。", 100, 20, 0))
+    return Page(1000, 600, [Block("text", 100, 20, 800, 480, lines)])
+
+
+def test_bang_theo_luoi_khi_ndlocr_khong_gan_nhan_bang():
+    """Khối bị NDLOCR gắn là text vẫn phải thành bảng 2x2 (lỗi cũ: gộp thành đoạn)."""
+    items = build_page(_table_page(), _grid_image())
+    tables = [i for i in items if isinstance(i, Table)]
+    assert len(tables) == 1
+    t = tables[0]
+    assert (t.n_rows, t.n_cols) == (2, 2)
+    got = {(c.r, c.c): c.text for c in t.cells}
+    assert got == RUNS
+
+
+def test_doan_van_ngoai_bang_giu_nguyen():
+    items = build_page(_table_page(extra_paragraph=True), _grid_image())
+    paras = [i for i in items if isinstance(i, Para)]
+    tables = [i for i in items if isinstance(i, Table)]
+    assert [p.text for p in paras] == ["これは本文です。"]
+    assert len(tables) == 1
+    # đoạn văn nằm trước bảng theo thứ tự đọc
+    assert items.index(paras[0]) < items.index(tables[0])
+
+
+def test_khong_co_luoi_thi_khong_tao_bang():
+    page = Page(1000, 600, [Block("text", 100, 20, 800, 200,
+                                  [_line("日本語の文章です。", 100, 20, 1), _line("二行目です。", 100, 80, 2)])])
+    items = build_page(page, np.full((600, 1000, 3), 255, np.uint8))
+    assert not [i for i in items if isinstance(i, Table)]
+    assert [i.text for i in items if isinstance(i, Para)] == ["日本語の文章です。二行目です。"]
+
+
+def test_bo_chu_latin_va_furigana_roi_khong_con_trong_doan():
+    page = Page(1000, 600, [Block("text", 100, 20, 800, 200, [
+        _line("Hello world", 100, 20, 1),
+        _line("日本語です。", 100, 80, 2),
+    ])])
+    items = build_page(page)
+    assert [i.text for i in items if isinstance(i, Para)] == ["日本語です。"]
+
+
+def test_parse_pages():
+    assert parse_pages("") is None
+    assert parse_pages("1-3,5") == [1, 2, 3, 5]
+    assert parse_pages(" 8 ") == [8]
