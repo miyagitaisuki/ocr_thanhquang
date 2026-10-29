@@ -65,15 +65,25 @@ def iter_pages(path: Path, dpi: int = 200, pages: Iterable[int] | None = None) -
         yield 1, np.array(Image.open(path).convert("RGB"))
 
 
+def default_workers(device: str) -> int:
+    """GPU: 2 luồng là đủ (session CUDA đã dùng hết nhân xử lý). CPU: nửa số nhân, 1..4."""
+    if device == "cuda":
+        return 2
+    import os
+    return max(1, min(4, (os.cpu_count() or 2) // 2))
+
+
 def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | None = None,
                  write_txt: bool = True, page_marker: bool = True,
                  progress: Callable[[int, int, str], None] | None = None,
                  cancel: Callable[[], bool] | None = None,
                  review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
-                 engine: str | None = None, ruby: bool = False, device: str = "auto") -> dict:
+                 engine: str | None = None, ruby: bool = False, device: str = "auto",
+                 workers: int | None = None) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
+    from concurrent.futures import ThreadPoolExecutor
 
     path, out_dir = Path(path), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -84,28 +94,51 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     dev, dev_why = resolve_device(device)
     if progress:
         progress(0, total, f"Engine: {engine} ({why}); thiết bị: {dev} ({dev_why})")
-    eng = None
     cache = PageCache(out_dir / ".cache", file_hash(path), dpi, engine, _engine_version(engine)) if use_cache else None
-    results, n_tables, done, sections, n_low = [], 0, 0, [], 0
-    for pno, img in iter_pages(path, dpi, pages):
-        if cancel and cancel():
-            break
+    n_workers = workers or default_workers(dev)
+    eng = get_engine(engine, dev) if not (cache and all(cache.has(p) for p in (pages or range(1, total + 1)))) else None
+
+    def ocr_one(pno: int, img):
+        """Chạy trong luồng nền: đọc cache hoặc OCR rồi ghi cache. Trả về (pno, Page, ảnh)."""
         page = cache.get(pno) if cache else None
         if page is None:
-            eng = eng or get_engine(engine, dev)
             page = eng.ocr(img, f"{path.stem}_{pno}.png")
             if cache:
                 cache.put(pno, page)
-        items = build_page(page, img)
-        if review:
-            from .review import render_page
-            sec, low = render_page(pno, items, page, img, conf_threshold)
-            sections.append(sec); n_low += low
-        n_tables += sum(isinstance(i, Table) for i in items)
-        results.append((pno, items))
-        done += 1
-        if progress:
-            progress(done, total, f"{path.name} - trang {pno}")
+        return pno, page, img
+
+    results, n_tables, done, sections, n_low = [], 0, 0, [], 0
+    # Cửa sổ trượt: tối đa 2*n_workers trang đang chờ, để không giữ cả file trong RAM
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        pending = []
+        feed = iter_pages(path, dpi, pages)
+
+        def submit_next() -> bool:
+            if cancel and cancel():
+                return False
+            nxt = next(feed, None)
+            if nxt is None:
+                return False
+            pending.append(pool.submit(ocr_one, nxt[0], nxt[1]))
+            return True
+
+        for _ in range(2 * n_workers):
+            if not submit_next():
+                break
+        while pending:
+            fut = pending.pop(0)               # giữ thứ tự trang
+            pno, page, img = fut.result()
+            submit_next()
+            items = build_page(page, img)
+            if review:
+                from .review import render_page
+                sec, low = render_page(pno, items, page, img, conf_threshold)
+                sections.append(sec); n_low += low
+            n_tables += sum(isinstance(i, Table) for i in items)
+            results.append((pno, items))
+            done += 1
+            if progress:
+                progress(done, total, f"{path.name} - trang {pno}")
     docx_path = out_dir / f"{path.stem}.docx"
     if results:
         write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby)

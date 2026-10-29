@@ -37,6 +37,9 @@ class PageCache:
         except Exception:
             return None
 
+    def has(self, pno: int) -> bool:
+        return self._path(pno).is_file()
+
     def put(self, pno: int, page: Page) -> None:
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
