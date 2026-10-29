@@ -7,7 +7,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import core
+from . import pipeline
 from .cli import collect
 
 
@@ -36,10 +36,10 @@ class App(tk.Tk):
         ttk.Label(opt, text="Trang (vd 1-5,8; để trống = tất cả):").grid(row=1, column=0, sticky="w", pady=4)
         self.pages = tk.StringVar()
         ttk.Entry(opt, textvariable=self.pages, width=20).grid(row=1, column=1, sticky="w", padx=4)
-        self.furi = tk.BooleanVar(value=True)
-        self.denoise = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opt, text="Loại furigana", variable=self.furi).grid(row=2, column=0, sticky="w")
-        ttk.Checkbutton(opt, text="Làm sạch nền scan", variable=self.denoise).grid(row=2, column=1, sticky="w")
+        self.marker = tk.BooleanVar(value=True)
+        self.txt = tk.BooleanVar(value=True)
+        ttk.Checkbutton(opt, text="Ghi số trang gốc 【原本 p.N】", variable=self.marker).grid(row=2, column=0, sticky="w")
+        ttk.Checkbutton(opt, text="Ghi kèm file .txt", variable=self.txt).grid(row=2, column=1, sticky="w")
 
         bar = ttk.Frame(self, padding=8); bar.pack(fill="x")
         self.btn = ttk.Button(bar, text="Bắt đầu OCR", command=self.start); self.btn.pack(side="left")
@@ -75,20 +75,20 @@ class App(tk.Tk):
         if not self.files:
             messagebox.showinfo("OCR", "Chưa chọn file."); return
         try:
-            pages = core.parse_pages(self.pages.get())
+            pages = pipeline.parse_pages(self.pages.get())
         except ValueError:
             messagebox.showerror("OCR", "Khoảng trang không hợp lệ."); return
         self.cancel.clear(); self.btn.config(state="disabled"); self.stop.config(state="normal")
-        args = (list(self.files), Path(self.out.get()), pages, self.denoise.get(), self.furi.get())
+        args = (list(self.files), Path(self.out.get()), pages, self.marker.get(), self.txt.get())
         self.worker = threading.Thread(target=self.run_job, args=args, daemon=True); self.worker.start()
 
-    def run_job(self, files, out, pages, denoise, furi):
+    def run_job(self, files, out, pages, marker, txt):
         try:
             for i, f in enumerate(files, 1):
-                self.q.put(("status", f"Đang tải model / xử lý {f.name} ({i}/{len(files)})…"))
-                core.process_file(
-                    f, out, 200, pages if f.suffix.lower() == ".pdf" else None, denoise,
-                    drop_furigana=furi,
+                self.q.put(("status", f"Đang nạp model / xử lý {f.name} ({i}/{len(files)})…"))
+                pipeline.process_file(
+                    f, out, 200, pages if f.suffix.lower() == ".pdf" else None,
+                    write_txt=txt, page_marker=marker,
                     progress=lambda d, t, m: self.q.put(("prog", (d, t, m))),
                     cancel=self.cancel.is_set)
                 if self.cancel.is_set():

@@ -1,31 +1,45 @@
-"""Kiểm tra nhanh trong CI: vẽ ảnh có chữ Nhật, OCR, so kết quả (tải/kiểm tra model luôn)."""
+"""Kiểm tra nhanh trong CI: vẽ ảnh có chữ Nhật + một bảng, OCR, dựng docx, so kết quả."""
 import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from ocrnhat import core
 
-TEXT = "日本語のテストです"
-img = Image.new("RGB", (1200, 260), "white")
+TEXT = "日本語のテストです。これは確認用の文章です。"
+img = Image.new("RGB", (1400, 700), "white")
 d = ImageDraw.Draw(img)
 font = None
 for f in ["C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/msgothic.ttc",
           "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]:
     try:
-        font = ImageFont.truetype(f, 90)
-        print("font:", f); break
+        font = ImageFont.truetype(f, 56); print("font:", f); break
     except OSError:
         pass
 if font is None:
-    print("Không có font Nhật, chỉ kiểm tra model chạy được")
-    core.get_engine()(np.array(img)); sys.exit(0)
-d.text((40, 70), TEXT, fill="black", font=font)
-arr = np.array(img)
+    print("Không có font Nhật"); sys.exit(1)
+d.text((60, 50), TEXT, fill="black", font=font)
+# bảng 2x2 có đường kẻ
+x0, y0, cw, rh = 60, 250, 450, 130
+for i in range(3):
+    d.line([(x0, y0 + i * rh), (x0 + 2 * cw, y0 + i * rh)], fill="black", width=3)
+    d.line([(x0 + i * cw, y0), (x0 + i * cw, y0 + 2 * rh)], fill="black", width=3)
+for r, row in enumerate([("会社", "貴社"), ("銀行", "貴行")]):
+    for c, t in enumerate(row):
+        d.text((x0 + c * cw + 40, y0 + r * rh + 35), t, fill="black", font=font)
 img.save("smoke.png")
-raw = core._run(arr)
-print("raw:", ascii([l.text for l in raw]))
-lines = core.ocr_image(arr)
-txt = "".join(l.text for l in lines)
-print("filtered:", ascii(txt))
-if "日本語" not in txt:
-    print("FAIL: OCR không nhận ra chữ Nhật"); sys.exit(1)
-print("OK")
+
+from ocrnhat import pipeline
+from ocrnhat.layout import Table
+from ocrnhat.engine import Engine
+from ocrnhat.layout import build_page
+arr = np.array(img)
+items = build_page(Engine().ocr(arr), arr)
+txt = "".join(i.text for i in items if not isinstance(i, Table))
+tables = [i for i in items if isinstance(i, Table)]
+print("văn bản:", ascii(txt)); print("số bảng:", len(tables))
+ok = "日本語" in txt
+if tables:
+    cells = {(c.r, c.c): c.text for c in tables[0].cells}
+    print("bảng:", ascii(cells))
+    ok = ok and "貴社" in "".join(cells.values())
+else:
+    ok = False
+print("OK" if ok else "FAIL"); sys.exit(0 if ok else 1)

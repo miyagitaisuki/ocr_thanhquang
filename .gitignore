@@ -4,3 +4,6 @@ build/
 dist/
 ocr_output/
 *.spec
+vendor/
+smoke.png
+exe_out/
