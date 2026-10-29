@@ -20,6 +20,7 @@ if font is None:
     core.get_engine()(np.array(img)); sys.exit(0)
 d.text((40, 70), TEXT, fill="black", font=font)
 arr = np.array(img)
+img.save("smoke.png")
 raw = core._run(arr)
 print("raw:", ascii([l.text for l in raw]))
 lines = core.ocr_image(arr)

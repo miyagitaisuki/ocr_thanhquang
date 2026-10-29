@@ -29,6 +29,13 @@ jobs:
           pyinstaller --noconfirm --onedir --console --name ocrnhat-cli
           --collect-all rapidocr --collect-all onnxruntime
           --paths src run_gui.py
+      - name: Kiểm tra chính file exe (OCR ảnh mẫu)
+        shell: pwsh
+        run: |
+          ./dist/ocrnhat-cli/ocrnhat-cli.exe smoke.png -o exe_out
+          $t = Get-Content exe_out/smoke.txt -Encoding UTF8 -Raw
+          Write-Host $t
+          if ($t -notmatch "日本語") { throw "exe không OCR được" }
       - name: Zip
         shell: pwsh
         run: |
