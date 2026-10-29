@@ -10,7 +10,13 @@ from ..model import Page
 
 class OcrEngine(ABC):
     name: str = ""
-    version: str = ""   # đưa vào khóa cache: đổi model/commit thì cache cũ không bị dùng lại
+    version: str = ""
+    needs_gpu: bool = False
+
+    @classmethod
+    def is_available(cls) -> tuple[bool, str]:
+        """(dùng được?, lý do nếu không). Không được nạp model nặng ở đây."""
+        return True, ""   # đưa vào khóa cache: đổi model/commit thì cache cũ không bị dùng lại
 
     @abstractmethod
     def ocr(self, img_rgb: np.ndarray, name: str = "page.png") -> Page:

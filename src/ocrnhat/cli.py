@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
     ap = argparse.ArgumentParser(prog="ocrnhat", description="OCR PDF/ảnh, chỉ lấy tiếng Nhật, xuất Word (.docx).")
-    ap.add_argument("inputs", nargs="+", help="PDF, ảnh hoặc thư mục")
+    ap.add_argument("inputs", nargs="*", help="PDF, ảnh hoặc thư mục")
     ap.add_argument("-o", "--out", default="ocr_output", help="thư mục kết quả")
     ap.add_argument("--pages", default="", help="ví dụ 1-5,8 (chỉ áp dụng cho PDF)")
     ap.add_argument("--dpi", type=int, default=200)
@@ -36,8 +36,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--review", action="store_true", help="xuất thêm *_review.html: ảnh trang cạnh text, tô đỏ chỗ độ tin cậy thấp")
     ap.add_argument("--conf", type=float, default=0.8, help="ngưỡng độ tin cậy cho --review (mặc định 0.8)")
     ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định ndlocr)")
+    ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
     a = ap.parse_args(argv)
+    if a.gpu_info:
+        from . import gpu
+        for g in gpu.detect() or []:
+            print(f"GPU: {g.name} | {g.vendor} | VRAM {g.vram_mb or '?'} MB | rời={g.discrete} | backend={g.backend}")
+        print("Engine sẽ dùng: %s (%s)" % engines.resolve(a.engine))
+        return 0
     files = collect(a.inputs)
     if not files:
         return 1

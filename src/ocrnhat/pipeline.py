@@ -12,7 +12,7 @@ _engines: dict = {}
 
 def get_engine(name: str | None = None):
     from . import engines
-    name = name or engines.DEFAULT
+    name = engines.resolve(name or engines.DEFAULT)[0]
     if name not in _engines:
         _engines[name] = engines.create(name)
     return _engines[name]
@@ -78,7 +78,9 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     out_dir.mkdir(parents=True, exist_ok=True)
     total = len(pages) if pages else page_count(path)
     from . import engines
-    engine = engine or engines.DEFAULT
+    engine, why = engines.resolve(engine or engines.DEFAULT)
+    if progress:
+        progress(0, total, f"Engine: {engine} ({why})")
     eng = None
     cache = PageCache(out_dir / ".cache", file_hash(path), dpi, engine, _engine_version(engine)) if use_cache else None
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0

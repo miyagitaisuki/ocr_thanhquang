@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from .base import OcrEngine
 
-DEFAULT = "ndlocr"
+DEFAULT = "auto"      # có GPU rời đủ VRAM và Chandra dùng được -> chandra, ngược lại ndlocr
+FALLBACK = "ndlocr"
 
 
 def _ndlocr(**kw):
@@ -20,10 +21,34 @@ _LOADERS = {"ndlocr": _ndlocr, "chandra": _chandra}   # import chậm: engine n�
 
 
 def available() -> list[str]:
-    return list(_LOADERS)
+    return ["auto"] + list(_LOADERS)
+
+
+def _cls(name: str):
+    if name == "chandra":
+        from .chandra import ChandraEngine
+        return ChandraEngine
+    from .ndlocr import NdlocrEngine
+    return NdlocrEngine
+
+
+def resolve(name: str = DEFAULT) -> tuple[str, str]:
+    """'auto' -> tên engine cụ thể + lý do (để in cho người dùng). Tên khác trả nguyên."""
+    if name != "auto":
+        return name, "chọn thủ công"
+    from .. import gpu
+    g = gpu.best_gpu()
+    if g is None:
+        return FALLBACK, "không có GPU rời đủ VRAM"
+    ok, why = _cls("chandra").is_available()
+    if not ok:
+        return FALLBACK, f"có GPU {g.name} nhưng Chandra {why}"
+    return "chandra", f"GPU {g.name} ({g.vram_mb} MB, {g.backend})"
 
 
 def create(name: str = DEFAULT, **kw) -> OcrEngine:
+    if name == "auto":
+        name = resolve(name)[0]
     try:
         return _LOADERS[name](**kw)
     except KeyError:

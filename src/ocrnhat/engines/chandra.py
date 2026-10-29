@@ -18,6 +18,12 @@ from .base import OcrEngine
 class ChandraEngine(OcrEngine):
     name = "chandra"
     version = "placeholder"
+    needs_gpu = True
+
+    @classmethod
+    def is_available(cls):
+        # TODO: kiểm tra đã cài chandra-ocr + backend (torch CUDA/ROCm, DirectML hoặc máy chủ vLLM)
+        return False, "chưa cài đặt"
 
     def __init__(self, **_):
         raise NotImplementedError("Engine Chandra chưa được cài đặt (xem docstring engines/chandra.py).")
