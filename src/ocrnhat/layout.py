@@ -339,6 +339,21 @@ def _reocr_cells(ls: list[Line], ys, xs, cells, img_rgb, reocr, flt: _Filter) ->
     return out
 
 
+_CIRC_BAD = re.compile(r"[(（{\[]\s*\d{0,2}|\d{2}|[Oo〇○]\d?")
+
+
+def _fix_circled(cells: list[Cell]) -> None:
+    """Cột đầu toàn mã ngắn kiểu '(1', '19', 'O1' (engine hay đọc ①②③ như vậy): đổi theo thứ tự hàng thành ①②③...
+    Điều kiện chặt: 2-20 ô thân bảng (rs=1), ngắn, không có ')' và ít nhất một ô mở bằng ngoặc; ngoài ra giữ nguyên."""
+    col = sorted((c for c in cells if c.c == 0 and c.r > 0 and c.text.strip()), key=lambda c: c.r)
+    if not 2 <= len(col) <= 20: return
+    ts = [c.text.strip() for c in col]
+    if any(c.rs != 1 or len(t) > 3 or ")" in t or "）" in t or not _CIRC_BAD.fullmatch(t) for c, t in zip(col, ts)): return
+    if not any(t[0] in "(（{[" for t in ts): return
+    for i, c in enumerate(col):
+        c.text = chr(0x2460 + i)
+
+
 def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
            img_rgb: np.ndarray | None = None, reocr=None) -> Table | None:
     ls = [l for l in block.lines if flt.keep(l, table=True)]
@@ -361,6 +376,7 @@ def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
                 cl = [l for l in cl if not re.fullmatch(r"[\d０-９.,]{1,3}", l.text.strip())] or cl
             cell.text = _cell_text(cl)
             cell.conf = min((l.conf for l in cl), default=1.0)
+        _fix_circled(cells)
         return Table(len(ys) - 1, len(xs) - 1, cells)
     return _table_by_clustering(ls)
 
