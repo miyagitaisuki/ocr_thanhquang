@@ -30,9 +30,9 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 ~4–6 giây/trang CPU; 19 bảng; 11 trang rỗng (trang thuần Việt/trống). Lỗi còn lại: nhận sai chữ (私見→私覚), vài furigana sót trong ô bảng, thứ tự dòng đôi khi đảo, chữ dọc xuất theo chiều ngang.
 
 ## Hướng phát triển (đã bàn, chưa làm)
-1. Chế độ rà soát: hiển thị ảnh trang cạnh text, tô đỏ dòng độ tin cậy thấp.
+1. ~~Chế độ rà soát~~ ĐÃ LÀM: `ocrnhat --review [--conf 0.8]` -> `*_review.html` (`review.py`); chưa có trong GUI.
 2. Xuất ruby furigana thật của Word thay vì bỏ.
-3. Chạy song song nhiều trang, cache theo hash.
+3. Cache theo hash ĐÃ LÀM (`cache.py`, thư mục `<out>/.cache`, tắt bằng `--no-cache`). Chạy song song: chưa làm.
 4. Tách dòng bị nối xuyên ô bảng bằng nhận dạng lại từng ô.
 5. Tùy chọn engine thứ hai (YomiToku, chỉ phi thương mại) để đối chiếu.
 6. Dò chữ sai bằng BERT/LLM (chỉ đánh dấu để duyệt, không tự sửa).

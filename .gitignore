@@ -7,3 +7,4 @@ ocr_output/
 vendor/
 smoke.png
 exe_out/
+.cache/

@@ -33,6 +33,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--no-txt", action="store_true", help="không ghi kèm file .txt")
     ap.add_argument("--no-page-marker", action="store_true", help="không ghi dòng 【原本 p.N】 đầu mỗi trang")
+    ap.add_argument("--review", action="store_true", help="xuất thêm *_review.html: ảnh trang cạnh text, tô đỏ chỗ độ tin cậy thấp")
+    ap.add_argument("--conf", type=float, default=0.8, help="ngưỡng độ tin cậy cho --review (mặc định 0.8)")
+    ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
     a = ap.parse_args(argv)
     files = collect(a.inputs)
     if not files:
@@ -42,8 +45,11 @@ def main(argv: list[str] | None = None) -> int:
         r = pipeline.process_file(
             f, Path(a.out), a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
+            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
+        if r["review"]:
+            print(f"-> {r['review']}  ({r['low_conf']} mục độ tin cậy thấp)")
     return 0
 
 

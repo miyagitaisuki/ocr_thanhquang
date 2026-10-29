@@ -31,6 +31,7 @@ class Para:
     x1: float = 0
     y1: float = 0
     size: float = 0
+    conf: float = 1.0
 
 
 @dataclass
@@ -40,6 +41,7 @@ class Cell:
     rs: int = 1
     cs: int = 1
     text: str = ""
+    conf: float = 1.0
 
 
 @dataclass
@@ -96,7 +98,8 @@ class _Filter:
 
 def _mk(ls: list[Line], kind: str = "body") -> Para:
     return Para("".join(l.text for l in ls), kind, min(l.x for l in ls), min(l.y for l in ls),
-                max(l.x1 for l in ls), max(l.y1 for l in ls), statistics.median(l.size for l in ls))
+                max(l.x1 for l in ls), max(l.y1 for l in ls), statistics.median(l.size for l in ls),
+                min(l.conf for l in ls))
 
 
 def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Para | Table"]]:
@@ -107,7 +110,7 @@ def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Pa
             a: Para = out[-1][1]
             if (a.kind == "body" and it.kind == "body" and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
                     and abs(it.x - a.x) < 1.2 * a.size and -0.5 * a.size < it.y - a.y1 < 1.6 * a.size):
-                a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1
+                a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
                 continue
         out.append((o, it))
     return out
@@ -249,6 +252,7 @@ def _table(block: Block, flt: _Filter, gray: np.ndarray | None) -> Table | None:
             if len(cl) > 1:   # số lẻ nằm cạnh chữ khác trong cùng ô thường là furigana đọc sai
                 cl = [l for l in cl if not re.fullmatch(r"[\d０-９.,]{1,3}", l.text.strip())] or cl
             cell.text = _cell_text(cl)
+            cell.conf = min((l.conf for l in cl), default=1.0)
         return Table(len(ys) - 1, len(xs) - 1, cells)
     return _table_by_clustering(ls)
 
@@ -270,7 +274,7 @@ def _table_by_clustering(ls: list[Line]) -> Table | None:
     for ri, rw in enumerate(rows):
         for ci, col in enumerate(cols):
             mine = [l for l in rw if l in col]
-            t.cells.append(Cell(ri, ci, 1, 1, _cell_text(mine)))
+            t.cells.append(Cell(ri, ci, 1, 1, _cell_text(mine), min((l.conf for l in mine), default=1.0)))
     return t
 
 
