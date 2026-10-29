@@ -290,12 +290,53 @@ def _cell_text(lines: list[Line]) -> str:
     return "\n".join(out)
 
 
-def _table(block: Block, flt: _Filter, gray: np.ndarray | None) -> Table | None:
+def _cell_box(cell: Cell, ys: list[float], xs: list[float]) -> tuple[float, float, float, float]:
+    return xs[cell.c], ys[cell.r], xs[cell.c + cell.cs], ys[cell.r + cell.rs]
+
+
+def _crosses_grid(l: Line, ys: list[float], xs: list[float], m: float = 3) -> bool:
+    """Dòng chữ vượt qua một đường kẻ bên trong bảng: nhiều khả năng đã bị engine nối hai ô."""
+    return any(l.x + m < v < l.x1 - m for v in xs[1:-1]) or any(l.y + m < v < l.y1 - m for v in ys[1:-1])
+
+
+def _reocr_cells(ls: list[Line], ys, xs, cells, img_rgb, reocr, flt: _Filter) -> list[Line]:
+    """Nhận dạng lại các ô có dòng vượt qua đường kẻ, từ ảnh cắt của riêng ô đó (ô hàng/cột gộp được cắt cả vùng)."""
+    dirty = set()
+    for l in ls:
+        if not _crosses_grid(l, ys, xs): continue
+        for cell in cells:
+            x0, y0, x1, y1 = _cell_box(cell, ys, xs)
+            if l.x < x1 and l.x1 > x0 and l.y < y1 and l.y1 > y0:
+                dirty.add((cell.r, cell.c))
+    if not dirty or img_rgb is None:
+        return ls
+    out = list(ls)
+    for cell in cells:
+        if (cell.r, cell.c) not in dirty: continue
+        x0, y0, x1, y1 = _cell_box(cell, ys, xs)
+        ix0, iy0, ix1, iy1 = int(x0) + 3, int(y0) + 3, int(x1) - 3, int(y1) - 3
+        if ix1 - ix0 < 20 or iy1 - iy0 < 20: continue
+        crop = img_rgb[iy0:iy1, ix0:ix1]
+        new = []
+        for b in reocr(np.ascontiguousarray(crop)).blocks:
+            for nl in b.lines:
+                if not flt.keep(nl, table=True): continue
+                nl.x += ix0; nl.y += iy0
+                new.append(nl)
+        if not new: continue           # engine không đọc được gì: giữ kết quả cũ
+        out = [l for l in out if not (x0 <= l.cx < x1 and y0 <= l.cy < y1)] + new
+    return out
+
+
+def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
+           img_rgb: np.ndarray | None = None, reocr=None) -> Table | None:
     ls = [l for l in block.lines if flt.keep(l, table=True)]
     if not ls: return None
     g = _detect_grid(gray, block) if gray is not None else None
     if g:
         ys, xs, cells = _grid_cells(g)
+        if reocr is not None:
+            ls = _reocr_cells(ls, ys, xs, cells, img_rgb, reocr, flt)
         buckets: dict[tuple[int, int], list[Line]] = {}
         for l in ls:
             r, c = _idx(l.cy, ys), _idx(l.cx, xs)
@@ -336,7 +377,8 @@ def _table_by_clustering(ls: list[Line]) -> Table | None:
 
 # ---------- trang ----------
 
-def build_page(page: Page, img_rgb: np.ndarray | None = None) -> list[Para | Table]:
+def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> list[Para | Table]:
+    """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại."""
     gray = None
     if img_rgb is not None:
         import cv2
@@ -346,7 +388,7 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None) -> list[Para | Tab
     items: list[tuple[int, Para | Table]] = []
     for b in page.blocks:
         if b.kind == "table":
-            t = _table(b, flt, gray)
+            t = _table(b, flt, gray, img_rgb, reocr)
             if t: items.append((b.order, t))
         elif b.kind in ("text", "other", "figure"):
             for p in _paragraphs(b, flt): items.append((b.order, p))

@@ -1,6 +1,7 @@
 """PDF/ảnh -> .docx (và .txt) chỉ gồm tiếng Nhật."""
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
@@ -10,13 +11,17 @@ IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 _engines: dict = {}
 
 
+_engines_lock = threading.Lock()
+
+
 def get_engine(name: str | None = None, device: str = "cpu"):
     from . import engines
     name = engines.resolve(name or engines.DEFAULT)[0]
     key = (name, device)
-    if key not in _engines:
-        _engines[key] = engines.create(name, device=device)
-    return _engines[key]
+    with _engines_lock:
+        if key not in _engines:
+            _engines[key] = engines.create(name, device=device)
+        return _engines[key]
 
 
 def _engine_version(name: str) -> str:
@@ -79,7 +84,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  cancel: Callable[[], bool] | None = None,
                  review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
                  engine: str | None = None, ruby: bool = False, device: str = "auto",
-                 workers: int | None = None) -> dict:
+                 workers: int | None = None, cell_reocr: bool = True) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -97,6 +102,10 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     cache = PageCache(out_dir / ".cache", file_hash(path), dpi, engine, _engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
     eng = get_engine(engine, dev) if not (cache and all(cache.has(p) for p in (pages or range(1, total + 1)))) else None
+
+    def reocr(crop):
+        """Nhận dạng lại một ô bảng (gọi từ luồng nền; engine lấy lười để trang đã có cache không nạp model)."""
+        return get_engine(engine, dev).ocr(crop, "cell.png")
 
     def ocr_one(pno: int, img):
         """Chạy trong luồng nền: đọc cache hoặc OCR rồi ghi cache. Trả về (pno, Page, ảnh)."""
@@ -129,7 +138,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             fut = pending.pop(0)               # giữ thứ tự trang
             pno, page, img = fut.result()
             submit_next()
-            items = build_page(page, img)
+            items = build_page(page, img, reocr if cell_reocr else None)
             if review:
                 from .review import render_page
                 sec, low = render_page(pno, items, page, img, conf_threshold)

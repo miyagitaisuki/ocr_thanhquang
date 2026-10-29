@@ -36,6 +36,6 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 1. ~~Chế độ rà soát~~ ĐÃ LÀM: `ocrnhat --review [--conf 0.8]` -> `*_review.html` (`review.py`); chưa có trong GUI.
 2. ĐÃ LÀM (opt-in `--ruby`): furigana ghép vào dòng chữ Hán bên dưới theo tọa độ ngang, xuất `w:ruby` thật (`layout._line_ruby`, `docx_out._add_ruby`). Gần đúng: ký tự chia đều theo bề ngang dòng; cụm có nhiều chữ Hán thì chia cách đọc theo số chữ. Chưa hỗ trợ ruby trong ô bảng và chữ dọc; .txt không có ruby. Mặc định vẫn bỏ furigana. Chưa thử trên trang thật.
 3. Cache theo hash ĐÃ LÀM (`cache.py`, thư mục `<out>/.cache`, tắt bằng `--no-cache`). ĐÃ LÀM: OCR song song trong ThreadPool (`pipeline.process_file`, tham số `workers`; mặc định 2 với GPU, 1..4 với CPU); dựng layout và ghi file vẫn tuần tự theo thứ tự trang. Cửa sổ trượt 2*workers trang để không giữ cả file trong RAM. Đo trên engine giả 10 trang: 5,1s -> 1,5s, kết quả giống hệt chạy tuần tự. Chưa đo trên NDLOCR thật.
-4. Tách dòng bị nối xuyên ô bảng bằng nhận dạng lại từng ô.
+4. ĐÃ LÀM (mặc định bật; `--no-cell-reocr` để tắt): ô bảng có dòng vượt đường kẻ (`layout._crosses_grid`) được cắt ảnh riêng và nhận dạng lại qua engine (`pipeline.reocr`); kết quả cũ chỉ được thay khi nhận dạng lại có chữ. Kết quả thử với engine giả đúng; CHƯA kiểm chứng trên bảng thật vì ảnh bảng thử không được NDLOCR nhận là khối bảng. Kết quả nhận dạng lại không được cache.
 5. Tùy chọn engine thứ hai (YomiToku, chỉ phi thương mại) để đối chiếu.
 6. Dò chữ sai bằng BERT/LLM (chỉ đánh dấu để duyệt, không tự sửa).

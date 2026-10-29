@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định ndlocr)")
     ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--device", default="auto", choices=gpu_mod.DEVICES, help="auto | cpu | cuda (GPU NVIDIA, cần onnxruntime-gpu)")
+    ap.add_argument("--no-cell-reocr", action="store_true", help="không nhận dạng lại các ô bảng có dòng vượt đường kẻ")
     ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
     a = ap.parse_args(argv)
@@ -58,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         r = pipeline.process_file(
             f, Path(a.out), a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
-            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, ruby=a.ruby, device=a.device,
+            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
         if r["review"]:
