@@ -29,7 +29,7 @@ img.save("smoke.png")
 
 from ocrnhat import pipeline
 from ocrnhat.layout import Table
-from ocrnhat.engine import Engine
+from ocrnhat.engines.ndlocr import NdlocrEngine as Engine
 from ocrnhat.layout import build_page
 arr = np.array(img)
 items = build_page(Engine().ocr(arr), arr)

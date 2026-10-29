@@ -7,15 +7,23 @@ from typing import Callable, Iterable, Iterator
 import numpy as np
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
-_engine = None
+_engines: dict = {}
 
 
-def get_engine():
-    global _engine
-    if _engine is None:
-        from .engine import Engine
-        _engine = Engine()
-    return _engine
+def get_engine(name: str | None = None):
+    from . import engines
+    name = name or engines.DEFAULT
+    if name not in _engines:
+        _engines[name] = engines.create(name)
+    return _engines[name]
+
+
+def _engine_version(name: str) -> str:
+    """Phiên bản engine cho khóa cache, lấy không cần nạp model."""
+    if name == "ndlocr":
+        from .engines.ndlocr import NDL_COMMIT
+        return NDL_COMMIT[:8]
+    return "0"
 
 
 def parse_pages(spec: str | None) -> list[int] | None:
@@ -60,7 +68,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  write_txt: bool = True, page_marker: bool = True,
                  progress: Callable[[int, int, str], None] | None = None,
                  cancel: Callable[[], bool] | None = None,
-                 review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True) -> dict:
+                 review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
+                 engine: str | None = None) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -68,15 +77,17 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     path, out_dir = Path(path), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     total = len(pages) if pages else page_count(path)
+    from . import engines
+    engine = engine or engines.DEFAULT
     eng = None
-    cache = PageCache(out_dir / ".cache", file_hash(path), dpi) if use_cache else None
+    cache = PageCache(out_dir / ".cache", file_hash(path), dpi, engine, _engine_version(engine)) if use_cache else None
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
     for pno, img in iter_pages(path, dpi, pages):
         if cancel and cancel():
             break
         page = cache.get(pno) if cache else None
         if page is None:
-            eng = eng or get_engine()
+            eng = eng or get_engine(engine)
             page = eng.ocr(img, f"{path.stem}_{pno}.png")
             if cache:
                 cache.put(pno, page)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .engine import Page
+from .model import Page
 from .layout import Para, Table
 
 _CSS = """body{font-family:'Yu Gothic','Meiryo',sans-serif;margin:0;background:#f4f4f4}

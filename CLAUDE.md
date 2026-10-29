@@ -10,7 +10,8 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 - Ưu tiên công cụ miễn phí. Ưu tiên giấy phép thoáng (NDLOCR-Lite là CC BY 4.0).
 
 ## Kiến trúc (src/ocrnhat)
-- `engine.py`: bọc NDLOCR-Lite (ONNX), đọc XML trang -> Block/Line (text, table 表組, ruby ルビ, 柱, ノンブル). Commit ghim: xem `scripts/fetch_ndlocr.py`.
+- `model.py`: Page/Block/Line chung cho mọi engine. `engines/`: `base.py` (giao diện `OcrEngine`), `__init__.py` (đăng ký, `--engine`), `ndlocr.py`, `chandra.py` (PLACEHOLDER, chưa cài đặt; ghi sẵn các bước làm). Thêm engine: kế thừa `OcrEngine`, thêm vào `_LOADERS` và `_engine_version` (pipeline.py).
+- `engines/ndlocr.py`: bọc NDLOCR-Lite (ONNX), đọc XML trang -> Block/Line (text, table 表組, ruby ルビ, 柱, ノンブル). Commit ghim: xem `scripts/fetch_ndlocr.py`.
 - `layout.py`: lọc tiếng Nhật, bỏ furigana, gộp đoạn, nhận tiêu đề, dựng bảng từ đường kẻ (OpenCV) kèm ô gộp; dự phòng theo cụm tọa độ.
 - `docx_out.py`: xuất Word (font Yu Mincho, Heading, bảng) và txt.
 - `pipeline.py` / `cli.py` / `gui.py`: PDF/ảnh -> kết quả; dòng lệnh; giao diện Tkinter.

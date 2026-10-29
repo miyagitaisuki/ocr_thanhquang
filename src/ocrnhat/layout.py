@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .engine import Block, Line, Page
+from .model import Block, Line, Page
 
 _JP = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 _KANJI = re.compile(r"[㐀-䶿一-鿿]")

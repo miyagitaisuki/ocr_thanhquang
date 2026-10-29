@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from .engine import NDL_COMMIT, Block, Line, Page
+from .model import Block, Line, Page
 
 _VER = 1
 
@@ -20,9 +20,9 @@ def file_hash(path: Path) -> str:
 
 
 class PageCache:
-    def __init__(self, root: Path, fhash: str, dpi: int):
+    def __init__(self, root: Path, fhash: str, dpi: int, engine: str, engine_ver: str):
         self.dir = Path(root)
-        self.prefix = f"{fhash}_{dpi}_{NDL_COMMIT[:8]}_v{_VER}"
+        self.prefix = f"{fhash}_{dpi}_{engine}-{engine_ver}_v{_VER}"
 
     def _path(self, pno: int) -> Path:
         return self.dir / f"{self.prefix}_p{pno}.json"

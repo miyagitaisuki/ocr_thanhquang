@@ -9,10 +9,12 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 from argparse import Namespace
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+from ..model import Block, Line, Page
+from .base import OcrEngine
 
 NDL_COMMIT = "e57f7c6bd9cfb3de5f12f008e71ad2122bd44bfd"
 
@@ -24,7 +26,7 @@ def find_ndl_src() -> Path:
     if getattr(sys, "_MEIPASS", None):
         cands.append(Path(sys._MEIPASS) / "ndlocr_src")
     here = Path(__file__).resolve()
-    cands += [here.parents[2] / "vendor" / "ndlocr-lite" / "src", Path.cwd() / "vendor" / "ndlocr-lite" / "src"]
+    cands += [here.parents[3] / "vendor" / "ndlocr-lite" / "src", Path.cwd() / "vendor" / "ndlocr-lite" / "src"]
     frozen = bool(getattr(sys, "_MEIPASS", None))
     for c in cands:
         # bản exe: mã `ocr.py` đã nằm trong gói, chỉ cần thư mục model/config
@@ -32,54 +34,6 @@ def find_ndl_src() -> Path:
             return c
     raise FileNotFoundError(
         "Không thấy NDLOCR-Lite. Chạy `python scripts/fetch_ndlocr.py` hoặc đặt OCRNHAT_NDL_SRC.")
-
-
-@dataclass
-class Line:
-    text: str
-    x: float
-    y: float
-    w: float
-    h: float
-    conf: float = 0.0
-    type: str = ""
-    order: int = 0
-
-    @property
-    def x1(self): return self.x + self.w
-    @property
-    def y1(self): return self.y + self.h
-    @property
-    def cx(self): return self.x + self.w / 2
-    @property
-    def cy(self): return self.y + self.h / 2
-    @property
-    def vertical(self): return self.h > 1.5 * self.w and len(self.text) > 1
-    @property
-    def size(self):  # cỡ chữ ước lượng
-        return self.w if self.vertical else self.h
-
-
-@dataclass
-class Block:
-    kind: str                     # text | table | ruby | header | folio | figure | other
-    x: float
-    y: float
-    w: float
-    h: float
-    lines: list[Line] = field(default_factory=list)
-    label: str = ""
-
-    @property
-    def order(self):
-        return min((l.order for l in self.lines), default=10 ** 9)
-
-
-@dataclass
-class Page:
-    width: int
-    height: int
-    blocks: list[Block]
 
 
 _KIND = {"表組": "table", "ルビ": "ruby", "柱": "header", "ノンブル": "folio", "図版": "figure", "広告": "other"}
@@ -110,7 +64,10 @@ def parse_page_xml(page_xml: str, width: int, height: int) -> Page:
     return Page(width, height, blocks)
 
 
-class Engine:
+class NdlocrEngine(OcrEngine):
+    name = "ndlocr"
+    version = NDL_COMMIT[:8]
+
     def __init__(self, device: str = "cpu"):
         src = find_ndl_src()
         if str(src) not in sys.path:
