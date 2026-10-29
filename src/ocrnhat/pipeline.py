@@ -8,20 +8,21 @@ from typing import Callable, Iterable, Iterator
 import numpy as np
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
-_engines: dict = {}
-
-
-_engines_lock = threading.Lock()
+# Mỗi luồng giữ engine riêng: engine NDLOCR không an toàn khi nhiều luồng dùng chung một instance
+# (nhận dạng lại ô bảng và OCR trang nền từng gọi cùng lúc -> kết quả trang bị rỗng, không ổn định).
+_tls = threading.local()
 
 
 def get_engine(name: str | None = None, device: str = "cpu"):
     from . import engines
     name = engines.resolve(name or engines.DEFAULT)[0]
+    cache = getattr(_tls, "engines", None)
+    if cache is None:
+        cache = _tls.engines = {}
     key = (name, device)
-    with _engines_lock:
-        if key not in _engines:
-            _engines[key] = engines.create(name, device=device)
-        return _engines[key]
+    if key not in cache:
+        cache[key] = engines.create(name, device=device)
+    return cache[key]
 
 
 def parse_pages(spec: str | None) -> list[int] | None:
@@ -119,17 +120,16 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         pre_tag += f"u{upscale:g}"
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
-    eng = get_engine(engine, dev) if not (cache and all(cache.has(p) for p in (pages or range(1, total + 1)))) else None
 
     def reocr(crop):
-        """Nhận dạng lại một ô bảng (gọi từ luồng nền; engine lấy lười để trang đã có cache không nạp model)."""
+        """Nhận dạng lại một ô bảng (engine của luồng gọi, lấy lười)."""
         return get_engine(engine, dev).ocr(crop, "cell.png")
 
     def ocr_one(pno: int, img):
-        """Chạy trong luồng nền: đọc cache hoặc OCR rồi ghi cache. Trả về (pno, Page, ảnh)."""
+        """Chạy trong luồng nền: đọc cache hoặc OCR (engine riêng của luồng) rồi ghi cache. Trả về (pno, Page, ảnh)."""
         page = cache.get(pno) if cache else None
         if page is None:
-            page = eng.ocr(img, f"{path.stem}_{pno}.png")
+            page = get_engine(engine, dev).ocr(img, f"{path.stem}_{pno}.png")
             if cache:
                 cache.put(pno, page)
         return pno, page, img
