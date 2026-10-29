@@ -46,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"GPU: {g.name} | VRAM {g.vram_mb or '?'} MB | backend={g.backend}")
         print("Engine sẽ dùng: %s (%s)" % engines.resolve(a.engine))
         return 0
+    if not a.inputs:
+        ap.error("cần ít nhất một file PDF/ảnh hoặc thư mục (xem --help)")
     files = collect(a.inputs)
     if not files:
         return 1

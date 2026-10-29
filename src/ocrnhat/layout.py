@@ -225,19 +225,25 @@ def _merge_close(v: list[float], tol: float) -> list[float]:
     return out
 
 
-def _detect_grid(gray: np.ndarray, box: Block):
+def _ruling_masks(gray: np.ndarray, div: int) -> tuple[np.ndarray, np.ndarray]:
+    """Mặt nạ đường kẻ ngang/dọc. Đường kẻ dài cỡ 1/div chiều vùng; nét chữ ngắn hơn thì bị loại."""
     import cv2
+    H, W = gray.shape
+    paper = float(np.median(gray))                    # độ sáng nền giấy
+    b = (gray < paper - 40).astype(np.uint8) * 255    # bắt cả đường kẻ xám mờ
+    hor = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, W // div), 1)))
+    ver = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, H // div))))
+    return hor, ver
+
+
+def _detect_grid(gray: np.ndarray, box: Block):
     x, y, w, h = int(box.x), int(box.y), int(box.w), int(box.h)
     x = max(0, x - 6); y = max(0, y - 6)
     crop = gray[y:y + h + 12, x:x + w + 12]
     if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
         return None
-    paper = float(np.median(crop))                     # độ sáng nền giấy
-    b = (crop < paper - 40).astype(np.uint8) * 255   # bắt cả đường kẻ xám mờ
-    H, W = b.shape
-    # đường kẻ bảng chạy gần hết chiều rộng/cao vùng; nét chữ (dài cỡ một chữ) thì bị loại
-    hor = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, W // 4), 1)))
-    ver = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, H // 4))))
+    H, W = crop.shape
+    hor, ver = _ruling_masks(crop, 4)
     ys = _merge_close(_runs((hor > 0).sum(axis=1) / W, 0.35), 8)
     xs = _merge_close(_runs((ver > 0).sum(axis=0) / H, 0.30), 8)
     if len(ys) < 2 or len(xs) < 2:
@@ -321,11 +327,7 @@ def _grid_regions(gray: np.ndarray) -> list[Block]:
     """Vùng có lưới đường kẻ trên cả trang (mỗi bảng có đường kẻ là một thành phần liên thông).
     Không dựa vào nhãn `表組` của NDLOCR: bảng bị nhận nhầm là text vẫn được dựng."""
     import cv2
-    H, W = gray.shape
-    paper = float(np.median(gray))
-    b = (gray < paper - 40).astype(np.uint8) * 255
-    hor = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, W // 20), 1)))
-    ver = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, H // 20))))
+    hor, ver = _ruling_masks(gray, 20)
     n, _, stats, _ = cv2.connectedComponentsWithStats(hor | ver, connectivity=8)
     out = []
     for i in range(1, n):
