@@ -36,13 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--review", action="store_true", help="xuất thêm *_review.html: ảnh trang cạnh text, tô đỏ chỗ độ tin cậy thấp")
     ap.add_argument("--conf", type=float, default=0.8, help="ngưỡng độ tin cậy cho --review (mặc định 0.8)")
     ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định ndlocr)")
+    ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
     a = ap.parse_args(argv)
     if a.gpu_info:
         from . import gpu
-        for g in gpu.detect() or []:
-            print(f"GPU: {g.name} | {g.vendor} | VRAM {g.vram_mb or '?'} MB | rời={g.discrete} | backend={g.backend}")
+        for g in gpu.detect():
+            print(f"GPU: {g.name} | VRAM {g.vram_mb or '?'} MB | backend={g.backend}")
         print("Engine sẽ dùng: %s (%s)" % engines.resolve(a.engine))
         return 0
     files = collect(a.inputs)
@@ -53,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         r = pipeline.process_file(
             f, Path(a.out), a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
-            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine,
+            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, ruby=a.ruby,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
         if r["review"]:

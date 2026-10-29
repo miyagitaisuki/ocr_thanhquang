@@ -11,7 +11,7 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 
 ## Kiến trúc (src/ocrnhat)
 - `model.py`: Page/Block/Line chung cho mọi engine. `engines/`: `base.py` (giao diện `OcrEngine`), `__init__.py` (đăng ký, `--engine`), `ndlocr.py`, `chandra.py` (PLACEHOLDER, chưa cài đặt; ghi sẵn các bước làm). Thêm engine: kế thừa `OcrEngine`, thêm vào `_LOADERS` và `_engine_version` (pipeline.py).
-- `gpu.py`: dò GPU rời (nvidia-smi; rocm-smi trên Linux; PowerShell trên Windows). `--engine auto` (mặc định): có GPU rời đủ VRAM (>=6 GB, `MIN_VRAM_MB`) VÀ Chandra dùng được -> chandra, ngược lại ndlocr. `ocrnhat --gpu-info` để xem. VRAM AMD trên Windows chưa dò được (None) nên không tự chọn, chỉ chạy khi ép `--engine chandra`.
+- `gpu.py`: dò card NVIDIA bằng nvidia-smi (đã bỏ AMD theo quyết định chủ dự án). `--engine auto` (mặc định) chọn chandra chỉ khi có GPU đủ VRAM và Chandra dùng được; hiện Chandra là placeholder và đã TẠM DỪNG phát triển nên auto luôn ra ndlocr. `ocrnhat --gpu-info` để xem.
 - `engines/ndlocr.py`: bọc NDLOCR-Lite (ONNX), đọc XML trang -> Block/Line (text, table 表組, ruby ルビ, 柱, ノンブル). Commit ghim: xem `scripts/fetch_ndlocr.py`.
 - `layout.py`: lọc tiếng Nhật, bỏ furigana, gộp đoạn, nhận tiêu đề, dựng bảng từ đường kẻ (OpenCV) kèm ô gộp; dự phòng theo cụm tọa độ.
 - `docx_out.py`: xuất Word (font Yu Mincho, Heading, bảng) và txt.
@@ -33,7 +33,7 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 
 ## Hướng phát triển (đã bàn, chưa làm)
 1. ~~Chế độ rà soát~~ ĐÃ LÀM: `ocrnhat --review [--conf 0.8]` -> `*_review.html` (`review.py`); chưa có trong GUI.
-2. Xuất ruby furigana thật của Word thay vì bỏ.
+2. ĐÃ LÀM (opt-in `--ruby`): furigana ghép vào dòng chữ Hán bên dưới theo tọa độ ngang, xuất `w:ruby` thật (`layout._line_ruby`, `docx_out._add_ruby`). Gần đúng: ký tự chia đều theo bề ngang dòng; cụm có nhiều chữ Hán thì chia cách đọc theo số chữ. Chưa hỗ trợ ruby trong ô bảng và chữ dọc; .txt không có ruby. Mặc định vẫn bỏ furigana. Chưa thử trên trang thật.
 3. Cache theo hash ĐÃ LÀM (`cache.py`, thư mục `<out>/.cache`, tắt bằng `--no-cache`). Chạy song song: chưa làm.
 4. Tách dòng bị nối xuyên ô bảng bằng nhận dạng lại từng ô.
 5. Tùy chọn engine thứ hai (YomiToku, chỉ phi thương mại) để đối chiếu.

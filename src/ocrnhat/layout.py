@@ -32,6 +32,7 @@ class Para:
     y1: float = 0
     size: float = 0
     conf: float = 1.0
+    ruby: list = field(default_factory=list)   # [(bắt đầu, kết thúc, cách đọc)] theo chỉ số ký tự của text
 
 
 @dataclass
@@ -60,20 +61,45 @@ def _inside(l: Line, b: Block, m: float = 4) -> bool:
 class _Filter:
     def __init__(self, page: Page):
         self.rubies = [b for b in page.blocks if b.kind == "ruby"]
+        self.ruby: dict[int, list[tuple[float, float, str]]] = {}
         sizes = sorted(l.size for b in page.blocks if b.kind in ("text", "table") for l in b.lines
                        if _KANJI.search(l.text) and l.conf >= 0.5)
         self.ref = sizes[int(len(sizes) * 0.8)] if sizes else 0
         self.kanji_lines = [l for b in page.blocks if b.kind in ("text", "table") for l in b.lines
                             if _KANJI.search(l.text) and l.conf >= 0.5]
 
-    def _above_kanji(self, l: Line) -> bool:
-        """Dòng kana nằm ngay trên một dòng có chữ Hán (chồng lấn ngang) và nhỏ hơn: furigana."""
+    def _base_below(self, l: Line, strict: bool = True) -> Line | None:
+        """Dòng chữ Hán nằm ngay dưới dòng kana `l` (chồng lấn ngang) và lớn hơn: dòng gốc của furigana."""
+        best, best_gap = None, 1e9
         for k in self.kanji_lines:
             if k is l or k.vertical: continue
             ov = min(l.x1, k.x1) - max(l.x, k.x)
-            if ov >= 0.5 * l.w and -0.7 * k.size <= k.y - l.y1 <= 0.9 * k.size and l.cy < k.cy - 0.2 * k.size and l.size < 0.95 * k.size:
-                return True
-        return False
+            gap = k.y - l.y1
+            if ov >= (0.5 if strict else 0.3) * l.w and -0.7 * k.size <= gap <= 0.9 * k.size and l.cy < k.cy - 0.2 * k.size \
+                    and l.size < 0.95 * k.size and gap < best_gap:
+                best, best_gap = k, gap
+        return best
+
+    def _above_kanji(self, l: Line) -> bool:
+        return self._base_below(l) is not None
+
+    def collect_ruby(self, page: Page) -> None:
+        """Gắn mỗi dòng furigana (trong khối ルビ hoặc nhận ra bằng kích thước/vị trí) vào dòng chữ Hán bên dưới."""
+        self.ruby: dict[int, list[tuple[float, float, str]]] = {}
+        for b in page.blocks:
+            for l in b.lines:
+                t = l.text.replace(" ", "")
+                if b.kind == "ruby":
+                    pass
+                elif b.kind in ("text", "table") and _KANA_ONLY.match(t) and len(t) <= 30 and self.furigana(l):
+                    pass
+                else:
+                    continue
+                if not _KANA_ONLY.match(t) or l.vertical:
+                    continue
+                base = self._base_below(l, strict=False)
+                if base is not None:
+                    self.ruby.setdefault(id(base), []).append((l.x, l.x1, t))
 
     def furigana(self, l: Line) -> bool:
         if not _KANA_ONLY.match(l.text.replace(" ", "")): 
@@ -96,10 +122,40 @@ class _Filter:
 
 # ---------- đoạn văn ----------
 
-def _mk(ls: list[Line], kind: str = "body") -> Para:
+_KANJI_RUN = re.compile(r"[㐀-䶿一-鿿々〇]+")
+
+
+def _line_ruby(l: Line, anns: list[tuple[float, float, str]], off: int) -> list[tuple[int, int, str]]:
+    """Đổi vị trí ngang của furigana thành khoảng ký tự trong dòng (ký tự chia đều theo bề ngang dòng)."""
+    n = len(l.text)
+    if not n or l.w <= 0:
+        return []
+    out = []
+    for x, x1, reading in anns:
+        lo = (x - l.x) / l.w * n
+        hi = (x1 - l.x) / l.w * n
+        runs = [m for m in _KANJI_RUN.finditer(l.text) if m.end() > lo + 0.3 and m.start() < hi - 0.3]
+        if not runs:
+            continue
+        total = sum(m.end() - m.start() for m in runs)
+        pos = 0
+        for i, m in enumerate(runs):   # nhiều cụm Hán: chia cách đọc theo số chữ Hán (gần đúng)
+            k = len(reading) - pos if i == len(runs) - 1 else max(1, round(len(reading) * (m.end() - m.start()) / total))
+            part = reading[pos:pos + k]; pos += k
+            if part:
+                out.append((off + m.start(), off + m.end(), part))
+    return out
+
+
+def _mk(ls: list[Line], kind: str = "body", flt: "_Filter | None" = None) -> Para:
+    ruby, off = [], 0
+    for l in ls:
+        if flt is not None and id(l) in flt.ruby:
+            ruby += _line_ruby(l, flt.ruby[id(l)], off)
+        off += len(l.text)
     return Para("".join(l.text for l in ls), kind, min(l.x for l in ls), min(l.y for l in ls),
                 max(l.x1 for l in ls), max(l.y1 for l in ls), statistics.median(l.size for l in ls),
-                min(l.conf for l in ls))
+                min(l.conf for l in ls), ruby)
 
 
 def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Para | Table"]]:
@@ -110,7 +166,7 @@ def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Pa
             a: Para = out[-1][1]
             if (a.kind == "body" and it.kind == "body" and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
                     and abs(it.x - a.x) < 1.2 * a.size and -0.5 * a.size < it.y - a.y1 < 1.6 * a.size):
-                a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
+                a.ruby += [(s + len(a.text), e + len(a.text), r) for s, e, r in it.ruby]; a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
                 continue
         out.append((o, it))
     return out
@@ -127,7 +183,7 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
     labelled = all(l.type == "タイトル本文" for l in ls)
     if (len(ls) <= 2 and len(text_all) <= 30 and not text_all.endswith("。") and (big or labelled)
             and not re.search(r"[をにはがでとのへもや、,]$", text_all)):
-        return [_mk(ls, "heading")]
+        return [_mk(ls, "heading", flt)]
     left = min(l.x for l in ls); right = max(l.x1 for l in ls)
     paras: list[list[Line]] = []
     for l in ls:
@@ -140,7 +196,7 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
                 elif _BULLET.match(l.text): new = True
         if new: paras.append([l])
         else: paras[-1].append(l)
-    return [_mk(g) for g in paras]
+    return [_mk(g, "body", flt) for g in paras]
 
 
 # ---------- bảng ----------
@@ -286,6 +342,7 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None) -> list[Para | Tab
         import cv2
         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY) if img_rgb.ndim == 3 else img_rgb
     flt = _Filter(page)
+    flt.collect_ruby(page)
     items: list[tuple[int, Para | Table]] = []
     for b in page.blocks:
         if b.kind == "table":

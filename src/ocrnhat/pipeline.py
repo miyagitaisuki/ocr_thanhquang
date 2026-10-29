@@ -69,7 +69,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  progress: Callable[[int, int, str], None] | None = None,
                  cancel: Callable[[], bool] | None = None,
                  review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
-                 engine: str | None = None) -> dict:
+                 engine: str | None = None, ruby: bool = False) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -105,7 +105,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             progress(done, total, f"{path.name} - trang {pno}")
     docx_path = out_dir / f"{path.stem}.docx"
     if results:
-        write_docx(results, docx_path, title=None, page_marker=page_marker)
+        write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby)
         if write_txt:
             _txt(results, out_dir / f"{path.stem}.txt")
     review_path = None

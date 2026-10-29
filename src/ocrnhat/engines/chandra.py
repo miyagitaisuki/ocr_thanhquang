@@ -1,4 +1,4 @@
-"""PLACEHOLDER: engine Chandra OCR 2 (datalab-to/chandra-ocr-2, VLM ~4-5B, cần GPU, trọng số OpenRAIL-M sửa đổi).
+"""PLACEHOLDER (TẠM DỪNG phát triển theo quyết định của chủ dự án, chỉ hỗ trợ NVIDIA nếu làm lại): engine Chandra OCR 2 (datalab-to/chandra-ocr-2, VLM ~4-5B, cần GPU, trọng số OpenRAIL-M sửa đổi).
 
 Chưa cài đặt. Khi làm:
   1. Cài tùy chọn `pip install chandra-ocr` (không đóng vào exe); chạy HuggingFace cục bộ hoặc máy chủ vLLM.

@@ -21,6 +21,37 @@ def _font(run, size=None, bold=None, gray=False):
     if gray: run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
 
 
+def _add_ruby(p, base: str, reading: str, size: float = 10.5):
+    """Chèn một cụm ruby thật của Word (w:ruby): chữ nhỏ `reading` nằm trên `base`."""
+    from docx.oxml import parse_xml
+    ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    half = int(size * 2)
+    rt_sz = max(8, half // 2)
+
+    def run(sz: int, text: str) -> str:
+        t = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return (f'<w:r><w:rPr><w:rFonts w:ascii="{FONT}" w:hAnsi="{FONT}" w:eastAsia="{FONT}"/>'
+                f'<w:sz w:val="{sz}"/></w:rPr><w:t>{t}</w:t></w:r>')
+
+    xml = (f'<w:r {ns}><w:ruby><w:rubyPr><w:rubyAlign w:val="distributeSpace"/><w:hps w:val="{rt_sz}"/>'
+           f'<w:hpsRaise w:val="{half - 3}"/><w:hpsBaseText w:val="{half}"/><w:lid w:val="ja-JP"/></w:rubyPr>'
+           f'<w:rt>{run(rt_sz, reading)}</w:rt><w:rubyBase>{run(half, base)}</w:rubyBase></w:ruby></w:r>')
+    p._p.append(parse_xml(xml))
+
+
+def _add_text(p, para: Para, ruby: bool):
+    spans = sorted(para.ruby) if ruby else []
+    pos = 0
+    for s, e, reading in spans:
+        if s < pos:           # chồng lấn do gom đoạn: bỏ qua cụm sau
+            continue
+        if s > pos: _font(p.add_run(para.text[pos:s]))
+        _add_ruby(p, para.text[s:e], reading)
+        pos = e
+    if pos < len(para.text) or not spans:
+        _font(p.add_run(para.text[pos:]))
+
+
 def _new_doc(title: str | None):
     d = Document()
     st = d.styles["Normal"]
@@ -49,7 +80,7 @@ def _add_table(d, t: Table):
 
 
 def write_docx(pages: list[tuple[int, list[Para | Table]]], out: Path, title: str | None = None,
-               page_marker: bool = True) -> None:
+               page_marker: bool = True, ruby: bool = False) -> None:
     d = _new_doc(title)
     for i, (pno, items) in enumerate(pages):
         if i:
@@ -61,7 +92,7 @@ def write_docx(pages: list[tuple[int, list[Para | Table]]], out: Path, title: st
             elif it.kind == "heading":
                 h = d.add_heading(level=2); _font(h.add_run(it.text), 12, True)
             else:
-                p = d.add_paragraph(); p.paragraph_format.space_after = Pt(4); _font(p.add_run(it.text))
+                p = d.add_paragraph(); p.paragraph_format.space_after = Pt(4); _add_text(p, it, ruby)
     d.save(str(out))
 
 
