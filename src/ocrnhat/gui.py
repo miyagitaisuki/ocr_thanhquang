@@ -7,11 +7,13 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import pipeline
+from . import gpu, pipeline
 from .cli import collect
 
 
 class App(tk.Tk):
+    DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
+
     def __init__(self):
         super().__init__()
         self.title("OCR tiếng Nhật")
@@ -40,6 +42,14 @@ class App(tk.Tk):
         self.txt = tk.BooleanVar(value=True)
         ttk.Checkbutton(opt, text="Ghi số trang gốc 【原本 p.N】", variable=self.marker).grid(row=2, column=0, sticky="w")
         ttk.Checkbutton(opt, text="Ghi kèm file .txt", variable=self.txt).grid(row=2, column=1, sticky="w")
+
+        ttk.Label(opt, text="Thiết bị:").grid(row=3, column=0, sticky="w", pady=4)
+        self.dev = tk.StringVar(value=self.DEV_LABELS["auto"])
+        ttk.Combobox(opt, textvariable=self.dev, values=list(self.DEV_LABELS.values()), state="readonly",
+                     width=28).grid(row=3, column=1, sticky="w", padx=4)
+        ttk.Label(opt, text="GPU: chỉ NVIDIA, cần onnxruntime-gpu + CUDA", foreground="#666").grid(row=3, column=2, sticky="w")
+        self.ruby = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opt, text="Giữ furigana thành ruby của Word", variable=self.ruby).grid(row=4, column=0, sticky="w")
 
         bar = ttk.Frame(self, padding=8); bar.pack(fill="x")
         self.btn = ttk.Button(bar, text="Bắt đầu OCR", command=self.start); self.btn.pack(side="left")
@@ -79,16 +89,17 @@ class App(tk.Tk):
         except ValueError:
             messagebox.showerror("OCR", "Khoảng trang không hợp lệ."); return
         self.cancel.clear(); self.btn.config(state="disabled"); self.stop.config(state="normal")
-        args = (list(self.files), Path(self.out.get()), pages, self.marker.get(), self.txt.get())
+        dev = next(k for k, v in self.DEV_LABELS.items() if v == self.dev.get())
+        args = (list(self.files), Path(self.out.get()), pages, self.marker.get(), self.txt.get(), dev, self.ruby.get())
         self.worker = threading.Thread(target=self.run_job, args=args, daemon=True); self.worker.start()
 
-    def run_job(self, files, out, pages, marker, txt):
+    def run_job(self, files, out, pages, marker, txt, device="auto", ruby=False):
         try:
             for i, f in enumerate(files, 1):
                 self.q.put(("status", f"Đang nạp model / xử lý {f.name} ({i}/{len(files)})…"))
                 pipeline.process_file(
                     f, out, 200, pages if f.suffix.lower() == ".pdf" else None,
-                    write_txt=txt, page_marker=marker,
+                    write_txt=txt, page_marker=marker, device=device, ruby=ruby,
                     progress=lambda d, t, m: self.q.put(("prog", (d, t, m))),
                     cancel=self.cancel.is_set)
                 if self.cancel.is_set():

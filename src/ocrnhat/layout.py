@@ -12,6 +12,16 @@ from .model import Block, Line, Page
 _JP = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 _KANJI = re.compile(r"[㐀-䶿一-鿿]")
 _KANA_ONLY = re.compile(r"^[぀-ヿー・、。\s]+$")
+# ký tự rác engine hay gộp vào dòng furigana: chữ/số ASCII, ký hiệu, khoảng trắng
+_NOISE = re.compile(r"[A-Za-z0-9$＄#*%&@^~|/\\_<>=+\-.,:;!?()（）\[\]{}\s]")
+
+
+def _kana_core(text: str) -> str:
+    """Chuỗi sau khi bỏ ký tự rác: 'きょう OC' -> 'きょう', '$ ちょうしつ' -> 'ちょうしつ'.
+    Dòng có dấu câu hoặc nhiều chữ Latin (nhãn như 'b. いつ') không được coi là rác: trả về rỗng."""
+    if re.search(r"[.:;]", text) or len(re.findall(r"[A-Za-z]", text)) > 2:
+        return ""
+    return _NOISE.sub("", text)
 _LATIN_WORD = re.compile(r"[A-Za-zÀ-ỹ]{3,}")
 _SENT_END = re.compile(r"[。！？!?」』）)]$")
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
@@ -91,7 +101,7 @@ class _Filter:
         self.ruby: dict[int, list[tuple[float, float, str]]] = {}
         for b in page.blocks:
             for l in b.lines:
-                t = l.text.replace(" ", "")
+                t = _kana_core(l.text)
                 if b.kind == "ruby":
                     pass
                 elif b.kind in ("text", "table") and _KANA_ONLY.match(t) and len(t) <= 30 and self.furigana(l):
@@ -105,7 +115,8 @@ class _Filter:
                     self.ruby.setdefault(id(base), []).append((l.x, l.x1, t))
 
     def furigana(self, l: Line) -> bool:
-        if not _KANA_ONLY.match(l.text.replace(" ", "")): 
+        core = _kana_core(l.text)
+        if not core or not _KANA_ONLY.match(core):
             return False
         if any(_inside(l, b) for b in self.rubies):
             return True
@@ -300,12 +311,68 @@ def _cell_text(lines: list[Line]) -> str:
     return "\n".join(out)
 
 
-def _table(block: Block, flt: _Filter, gray: np.ndarray | None) -> Table | None:
+def _cell_box(cell: Cell, ys: list[float], xs: list[float]) -> tuple[float, float, float, float]:
+    return xs[cell.c], ys[cell.r], xs[cell.c + cell.cs], ys[cell.r + cell.rs]
+
+
+def _crosses_grid(l: Line, ys: list[float], xs: list[float], m: float = 3) -> bool:
+    """Dòng chữ vượt qua một đường kẻ bên trong bảng: nhiều khả năng đã bị engine nối hai ô."""
+    return any(l.x + m < v < l.x1 - m for v in xs[1:-1]) or any(l.y + m < v < l.y1 - m for v in ys[1:-1])
+
+
+def _reocr_cells(ls: list[Line], ys, xs, cells, img_rgb, reocr, flt: _Filter) -> list[Line]:
+    """Nhận dạng lại các ô có dòng vượt qua đường kẻ, từ ảnh cắt của riêng ô đó (ô hàng/cột gộp được cắt cả vùng)."""
+    dirty = set()
+    for l in ls:
+        if not _crosses_grid(l, ys, xs): continue
+        for cell in cells:
+            x0, y0, x1, y1 = _cell_box(cell, ys, xs)
+            if l.x < x1 and l.x1 > x0 and l.y < y1 and l.y1 > y0:
+                dirty.add((cell.r, cell.c))
+    if not dirty or img_rgb is None:
+        return ls
+    out = list(ls)
+    for cell in cells:
+        if (cell.r, cell.c) not in dirty: continue
+        x0, y0, x1, y1 = _cell_box(cell, ys, xs)
+        ix0, iy0, ix1, iy1 = int(x0) + 3, int(y0) + 3, int(x1) - 3, int(y1) - 3
+        if ix1 - ix0 < 20 or iy1 - iy0 < 20: continue
+        crop = img_rgb[iy0:iy1, ix0:ix1]
+        new = []
+        for b in reocr(np.ascontiguousarray(crop)).blocks:
+            for nl in b.lines:
+                if not flt.keep(nl, table=True): continue
+                nl.x += ix0; nl.y += iy0
+                new.append(nl)
+        if not new: continue           # engine không đọc được gì: giữ kết quả cũ
+        out = [l for l in out if not (x0 <= l.cx < x1 and y0 <= l.cy < y1)] + new
+    return out
+
+
+_CIRC_BAD = re.compile(r"[(（{\[]\s*\d{0,2}|\d{2}|[Oo〇○]\d?")
+
+
+def _fix_circled(cells: list[Cell]) -> None:
+    """Cột đầu toàn mã ngắn kiểu '(1', '19', 'O1' (engine hay đọc ①②③ như vậy): đổi theo thứ tự hàng thành ①②③...
+    Điều kiện chặt: 2-20 ô thân bảng (rs=1), ngắn, không có ')' và ít nhất một ô mở bằng ngoặc; ngoài ra giữ nguyên."""
+    col = sorted((c for c in cells if c.c == 0 and c.r > 0 and c.text.strip()), key=lambda c: c.r)
+    if not 2 <= len(col) <= 20: return
+    ts = [c.text.strip() for c in col]
+    if any(c.rs != 1 or len(t) > 3 or ")" in t or "）" in t or not _CIRC_BAD.fullmatch(t) for c, t in zip(col, ts)): return
+    if not any(t[0] in "(（{[" for t in ts): return
+    for i, c in enumerate(col):
+        c.text = chr(0x2460 + i)
+
+
+def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
+           img_rgb: np.ndarray | None = None, reocr=None) -> Table | None:
     ls = [l for l in block.lines if flt.keep(l, table=True)]
     if not ls: return None
     g = _detect_grid(gray, block) if gray is not None else None
     if g:
         ys, xs, cells = _grid_cells(g)
+        if reocr is not None:
+            ls = _reocr_cells(ls, ys, xs, cells, img_rgb, reocr, flt)
         buckets: dict[tuple[int, int], list[Line]] = {}
         for l in ls:
             r, c = _idx(l.cy, ys), _idx(l.cx, xs)
@@ -319,6 +386,7 @@ def _table(block: Block, flt: _Filter, gray: np.ndarray | None) -> Table | None:
                 cl = [l for l in cl if not re.fullmatch(r"[\d０-９.,]{1,3}", l.text.strip())] or cl
             cell.text = _cell_text(cl)
             cell.conf = min((l.conf for l in cl), default=1.0)
+        _fix_circled(cells)
         return Table(len(ys) - 1, len(xs) - 1, cells)
     return _table_by_clustering(ls)
 
@@ -364,7 +432,8 @@ def _table_by_clustering(ls: list[Line]) -> Table | None:
 
 # ---------- trang ----------
 
-def build_page(page: Page, img_rgb: np.ndarray | None = None) -> list[Para | Table]:
+def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> list[Para | Table]:
+    """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại."""
     gray = None
     if img_rgb is not None:
         import cv2
@@ -384,7 +453,7 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None) -> list[Para | Tab
             if t: items.append((min(l.order for l in inside), t))
     for b in page.blocks:
         if b.kind == "table":
-            t = _table(b, flt, gray)
+            t = _table(b, flt, gray, img_rgb, reocr)
             if t: items.append((b.order, t))
         elif b.kind in _TEXT_KINDS:
             rest = [l for l in b.lines if id(l) not in taken]
