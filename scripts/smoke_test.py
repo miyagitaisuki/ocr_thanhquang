@@ -1,21 +1,30 @@
-"""Kiểm tra nhanh: vẽ một ảnh có chữ Nhật rồi OCR (chạy trong CI trước khi build exe)."""
+"""Kiểm tra nhanh trong CI: vẽ ảnh có chữ Nhật, OCR, so kết quả (tải/kiểm tra model luôn)."""
 import sys
-from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from ocrnhat import core
 
-img = Image.new("RGB", (900, 200), "white")
+TEXT = "日本語のテストです"
+img = Image.new("RGB", (1200, 260), "white")
 d = ImageDraw.Draw(img)
 font = None
-for f in ["C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/msgothic.ttc", "C:/Windows/Fonts/meiryo.ttc"]:
+for f in ["C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/msgothic.ttc",
+          "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]:
     try:
-        font = ImageFont.truetype(f, 60); break
+        font = ImageFont.truetype(f, 90)
+        print("font:", f); break
     except OSError:
         pass
 if font is None:
-    print("Không có font Nhật, bỏ qua kiểm tra nội dung"); sys.exit(0)
-d.text((30, 60), "日本語のテストです", fill="black", font=font)
-lines = core.ocr_image(np.array(img))
+    print("Không có font Nhật, chỉ kiểm tra model chạy được")
+    core.get_engine()(np.array(img)); sys.exit(0)
+d.text((40, 70), TEXT, fill="black", font=font)
+arr = np.array(img)
+raw = core._run(arr)
+print("raw:", ascii([l.text for l in raw]))
+lines = core.ocr_image(arr)
 txt = "".join(l.text for l in lines)
-print("OCR:", txt)
-assert "日本語" in txt, "OCR không nhận ra chữ Nhật"
+print("filtered:", ascii(txt))
+if "日本語" not in txt:
+    print("FAIL: OCR không nhận ra chữ Nhật"); sys.exit(1)
+print("OK")

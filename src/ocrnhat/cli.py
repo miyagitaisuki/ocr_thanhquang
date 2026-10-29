@@ -21,6 +21,11 @@ def collect(paths: list[str]) -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for st in (sys.stdout, sys.stderr):  # console Windows mặc định cp1252, tránh lỗi khi in tiếng Nhật
+        try:
+            st.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser(prog="ocrnhat", description="OCR PDF/ảnh, chỉ lấy tiếng Nhật.")
     ap.add_argument("inputs", nargs="+", help="PDF, ảnh hoặc thư mục")
     ap.add_argument("-o", "--out", default="ocr_output", help="thư mục kết quả")
