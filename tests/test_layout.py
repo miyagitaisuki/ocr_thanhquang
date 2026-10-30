@@ -94,3 +94,42 @@ def test_o_trong_co_net_chu_duoc_nhan_dang_lai():
     assert got[(1, 1)] == "依頼状"      # ô có nét chữ được nhận dạng lại
     assert crops                          # đã gọi engine với ảnh cắt
     assert got[(0, 0)] == "社外文書"     # dòng gốc giữ nguyên
+
+
+def _para_page(specs):
+    """specs: [(text, y)] cùng cỡ chữ 40 px, cùng bề ngang 480 px (chỉ khoảng cách dọc khác nhau)."""
+    lines = [Line(t, 100.0, float(y), 480.0, 40.0, 0.95, "", i) for i, (t, y) in enumerate(specs)]
+    return Page(1000, 800, [Block("text", 100, 20, 800, 760, lines)])
+
+
+def test_tieu_de_cung_co_chu_duoc_nhan_theo_khoang_trong():
+    # tiêu đề cùng cỡ chữ với thân bài, đứng riêng giữa hai khoảng trống lớn
+    page = _para_page([("第一章日本語の基本", 100), ("日本語の文章はこのように続きます", 180),
+                       ("同じ段落の二行目です", 236), ("同じ段落の三行目です", 292),
+                       ("次の段落が始まります", 372), ("次の段落の二行目です。", 428)])
+    paras = [i for i in build_page(page) if isinstance(i, Para)]
+    assert [(p.kind, p.text) for p in paras] == [
+        ("heading", "第一章日本語の基本"),
+        ("body", "日本語の文章はこのように続きます同じ段落の二行目です同じ段落の三行目です"),
+        ("body", "次の段落が始まります次の段落の二行目です。"),
+    ]
+
+
+def test_khoang_cach_dong_bat_thuong_ngat_doan():
+    # khoảng cách giữa hai đoạn lớn hơn hẳn khoảng cách dòng thường: phải tách đoạn
+    page = _para_page([("一行目の文章はここまでです", 100), ("二行目の文章も続いています", 156),
+                       ("三行目の文章もまだ続いています", 212), ("新しい段落の一行目です", 292),
+                       ("新しい段落の二行目です。", 348)])
+    paras = [i for i in build_page(page) if isinstance(i, Para)]
+    assert [p.text for p in paras] == [
+        "一行目の文章はここまでです二行目の文章も続いています三行目の文章もまだ続いています",
+        "新しい段落の一行目です新しい段落の二行目です。",
+    ]
+
+
+def test_khoang_cach_deu_nhau_khong_tach_doan():
+    # mọi dòng cách đều: không có khoảng trống nào đáng kể, không tách đoạn và không có tiêu đề
+    page = _para_page([("一行目の文章はここまでです", 100), ("二行目の文章も続いています", 156),
+                       ("三行目の文章もまだ続いています", 212), ("四行目の文章もまだ続いています", 268)])
+    paras = [i for i in build_page(page) if isinstance(i, Para)]
+    assert len(paras) == 1 and paras[0].kind == "body"
