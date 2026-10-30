@@ -1,0 +1,45 @@
+name: Build Windows exe (giao diện Qt, thử nghiệm)
+# Bản Qt song song với bản Tkinter (build-exe.yml). Chưa thay thế Tkinter cho đến khi ngang tính năng.
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Tải NDLOCR-Lite (commit đã ghim)
+        run: python scripts/fetch_ndlocr.py
+      - name: Cài thư viện (kèm PySide6 và PyInstaller)
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt pyinstaller
+          pip install -e ".[qt]"
+      - name: Test giao diện Qt
+        run: pytest -q tests/test_gui_qt.py tests/test_gui_qt_pdf.py tests/test_ui_logic.py
+      - name: Build exe (giao diện Qt)
+        run: >
+          pyinstaller --noconfirm --onedir --windowed --name OCR-Nhat-Qt
+          --paths src --paths vendor/ndlocr-lite/src
+          --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
+          --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
+          --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
+          --collect-all onnxruntime --collect-all docx --collect-all pip
+          --collect-all PySide6
+          run_gui_qt.py
+      - name: Tự kiểm exe Qt (mở cửa sổ, kiểm bốn mục)
+        shell: pwsh
+        run: |
+          & ./dist/OCR-Nhat-Qt/OCR-Nhat-Qt.exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw "exe Qt tự kiểm thất bại" }
+      - name: Kiểm OCR bằng pipeline (CLI của cùng nguồn)
+        run: python scripts/smoke_test.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OCR-Nhat-Qt
+          path: dist/OCR-Nhat-Qt

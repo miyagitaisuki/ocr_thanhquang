@@ -1,0 +1,25 @@
+name: Qt trên Windows (kiểm giao diện PySide6)
+# Chạy test giao diện Qt trên Windows thật (không chỉ Linux). Không đóng gói exe ở đây.
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  qt:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Cài thư viện (kèm PySide6)
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+          pip install -e ".[test,qt]"
+      - name: Test giao diện Qt và mục Công cụ PDF
+        run: pytest -q tests/test_gui_qt.py tests/test_gui_qt_pdf.py tests/test_ui_logic.py -rs
+      - name: Tự kiểm cửa sổ Qt (bốn mục)
+        run: python run_gui_qt.py --selftest

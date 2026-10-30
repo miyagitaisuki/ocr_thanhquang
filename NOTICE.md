@@ -32,6 +32,10 @@ Dùng kiến trúc và trọng số `vgg_seq2seq.pth` của **VietOCR** (pbcquoc
 - Chủ dự án xác nhận Apache-2.0 cho gói này. Ghi chú: file LICENSE trong gói ghi Apache-2.0, còn metadata ghi MIT.
 - Các file ONNX và từ điển được tải trong GUI (tab AI powered) từ chính repo này, kiểm SHA-256.
 
+## PySide6 (giao diện Qt, `OCR-Nhat-Qt.exe`)
+
+**PySide6** (Qt for Python) theo giấy phép **LGPL-3.0** (Qt Company / Qt Project). Dùng dạng thư viện động, không sửa Qt; người dùng có thể thay thế thư viện Qt trong thư mục exe. Gói dùng: PySide6-Essentials.
+
 ## Thành phần đóng gói trong bộ cài `OCR-Nhat-setup.exe`
 
 Bộ cài (exe CPU) chứa các thành phần sau. Mỗi thành phần theo giấy phép riêng; xem file LICENSE của dự án gốc.
