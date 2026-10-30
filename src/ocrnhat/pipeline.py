@@ -75,6 +75,22 @@ def parse_crop(spec: str | None) -> tuple[int, int, int, int] | None:
     return x0, y0, x1, y1
 
 
+def parse_crops(spec: str | None) -> list[tuple[int, int, int, int]] | None:
+    """Nhiều vùng cách nhau bằng ';': 'x0,y0,x1,y1;x0,y0,x1,y1'. Chuỗi rỗng -> None."""
+    if not spec or not spec.strip():
+        return None
+    return [parse_crop(part) for part in spec.split(";") if part.strip()] or None
+
+
+def normalize_regions(crop) -> list:
+    """crop có thể là None, một bộ 4 số, hoặc danh sách bộ 4 số. Trả về danh sách vùng (ít nhất một phần tử, None = cả trang)."""
+    if not crop:
+        return [None]
+    if isinstance(crop[0], int):
+        return [tuple(crop)]
+    return [tuple(r) for r in crop]
+
+
 def preprocess(img: np.ndarray, crop=None, upscale: float = 1.0) -> np.ndarray:
     """Cắt vùng rồi phóng to. Áp dụng cho cả ảnh OCR lẫn ảnh dựng docx/rà soát (cùng hệ tọa độ)."""
     if crop:
@@ -166,7 +182,10 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
     dev, dev_why = resolve_device(device)
     if progress:
         progress(0, total, f"Engine: {engine} ({why}); thiết bị: {dev} ({dev_why})")
-    pre_tag = f"c{','.join(map(str, crop))}" if crop else ""
+    regions = normalize_regions(crop)
+    multi = len(regions) > 1
+    pre_tag = ("c" + ";".join(",".join(map(str, r)) for r in regions)) if regions[0] else ""
+    ukey = (lambda pno, ri: pno * 100 + ri) if multi else (lambda pno, ri: pno)   # khóa cache/OCR cho từng vùng
     if upscale and upscale != 1.0:
         pre_tag += f"u{upscale:g}"
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
@@ -215,12 +234,14 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
         return [(pno, got[pno], img) for pno, img in items]
 
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
+    last_pno = None
     page_lines: list[tuple[int, list]] = []   # rà soát trong GUI: tọa độ từng dòng (hệ ảnh đã cắt/phóng to)
     suspect_rows: list[tuple[int, str]] = []
     # Cửa sổ trượt: tối đa 2*n_workers trang đang chờ, để không giữ cả file trong RAM
     with ThreadPoolExecutor(max_workers=n_workers) as pool:
         pending = []
-        feed = ((pno, preprocess(img, crop, upscale)) for pno, img in iter_pages(path, dpi, pages))
+        feed = ((ukey(pno, ri), preprocess(img, reg, upscale))
+                for pno, img in iter_pages(path, dpi, pages) for ri, reg in enumerate(regions))
 
         def groups():
             chunk = []
@@ -248,11 +269,20 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
         while pending:
             fut = pending.pop(0)               # giữ thứ tự trang
             submit_next()
-            for pno, page, img in fut.result():
+            for key, page, img in fut.result():
+                pno, ri = (key // 100, key % 100) if multi else (key, 0)
+                reg = regions[ri]
+                ox, oy = (reg[0], reg[1]) if reg else (0, 0)
+                up = upscale or 1.0
                 kana_pno[0] = pno
                 items = build_page(page, img, reocr if cell_reocr else None, kana_fn, lang=lang)
-                page_lines.append((pno, [(l.x, l.y, l.x1, l.y1, float(l.conf), l.text)
-                                         for b in page.blocks for l in b.lines if l.text.strip()]))
+                # tọa độ dòng đổi về hệ trang nguồn (cộng vị trí vùng, chia phóng to) để rà soát vẽ đúng
+                lines = [(ox + l.x / up, oy + l.y / up, ox + l.x1 / up, oy + l.y1 / up, float(l.conf), l.text)
+                         for b in page.blocks for l in b.lines if l.text.strip()]
+                if page_lines and page_lines[-1][0] == pno:
+                    page_lines[-1][1].extend(lines)
+                else:
+                    page_lines.append((pno, lines))
                 if suspect:
                     suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
                 if review:
@@ -261,10 +291,19 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
                     sections.append(sec); n_low += low
                 n_tables += sum(isinstance(i, Table) for i in items)
                 results.append((pno, items))
-                done += 1
-                if progress:
-                    progress(done, total, f"{path.name} - trang {pno}")
+                if pno != last_pno:   # đếm trang, không đếm vùng
+                    done += 1
+                    last_pno = pno
+                    if progress:
+                        progress(done, total, f"{path.name} - trang {pno}")
     docx_path = out_dir / f"{stem}.docx"
+    merged: list = []   # nhiều vùng của cùng một trang nối thành một mục trang
+    for pno, items in results:
+        if merged and merged[-1][0] == pno:
+            merged[-1][1].extend(items)
+        else:
+            merged.append((pno, list(items)))
+    results = merged
     if results:
         if merge_pages:
             from .layout import merge_pages as _merge

@@ -78,7 +78,8 @@ def read_options(get: Callable[[str, Any], Any], dev_map: Mapping[str, str] | No
     if upscale <= 0:
         raise ValueError("Phóng to phải lớn hơn 0.")
     try:
-        crop = pipeline.parse_crop(get("crop", ""))
+        crops = pipeline.parse_crops(get("crop", ""))
+        crop = None if not crops else (crops[0] if len(crops) == 1 else crops)   # một vùng giữ dạng bộ 4 số
     except ValueError:
         raise ValueError("Vùng cắt sai. Nhập theo thứ tự: trái, trên, phải, dưới (pixel).") from None
     return dict(

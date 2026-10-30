@@ -121,3 +121,24 @@ def test_ket_qua_co_toa_do_dong_de_ra_soat(fake_engine, pdf, tmp_path):
     x, y, x1, y1, conf, text = lines[0]
     assert text == "東京です" and conf == pytest.approx(0.9)
     assert x1 > x and y1 > y
+
+
+def test_nhieu_vung_noi_ket_qua_va_doi_toa_do_ve_trang_goc(fake_engine, pdf, tmp_path):
+    """Hai vùng: mỗi vùng OCR riêng; kết quả một trang nối theo thứ tự vùng; tọa độ dòng cộng vị trí vùng."""
+    regions = [(10, 20, 500, 600), (300, 400, 700, 800)]
+    r = pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, crop=regions)
+    assert r["pages"] == 1                       # đếm trang, không đếm vùng
+    (page_no, lines), = r["page_lines"]
+    assert page_no == 1 and len(lines) == 2
+    xs = sorted((x, y) for x, y, *_ in lines)
+    assert xs == [(10 + 10, 20 + 10), (300 + 10, 400 + 10)]   # fake engine trả dòng tại (10, 10) trong mỗi vùng
+    from docx import Document
+    text = "\n".join(p.text for p in Document(r["docx"]).paragraphs)
+    assert text.count("東京です") == 2
+
+
+def test_parse_crops_nhieu_vung():
+    assert pipeline.parse_crops("1,2,30,40;50,60,70,80") == [(1, 2, 30, 40), (50, 60, 70, 80)]
+    assert pipeline.parse_crops("") is None
+    with pytest.raises(ValueError):
+        pipeline.parse_crops("1,2,30,40;300,20,10,400")

@@ -105,10 +105,11 @@ def drag_rect(p0: tuple[float, float], p1: tuple[float, float], full_w: int, ful
 
 
 class PageView(QWidget):
-    """Ảnh trang nguồn. mode 'crop': kéo chuột để chọn vùng đọc. mode 'view': vẽ khung các dòng,
-    dòng độ tin cậy thấp tô đỏ; bấm vào khung để chọn dòng (phát lineClicked)."""
-    cropChanged = Signal(int, int, int, int)
+    """Ảnh trang nguồn. mode 'crop': chọn một hoặc nhiều vùng đọc (kéo chuột; giữ Shift để thêm vùng; kéo tay nắm góc để
+    đổi kích thước). mode 'view': vẽ khung các dòng, dòng độ tin cậy thấp tô đỏ, bấm khung để chọn dòng."""
+    cropsChanged = Signal(object)   # danh sách vùng (x0, y0, x1, y1) theo trang nguồn
     lineClicked = Signal(int)
+    MAX_REGIONS = 10
 
     def __init__(self, mode: str = "view", min_size: tuple[int, int] = (360, 300)):
         super().__init__()
@@ -118,11 +119,12 @@ class PageView(QWidget):
         self.lines: list[tuple[float, float, float, float, float, str]] = []   # hệ trang nguồn
         self.thr = 0.8
         self.selected = -1
-        self.crop: tuple[int, int, int, int] | None = None
+        self.crops: list[tuple[int, int, int, int]] = []
         self._drag: tuple[tuple[float, float], tuple[float, float]] | None = None
-        self._corner: str | None = None   # góc đang kéo để đổi kích thước vùng chọn
+        self._drag_append = False          # kéo với Shift: thêm vùng; không Shift: thay các vùng cũ
+        self._handle: tuple[int, str] | None = None   # (chỉ số vùng, góc) đang kéo tay nắm
         self.setMinimumSize(*min_size)
-        self.label = ""   # chữ nhãn vẽ trên vùng chọn (chế độ crop), ví dụ "Vùng chọn OCR 01 (…)"
+        self.label = ""
 
     def set_image(self, img: QImage | None, w: int = 0, h: int = 0):
         self.image, self.full = img, (w, h)
@@ -136,8 +138,8 @@ class PageView(QWidget):
         self.selected = idx
         self.update()
 
-    def set_crop(self, rect):
-        self.crop = rect
+    def set_crops(self, crops):
+        self.crops = [tuple(c) for c in (crops or [])][: self.MAX_REGIONS]
         self.update()
 
     def _layout(self) -> tuple[float, float, float]:
@@ -166,6 +168,7 @@ class PageView(QWidget):
         if self.image is None:
             p.setPen(QColor("#EEEEEE"))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Chưa có ảnh trang để xem.")
+            p.end()
             return
         ox, oy, sc = self._layout()
         w, h = self.full
@@ -178,28 +181,27 @@ class PageView(QWidget):
                 color = QColor("#D00000") if low else QColor("#1F6FEB")
                 p.setPen(QPen(color, 3 if i == self.selected else 2))
                 p.drawRect(QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc))
-        rect = self.crop
-        if self._drag is not None:
-            r = drag_rect(*self._drag, w, h)
-            rect = r or rect
-        if rect and self.mode == "crop":
-            x0, y0, x1, y1 = rect
-            p.setPen(QPen(QColor("#F2A03D"), 3))
-            box = QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc)
-            p.setBrush(QBrush(QColor(242, 160, 61, 40)))
-            p.drawRect(box)
-            p.setPen(QPen(QColor("#FFFFFF"), 1))
-            p.setBrush(QBrush(QColor("#F2A03D")))
-            for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):   # bốn tay nắm góc
-                hx, hy = ox + cx * sc, oy + cy * sc
-                p.drawEllipse(QRectF(hx - 5, hy - 5, 10, 10))
-            p.setPen(QPen(QColor("#F2A03D"), 1))
-            p.setBrush(QBrush(QColor("#F2A03D")))
-            chip = f"Vùng chọn OCR 01 ({x0}, {y0}, {x1}, {y1})"
-            fm = p.fontMetrics()
-            p.drawRect(QRectF(box.x(), box.y() - 20, fm.horizontalAdvance(chip) + 14, 18))
-            p.setPen(QPen(QColor("#FFFFFF")))
-            p.drawText(QRectF(box.x() + 7, box.y() - 20, 2000, 18), Qt.AlignmentFlag.AlignVCenter, chip)
+        if self.mode == "crop":
+            rects = list(self.crops)
+            if self._drag is not None:
+                r = drag_rect(*self._drag, w, h)
+                if r:
+                    rects = rects + [r] if self._drag_append else [r]
+            for n, (x0, y0, x1, y1) in enumerate(rects, 1):
+                box = QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc)
+                p.setPen(QPen(QColor("#F2A03D"), 3))
+                p.setBrush(QBrush(QColor(242, 160, 61, 40)))
+                p.drawRect(box)
+                p.setPen(QPen(QColor("#FFFFFF"), 1))
+                p.setBrush(QBrush(QColor("#F2A03D")))
+                for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):   # bốn tay nắm góc
+                    p.drawEllipse(QRectF(ox + cx * sc - 5, oy + cy * sc - 5, 10, 10))
+                chip = f"Vùng chọn OCR {n:02d} ({x0}, {y0}, {x1}, {y1})"
+                fm = p.fontMetrics()
+                p.setPen(QPen(QColor("#F2A03D"), 1))
+                p.drawRect(QRectF(box.x(), box.y() - 20, fm.horizontalAdvance(chip) + 14, 18))
+                p.setPen(QPen(QColor("#FFFFFF")))
+                p.drawText(QRectF(box.x() + 7, box.y() - 20, 2000, 18), Qt.AlignmentFlag.AlignVCenter, chip)
         p.end()
 
     def mousePressEvent(self, e):
@@ -208,11 +210,15 @@ class PageView(QWidget):
         pt = self._to_page(e.position())
         if self.mode == "crop":
             _ox, _oy, sc = self._layout()
-            corner = corner_at(self.crop, pt, 8 / sc) if self.crop else None   # tay nắm: 8 px trên màn hình
-            if corner:
-                self._corner = corner
-            else:
-                self._drag = (pt, pt)
+            tol = 8 / sc   # tay nắm bắt được trong 8 px trên màn hình
+            for i in reversed(range(len(self.crops))):   # vùng vẽ sau nằm trên cùng
+                corner = corner_at(self.crops[i], pt, tol)
+                if corner:
+                    self._handle = (i, corner)
+                    self.update()
+                    return
+            self._drag = (pt, pt)
+            self._drag_append = bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             self.update()
         else:
             hit = -1
@@ -227,25 +233,33 @@ class PageView(QWidget):
             self.lineClicked.emit(hit)
 
     def mouseMoveEvent(self, e):
-        if self.mode == "crop" and self._corner and self.crop:
-            self.crop = resize_rect(self.crop, self._corner, self._to_page(e.position()), *self.full)
-            self.cropChanged.emit(*self.crop)
+        if self.mode != "crop":
+            return
+        if self._handle is not None:
+            i, corner = self._handle
+            self.crops[i] = resize_rect(self.crops[i], corner, self._to_page(e.position()), *self.full)
+            self.cropsChanged.emit(list(self.crops))
             self.update()
-        elif self.mode == "crop" and self._drag is not None:
+        elif self._drag is not None:
             self._drag = (self._drag[0], self._to_page(e.position()))
             self.update()
 
     def mouseReleaseEvent(self, e):
-        if self.mode == "crop" and self._corner:
-            self._corner = None
+        if self.mode != "crop":
+            return
+        if self._handle is not None:
+            self._handle = None
             self.update()
             return
-        if self.mode == "crop" and self._drag is not None:
+        if self._drag is not None:
             rect = drag_rect(self._drag[0], self._to_page(e.position()), *self.full)
             self._drag = None
             if rect:
-                self.crop = rect
-                self.cropChanged.emit(*rect)
+                if self._drag_append and len(self.crops) < self.MAX_REGIONS:
+                    self.crops = self.crops + [rect]
+                elif not self._drag_append:
+                    self.crops = [rect]
+                self.cropsChanged.emit(list(self.crops))
             self.update()
 
 
@@ -378,16 +392,12 @@ class ResultsBox(QGroupBox):
         else:
             self.view.set_image(got[0], got[1], got[2])
         entries = next((lines for n, lines in r.get("page_lines", []) if n == pno), None)
-        crop, up, thr = r.get("crop"), r.get("upscale") or 1.0, r.get("conf_threshold", 0.8)
+        thr = r.get("conf_threshold", 0.8)
         if entries is None:
             self._line_data = []
             self.view.set_lines([], thr)
         else:
-            self._line_data = []
-            for x, y, x1, y1, conf, text in entries:
-                sx0, sy0 = to_source(x, y, crop, up)
-                sx1, sy1 = to_source(x1, y1, crop, up)
-                self._line_data.append((sx0, sy0, sx1, sy1, conf, text))
+            self._line_data = [(x, y, x1, y1, conf, text) for x, y, x1, y1, conf, text in entries]   # đã ở hệ trang nguồn
             self.view.set_lines(self._line_data, thr)
         self._fill_lines()
         self.view.thr = thr

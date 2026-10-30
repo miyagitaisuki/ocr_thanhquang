@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--device", default="auto", choices=gpu_mod.DEVICES, help="auto | cpu | cuda (GPU NVIDIA, cần onnxruntime-gpu)")
     ap.add_argument("--no-cell-reocr", action="store_true", help="không nhận dạng lại các ô bảng có dòng vượt đường kẻ")
-    ap.add_argument("--crop", default="", help="cắt vùng trang trước khi OCR: x0,y0,x1,y1 (pixel)")
+    ap.add_argument("--crop", default="", help="cắt vùng trang trước khi OCR: x0,y0,x1,y1 (pixel); nhiều vùng cách bằng \";\"")
     ap.add_argument("--upscale", type=float, default=1.0, help="phóng to ảnh trước khi OCR, ví dụ 2 cho ảnh chữ nhỏ")
     ap.add_argument("--suspect", action="store_true", help="dò chữ nghi nhận sai bằng BERT tiếng Nhật, ghi *_suspect.txt (chỉ đánh dấu; cần pip install \".[suspect]\")")
     ap.add_argument("--kana-reader", default="", choices=["", "tesseract", "template"], help="thử nghiệm: đọc ô bảng chữ kana bằng tesseract (cần lệnh tesseract + dữ liệu jpn) hoặc template (so khớp mẫu với IPAGothic); ô không chắc để trống, xuất file rà soát *_kana_review.html")
@@ -62,7 +62,8 @@ def main(argv: list[str] | None = None) -> int:
     if not a.inputs:
         ap.error("cần ít nhất một file PDF/ảnh hoặc thư mục (xem --help)")
     try:
-        crop = pipeline.parse_crop(a.crop)
+        crops = pipeline.parse_crops(a.crop)
+        crop = crops[0] if crops and len(crops) == 1 else crops
     except ValueError as e:
         ap.error(str(e))
     files = collect(a.inputs)

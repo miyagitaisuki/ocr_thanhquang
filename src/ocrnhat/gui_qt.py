@@ -94,6 +94,11 @@ class FileList(QListWidget):
         e.acceptProposedAction()
 
 
+def crops_text(rects) -> str:
+    """Danh sách vùng -> chuỗi ô nhập: 'x0,y0,x1,y1;x0,y0,x1,y1'."""
+    return ";".join(",".join(str(v) for v in r) for r in rects)
+
+
 class FileRow(QWidget):
     """Một dòng file trong danh sách: ô PDF/ảnh, tên, thư mục, nhãn trạng thái (pill)."""
     LABELS = {"wait": "Chờ xử lý", "run": "Đang xử lý", "done": "Xong", "stop": "Dừng", "error": "Lỗi"}
@@ -189,7 +194,7 @@ class OcrPage(QWidget):
         self.image_info = QLabel("")
         self.image_info.setObjectName("hint")
         pv.addWidget(self.image_info)
-        hint = QLabel("Kéo chuột trên ảnh để chọn vùng áp dụng OCR (mọi trang, mọi file trong danh sách).")
+        hint = QLabel("Kéo chuột để chọn vùng; giữ Shift để thêm vùng thứ hai trở lên. Vùng áp dụng cho mọi trang của mọi file.")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         pv.addWidget(hint)
@@ -268,7 +273,7 @@ class OcrPage(QWidget):
         self.review = QCheckBox("Tạo file so sánh để kiểm tra (*_review.html)")
         self.conf = QLineEdit("0.8")
         self.conf.setToolTip("Dòng có độ chắc chắn thấp hơn mức này sẽ bị tô đỏ trong file so sánh (mặc định 0,8).")
-        for label, widget in (("Độ phân giải (DPI)", self.dpi), ("Phóng to ảnh", self.upscale), ("Chỉ đọc một vùng (tự điền khi kéo chuột)", self.crop),
+        for label, widget in (("Độ phân giải (DPI)", self.dpi), ("Phóng to ảnh", self.upscale), ("Vùng đọc (x0,y0,x1,y1; nhiều vùng cách bằng ;)", self.crop),
                               ("Đọc bảng chữ kana (thử nghiệm)", self.kana)):
             agrid.addWidget(QLabel(label))
             agrid.addWidget(widget)
@@ -319,7 +324,7 @@ class OcrPage(QWidget):
         self.btn_next.clicked.connect(lambda: self.crop_page.setValue(self.crop_page.value() + 1))
         self.btn_crop_clear.clicked.connect(lambda: self.crop.setText(""))
         self.dpi.currentIndexChanged.connect(self._on_dpi_changed)
-        self.crop_view.cropChanged.connect(lambda *r: self.crop.setText(",".join(map(str, r))))
+        self.crop_view.cropsChanged.connect(lambda rs: self.crop.setText(crops_text(rs)))
         self.crop.textChanged.connect(self._sync_crop_view)
         self.crop_src.currentIndexChanged.connect(lambda _=0: self._load_crop_page())
         self.crop_page.valueChanged.connect(lambda _=0: self._load_crop_page())
@@ -442,20 +447,20 @@ class OcrPage(QWidget):
         old = self._dpi_prev
         self._dpi_prev = new
         try:
-            rect = pipeline.parse_crop(self.crop.text())
+            rects = pipeline.parse_crops(self.crop.text())
         except ValueError:
-            rect = None
-        if rect and old:
+            rects = None
+        if rects and old:
             k = new / old
-            self.crop.setText(",".join(str(round(v * k)) for v in rect))
+            self.crop.setText(crops_text([tuple(round(v * k) for v in r) for r in rects]))
         self._load_crop_page()
 
     def _sync_crop_view(self):
         try:
-            rect = pipeline.parse_crop(self.crop.text())
+            rects = pipeline.parse_crops(self.crop.text())
         except ValueError:
-            rect = None
-        self.crop_view.set_crop(rect)
+            rects = None
+        self.crop_view.set_crops(rects or [])
 
     def pick_out(self):
         d = QFileDialog.getExistingDirectory(self, "Chọn thư mục lưu kết quả")

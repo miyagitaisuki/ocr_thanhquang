@@ -93,8 +93,8 @@ def test_vung_cat_trong_o_nhap_khop_khung_tren_anh(tmp_path, store):
     w = gui_qt.MainWindow()
     w.ocr._add([src])
     w.ocr.crop.setText("10,20,300,400")
-    assert w.ocr.crop_view.crop == (10, 20, 300, 400)   # ô nhập vẽ thành khung
-    w.ocr.crop_view.cropChanged.emit(5, 6, 50, 60)      # kéo chuột ghi ngược vào ô nhập
+    assert w.ocr.crop_view.crops == [(10, 20, 300, 400)]   # ô nhập vẽ thành khung
+    w.ocr.crop_view.cropsChanged.emit([(5, 6, 50, 60)])     # kéo chuột ghi ngược vào ô nhập
     assert w.ocr.crop.text() == "5,6,50,60"
     assert w.ocr.options()["crop"] == (5, 6, 50, 60)
     w.close()
@@ -158,4 +158,45 @@ def test_doi_dpi_nhan_vung_cat_de_giu_dung_phan_trang(store):
     w.ocr.dpi.setCurrentIndex(w.ocr.dpi.findData(300))   # 200 -> 300 dpi: nhân 1,5
     assert w.ocr.crop.text() == "150,150,300,300"
     assert w.ocr.options()["dpi"] == 300
+    w.close()
+
+
+def _mouse(kind, x, y, shift=False):
+    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+    mods = Qt.KeyboardModifier.ShiftModifier if shift else Qt.KeyboardModifier.NoModifier
+    etype = {"press": QEvent.Type.MouseButtonPress, "move": QEvent.Type.MouseMove,
+             "release": QEvent.Type.MouseButtonRelease}[kind]
+    return QMouseEvent(etype, QPointF(x, y), QPointF(x, y), Qt.MouseButton.LeftButton,
+                       Qt.MouseButton.LeftButton, mods)
+
+
+def test_chuot_them_vung_bang_shift_va_thay_vung_khi_khong_shift():
+    from PySide6.QtGui import QImage
+    from ocrnhat.gui_qt_extra import PageView
+    pv = PageView(mode="crop", min_size=(300, 300))
+    pv.resize(300, 300)
+    pv.set_image(QImage(300, 300, QImage.Format.Format_RGB888), 300, 300)
+    got = []
+    pv.cropsChanged.connect(lambda rs: got.append(list(rs)))
+    pv.mousePressEvent(_mouse("press", 10, 10, shift=True))
+    pv.mouseMoveEvent(_mouse("move", 60, 60, shift=True))
+    pv.mouseReleaseEvent(_mouse("release", 60, 60, shift=True))
+    pv.mousePressEvent(_mouse("press", 100, 100, shift=True))
+    pv.mouseMoveEvent(_mouse("move", 150, 150, shift=True))
+    pv.mouseReleaseEvent(_mouse("release", 150, 150, shift=True))
+    assert len(pv.crops) == 2                    # Shift: thêm vùng
+    pv.mousePressEvent(_mouse("press", 200, 200))
+    pv.mouseMoveEvent(_mouse("move", 250, 250))
+    pv.mouseReleaseEvent(_mouse("release", 250, 250))
+    assert pv.crops == [(200, 200, 250, 250)]     # không Shift: thay mọi vùng cũ
+    assert got and len(got[-1]) == 1
+
+
+def test_o_nhap_nhieu_vung_khop_khung(store):
+    w = gui_qt.MainWindow()
+    w.ocr.crop.setText("10,10,100,100;150,150,250,250")
+    assert w.ocr.crop_view.crops == [(10, 10, 100, 100), (150, 150, 250, 250)]
+    assert w.ocr.options()["crop"] == [(10, 10, 100, 100), (150, 150, 250, 250)]
     w.close()
