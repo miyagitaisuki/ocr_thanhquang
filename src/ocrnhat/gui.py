@@ -466,7 +466,14 @@ class App(_CatMixin, _Base):
         win = canvas.create_window((0, 0), window=page, anchor="nw")
         page.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
-        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+        def _wheel(e, step=None):
+            # chuột đang ở ô có tự cuộn (bảng, ô chọn, ô nhập, chữ) thì để widget đó cuộn, không cuộn cả trang
+            if isinstance(e.widget, (ttk.Treeview, ttk.Combobox, ttk.Spinbox, ttk.Entry, tk.Text, tk.Listbox)):
+                return
+            canvas.yview_scroll(step if step is not None else (-1 if e.delta > 0 else 1), "units")
+        canvas.bind_all("<MouseWheel>", _wheel)   # Windows, macOS
+        canvas.bind_all("<Button-4>", lambda e: _wheel(e, -1))   # Linux
+        canvas.bind_all("<Button-5>", lambda e: _wheel(e, 1))
 
         self.nb = GradientNotebook(page)
         self.nb.pack(fill="both", expand=True)
@@ -1217,7 +1224,7 @@ class App(_CatMixin, _Base):
         s.configure("Card.TLabel", background=pal["CARD"], foreground=pal["TEXT"])
         s.configure("Card.TCheckbutton", background=pal["CARD"], foreground=pal["TEXT"])
         s.configure("Muted.TLabel", background=pal["CARD"], foreground=pal["MUTED"])
-        s.configure("Hint.TLabel", background=pal["CARD"], foreground=pal["MUTED"])
+        s.configure("Hint.TLabel", background=pal["CARD"], foreground=pal["MUTED"], wraplength=380)   # gợi ý cột phải tự xuống dòng
         s.configure("Status.TLabel", background=pal["BG"], foreground=pal["TEXT"])
         s.configure("TNotebook", background=pal["BG"], borderwidth=0)
         s.configure("TNotebook.Tab", padding=(14, 6), background=pal["HEAD"], foreground=pal["TEXT"])
@@ -1423,6 +1430,18 @@ class App(_CatMixin, _Base):
                     cell_reocr=self._var("cell_reocr", True).get(), use_cache=self._var("use_cache", True).get(),
                     kana_reader=next(k for k, v in self.KANA_LABELS.items() if v == self._var("kana", "").get()))
 
+    def _engine_problem(self, opts: dict) -> str | None:
+        """Lý do công cụ đã chọn chưa dùng được (thiếu model), None nếu chạy được."""
+        from .engines import paddle, viet
+        key, lang = opts["engine"], opts["lang"]
+        if key == "auto":   # auto chỉ kiểm các công cụ cần model; tiếng Nhật và mọi ngôn ngữ để engine tự chọn
+            key = {"en": "paddle", "zh": "paddle", "vi": "ocr_vi"}.get(lang)
+        cls = {"paddle": paddle.PaddleEngine, "ocr_vi": viet.VietnameseEngine}.get(key)
+        if cls is None:
+            return None
+        ok, why = cls.is_available()
+        return None if ok else f"Chưa dùng được {self.ENGINE_LABELS[key]} vì {why}"
+
     def start(self):
         if self.worker and self.worker.is_alive():
             return
@@ -1436,6 +1455,11 @@ class App(_CatMixin, _Base):
             opts = self._read_options()
         except ValueError as e:
             messagebox.showerror("OCR", str(e)); return
+        why = self._engine_problem(opts)
+        if why:
+            self.nb.select(self.tab_ai)
+            messagebox.showwarning("OCR", why + "\nTab Mô hình AI đã mở để tải mô hình, hoặc chọn công cụ khác.")
+            return
         self.statuses = ["Chờ"] * len(self.files)
         self._redraw()
         self.results = []
@@ -1447,7 +1471,7 @@ class App(_CatMixin, _Base):
         self.worker = threading.Thread(target=self.run_job, args=args, daemon=True); self.worker.start()
 
     def run_job(self, files, out, pages, opts):
-        reviews, errors = [], 0
+        reviews, errors, error_list = [], 0, []
         for i, f in enumerate(files):
             if self.cancel.is_set():
                 break
@@ -1464,17 +1488,20 @@ class App(_CatMixin, _Base):
                     reviews.append(r["review"])
             except Exception as e:  # một file lỗi không làm dừng các file còn lại
                 errors += 1
+                error_list.append(f"{f.name}: {e}")
                 log.exception("Không xử lý được %s", f)
-                self.q.put(("file", (i, "Lỗi")))
+                self.q.put(("file", (i, f"Lỗi: {str(e)[:60]}")))
         self.q.put(("results", list(self.results)))
         if self.cancel.is_set():
             msg = "Đã dừng."
         else:
-            msg = f"Xong. Kết quả ở: {out}"
+            where = Path(self.results[-1][1]["docx"]).parent if self.results else (out or files[0].parent)
+            msg = f"Xong. Kết quả ở: {where}"
             if reviews:
                 msg += "\nFile so sánh: " + ", ".join(reviews)
         if errors:
             msg += f"\nCó {errors} file lỗi. Chi tiết trong nhật ký: {LOG_FILE}"
+            msg += "".join(f"\n  · {x}" for x in error_list[:3])
         self.q.put(("done", msg))
 
     def _hardware_worker(self):
