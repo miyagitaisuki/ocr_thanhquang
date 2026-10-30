@@ -778,7 +778,6 @@ class App(_CatMixin, _Base):
     def _tab_pdf(self):
         self._tab_extract()
         groups = (
-            ("Cắt PDF", ("Tách theo trang", "Tách theo bookmark", "Tách theo dung lượng")),
             ("Ghép PDF", ("Ghép xen kẽ", "Ghép nhiều file", "Chèn trang lặp lại")),
             ("Khác", ("Xoay trang", "Nén PDF", "Tự động theo thư mục")),
         )
@@ -837,6 +836,19 @@ class App(_CatMixin, _Base):
         ttk.Label(run, textvariable=self.pdfx_status, style="Status.TLabel", wraplength=640, justify="left").pack(side="left", padx=12)
         cfg.columnconfigure(1, weight=1)
 
+        split = self._card(self.tab_pdf, "Tách PDF")
+        self._row(split, 0, "Kiểu tách", ttk.Combobox(split, textvariable=self._var("pdfx_split", self.SPLIT_LABELS["pages"]),
+                                                       values=list(self.SPLIT_LABELS.values()), state="readonly", width=INPUT_W))
+        Tip(split.grid_slaves(row=0, column=1)[0], "Theo trang: mỗi file một số trang cố định. Theo bookmark: mỗi mục cấp 1 là một file. Theo dung lượng: gộp trang liên tiếp, mỗi file không quá giới hạn.")
+        self._row(split, 1, "Số trang / MB", ttk.Entry(split, textvariable=self._var("pdfx_split_val", "1"), width=INPUT_W))
+        ttk.Label(split, text="Theo trang: số trang mỗi file. Theo dung lượng: MB tối đa mỗi file. Bookmark: không dùng.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(split, text="Dùng chung thư mục lưu, ghi đè, nén và bookmark ở thẻ “Cài đặt trích xuất”.", style="Hint.TLabel").grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self.pdfx_split_btn = GradientButton(split, text="▶  Tách file", style="Run.TButton", command=self._pdfx_split_run, width=HEADER_BTN_W)
+        self.pdfx_split_btn.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        split.columnconfigure(1, weight=1)
+
+    SPLIT_LABELS = {"pages": "Theo số trang", "bookmark": "Theo bookmark cấp 1", "size": "Theo dung lượng tối đa"}
+
     def _pdfx_add(self):
         for f in map(Path, filedialog.askopenfilenames(filetypes=[("PDF", "*.pdf")])):
             if any(f == g for g, _ in self.pdfx_items):
@@ -878,22 +890,49 @@ class App(_CatMixin, _Base):
         if not spec:
             messagebox.showinfo("Trích xuất trang", "Nhập trang cần lấy, ví dụ 2 hoặc 5-23 hoặc 2,5-7,12-.")
             return
-        opts = pe.ExtractOptions(
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_start(lambda f: pe.extract_pages(f, spec, out, opts), "Đang trích xuất")
+
+    def _pdfx_split_run(self):
+        if not self.pdfx_items:
+            messagebox.showinfo("Tách PDF", "Thêm ít nhất một file PDF.")
+            return
+        label = self._var("pdfx_split", self.SPLIT_LABELS["pages"]).get()
+        mode = next(k for k, v in self.SPLIT_LABELS.items() if v == label)
+        raw = self._var("pdfx_split_val", "1").get().strip()
+        try:
+            value = None if mode == "bookmark" else (int(raw) if mode == "pages" else float(raw))
+        except ValueError:
+            messagebox.showinfo("Tách PDF", "Số trang hoặc dung lượng (MB) phải là số.")
+            return
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_start(lambda f: pe.split_pdf(f, mode, value, out, opts), "Đang tách")
+
+    def _pdfx_options(self):
+        return pe.ExtractOptions(
             separate=self._var("pdfx_separate", False).get(), overwrite=self._var("pdfx_overwrite", False).get(),
             compress=self._var("pdfx_compress", True).get(), keep_bookmarks=not self._var("pdfx_nobm", False).get(),
             pdf_version=self._var("pdfx_version", "1.5").get())
-        out = self._var("pdfx_out", "").get().strip()
-        self.pdfx_btn.config(state="disabled")
-        threading.Thread(target=self._pdfx_worker, args=([f for f, _ in self.pdfx_items], spec, out, opts), daemon=True).start()
 
-    def _pdfx_worker(self, files, spec, out, opts):
+    def _pdfx_out(self):
+        return Path(self._var("pdfx_out", "").get().strip()) if self._var("pdfx_out", "").get().strip() else None
+
+    def _pdfx_start(self, task, verb: str):
+        """Chạy task(file) cho từng file trong danh sách, ở luồng nền. Hai nút đều khóa cho đến khi xong."""
+        self.pdfx_btn.config(state="disabled"); self.pdfx_split_btn.config(state="disabled")
+        files = [f for f, _ in self.pdfx_items]
+        threading.Thread(target=self._pdfx_worker, args=(files, task, verb), daemon=True).start()
+
+    def _pdfx_worker(self, files, task, verb):
         done, errors = [], []
         for i, f in enumerate(files, 1):
-            self.q.put(("pdfx", f"[{i}/{len(files)}] Đang trích xuất {f.name}…"))
+            self.q.put(("pdfx", f"[{i}/{len(files)}] {verb} {f.name}…"))
             try:
-                done += pe.extract_pages(f, spec, Path(out) if out else None, opts)
+                done += task(f)
             except Exception as e:   # một file lỗi không dừng các file còn lại
-                log.exception("Trích xuất lỗi %s", f)
+                log.exception("Lỗi PDF %s", f)
                 errors.append(f"{f.name}: {e}")
         msg = f"Xong: {len(done)} file PDF" + (f", lưu tại {done[-1].parent}" if done else "") + "."
         if errors:
@@ -1390,7 +1429,7 @@ class App(_CatMixin, _Base):
                 elif k == "pdfx":
                     self.pdfx_status.set(v)
                 elif k == "pdfx_done":
-                    self.pdfx_status.set(v); self.pdfx_btn.config(state="normal")
+                    self.pdfx_status.set(v); self.pdfx_btn.config(state="normal"); self.pdfx_split_btn.config(state="normal")
                 elif k == "packdone":
                     self.pack_pb.stop(); self.pack_pb.pack_forget()
                     self.pack_status.set(v); self.pack_btn.config(state="normal")

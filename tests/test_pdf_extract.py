@@ -103,3 +103,56 @@ def test_cli_success(tmp_path, capsys):
     src = _make_pdf(tmp_path / "doc.pdf", 4)
     assert pe.main([str(src), "--pages", "1,3-", "--separate", "-o", str(tmp_path / "out")]) == 0
     assert "doc_trang_1.pdf" in capsys.readouterr().out
+
+
+def test_split_by_pages(tmp_path):
+    src = _make_pdf(tmp_path / "doc.pdf", 5)
+    out = pe.split_pdf(src, "pages", 2, tmp_path / "out")
+    assert [p.name for p in out] == ["doc_phan_01.pdf", "doc_phan_02.pdf", "doc_phan_03.pdf"]
+    assert [len(PdfReader(str(p)).pages) for p in out] == [2, 2, 1]
+
+
+def test_split_by_pages_default_one_page_each(tmp_path):
+    src = _make_pdf(tmp_path / "doc.pdf", 3)
+    out = pe.split_pdf(src, "pages", None, tmp_path / "out")
+    assert len(out) == 3 and all(len(PdfReader(str(p)).pages) == 1 for p in out)
+
+
+def test_split_by_bookmark_uses_top_level_marks(tmp_path):
+    src = _make_pdf(tmp_path / "doc.pdf", 6, outline=[("Chương 1", 1), ("Chương 2", 4)])
+    out = pe.split_pdf(src, "bookmark", None, tmp_path / "out")
+    assert [p.name for p in out] == ["doc_phan_dau.pdf", "doc_Chương 1.pdf", "doc_Chương 2.pdf"]
+    assert [len(PdfReader(str(p)).pages) for p in out] == [1, 3, 2]
+    assert [o.title for o in PdfReader(str(out[1])).outline] == ["Chương 1"]
+
+
+def test_split_by_bookmark_needs_outline(tmp_path):
+    src = _make_pdf(tmp_path / "doc.pdf", 2)
+    with pytest.raises(ValueError, match="bookmark"):
+        pe.split_pdf(src, "bookmark", None, tmp_path / "out")
+
+
+def test_split_by_size_keeps_each_file_under_limit(tmp_path):
+    src = _make_pdf(tmp_path / "doc.pdf", 6)
+    one_page = pe._build(PdfReader(str(src)), [1], pe.ExtractOptions())
+    import io
+    buf = io.BytesIO(); one_page.write(buf)
+    limit_mb = (buf.tell() * 2.5) / 1024 / 1024   # khoảng 2 trang mỗi file
+    out = pe.split_pdf(src, "size", limit_mb, tmp_path / "out")
+    assert sum(len(PdfReader(str(p)).pages) for p in out) == 6
+    assert all(p.stat().st_size <= limit_mb * 1024 * 1024 for p in out)
+    assert len(out) >= 3
+
+
+def test_split_size_rejects_bad_limit(tmp_path):
+    src = _make_pdf(tmp_path / "doc.pdf", 2)
+    with pytest.raises(ValueError):
+        pe.split_pdf(src, "size", 0, tmp_path / "out")
+    with pytest.raises(ValueError, match="lớn hơn giới hạn"):
+        pe.split_pdf(src, "size", 0.0001, tmp_path / "out")
+
+
+def test_cli_split(tmp_path):
+    src = _make_pdf(tmp_path / "doc.pdf", 4)
+    assert pe.main([str(src), "--split", "pages", "--every", "2", "-o", str(tmp_path / "out")]) == 0
+    assert len(list((tmp_path / "out").glob("*.pdf"))) == 2
