@@ -22,10 +22,10 @@ def _kana_core(text: str) -> str:
     if re.search(r"[.:;]", text) or len(re.findall(r"[A-Za-z]", text)) > 2:
         return ""
     return _NOISE.sub("", text)
-_LATIN_WORD = re.compile(r"[A-Za-zÀ-ỹ]{3,}")
+_LATIN_WORD = re.compile(r"[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u1EF9]{3,}")
 # dòng mục lục: chuỗi dấu chấm dẫn và số trang ở cuối ('……012', '確認する 064')
 _LEADER_END = re.compile(r"(?:[.…‥･・]{2,}\s*\d*|\s+\d{2,4})\s*$")
-_LATIN_RUN = re.compile(r"[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ .,'’()\-]*")
+_LATIN_RUN = re.compile(r"[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u1EF9][A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u1EF9 .,'’()\-]*")
 
 
 # tiêu đề chạy đầu trang bị dính số trang/mục ('2すぐに使える例文集', '1日本語メールの基本とコツ'): chỉ bỏ số ở các dòng này
@@ -47,11 +47,14 @@ def _strip_prefix(text: str) -> str:
     return _RUNNING_HEADER.sub("", text, count=1)
 
 
+_OCR_SYMBOL_NOISE = re.compile(r"[×@]{2,}")   # '@' và chuỗi '×' là nhiễu của engine trong câu tiếng Nhật
+
+
 def _jp_part(text: str) -> str:
     """Phần tiếng Nhật của một dòng: bỏ đoạn Latin, dấu chấm dẫn và số trang cuối dòng.
     'Basics of inputting…………012' -> '' ; '日本語入力の基本Basics of inputting…012' -> '日本語入力の基本'."""
     t = _LEADER_END.sub("", text.strip())
-    t = _LATIN_RUN.sub("", t)
+    t = _LATIN_RUN.sub("", _OCR_SYMBOL_NOISE.sub("", t))
     return t.strip()
 _SENT_END = re.compile(r"[。！？!?」』）)]$")
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
@@ -547,9 +550,48 @@ def _number_toc(page: Page) -> None:
     flush()
 
 
+_SAMPLE_NUM = re.compile(r"^[0-9]{1,3}$")          # số trong ô xám của mẫu câu: '79'
+_EX_LABEL = re.compile(r"^(Ex\.?\]?|Ex\.\d\]?|Ex\]?|Ex\.)$")  # nhãn ví dụ: 'Ex.', 'Ex.2', 'Ex]'
+
+
+def _same_row(a: Line, b: Line) -> bool:
+    return abs(a.cy - b.cy) < 0.6 * max(a.h, b.h)
+
+
+def _sample_layout(page: Page) -> None:
+    """Mẫu câu và ví dụ trong sách có nhãn đứng riêng, engine đọc thành dòng lẻ:
+    - số trong ô xám ('79') được ghép vào đầu câu cùng hàng; '※' do ô xám bị đọc nhầm được bỏ;
+    - nhãn 'Ex.', 'Ex.2' bị bỏ, số dính sau nhãn ('1田中様') được bỏ, và mỗi ví dụ thành một mục danh sách (■)."""
+    lines = [l for b in page.blocks for l in b.lines]
+    for box in lines:
+        if not _SAMPLE_NUM.match(box.text.strip()) or box.x > 160 or len(box.text.strip()) < 2:
+            continue
+        # chỉ ghép khi câu cùng hàng bắt đầu bằng '※' (đã kiểm tra trên trang 53); số lẻ khác là nhiễu của engine
+        row = next((o for o in lines if o is not box and o.text.startswith("※") and o.cx > box.cx and _same_row(o, box)), None)
+        if row is None:
+            continue
+        row.text = box.text.strip() + " " + row.text.lstrip("※").lstrip()
+        box.text = ""
+    for lab in lines:
+        if not _EX_LABEL.match(lab.text.strip()):
+            continue
+        bare = lab.text.strip() == "Ex"        # chỉ nhãn 'Ex' trơ mới dính số của ví dụ kế bên
+        lab.text = ""
+        for o in lines:
+            if o is lab or not o.text.strip() or not _same_row(o, lab) or o.x < lab.x:
+                continue
+            t = _TOC_NOISE.sub("", o.text.strip()) if bare and o.x < lab.x + lab.w + 30 else o.text.strip()
+            if _JP.search(t) and not t.startswith("■"):
+                o.text = "■" + t
+    for o in lines:   # ví dụ ×: cũng là một mục
+        if o.text.startswith("×") and _JP.search(o.text):
+            o.text = "■" + o.text
+
+
 def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> list[Para | Table]:
     """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại."""
     _number_toc(page)
+    _sample_layout(page)
     gray = None
     if img_rgb is not None:
         import cv2
