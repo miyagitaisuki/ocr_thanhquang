@@ -52,8 +52,10 @@ jobs:
         shell: pwsh
         run: |
           ./dist/ocrnhat-cli-gpu/ocrnhat-cli-gpu.exe smoke.png -o exe_out --device auto
-          if (-not (Test-Path exe_out/smoke.docx)) { throw "exe GPU không tạo ra docx" }
-          $t = Get-Content exe_out/smoke.txt -Encoding UTF8 -Raw
+          $docx = Get-ChildItem exe_out -Filter *.docx | Select-Object -First 1
+          if (-not $docx) { throw "exe GPU không tạo ra docx" }
+          $txt = Get-ChildItem exe_out -Filter *.txt | Select-Object -First 1
+          $t = Get-Content $txt.FullName -Encoding UTF8 -Raw
           Write-Host $t
           if ($t -notmatch "日本語") { throw "exe GPU không OCR được" }
       # không nén zip: bản GPU vài GB, upload-artifact tự nén; trọng số Chandra KHÔNG đóng vào (người dùng tải lần đầu)

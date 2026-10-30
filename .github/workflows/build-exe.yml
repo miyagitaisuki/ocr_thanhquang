@@ -49,8 +49,10 @@ jobs:
         shell: pwsh
         run: |
           ./dist/ocrnhat-cli/ocrnhat-cli.exe smoke.png -o exe_out
-          if (-not (Test-Path exe_out/smoke.docx)) { throw "exe không tạo ra docx" }
-          $t = Get-Content exe_out/smoke.txt -Encoding UTF8 -Raw
+          $docx = Get-ChildItem exe_out -Filter *.docx | Select-Object -First 1
+          if (-not $docx) { throw "exe không tạo ra docx" }
+          $txt = Get-ChildItem exe_out -Filter *.txt | Select-Object -First 1
+          $t = Get-Content $txt.FullName -Encoding UTF8 -Raw
           Write-Host $t
           if ($t -notmatch "日本語") { throw "exe không OCR được" }
       # chỉ upload bộ cài; bản zip thư mục và bản CLI không còn được đóng gói
