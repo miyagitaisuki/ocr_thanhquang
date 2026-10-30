@@ -167,3 +167,11 @@ def test_muc_file_co_ten_de_doc_va_goi_y_keo_tha_rut_gon(window, tmp_path):
     assert window.ocr.drop.text() == gui.DROP_HINT_SHORT
     window.ocr.clear()
     assert window.ocr.drop.text() == gui.DROP_HINT
+
+
+def test_mo_thu_muc_ket_qua_theo_luc_bat_dau(window, tmp_path):
+    """Đổi ô thư mục lưu khi đang chạy không làm nút mở nhầm thư mục."""
+    window.ocr._run_out = None
+    window.ocr._on_done("Xong. Đã xử lý 1 file.", [(tmp_path / "a.png", {"docx": "x"})])
+    assert window.ocr._out_dir == tmp_path
+    assert window.ocr.btn_open_out.isVisibleTo(window.ocr)

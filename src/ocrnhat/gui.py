@@ -605,7 +605,8 @@ class OcrPage(QWidget):
         self.btn_open_out.setVisible(False)
         self._set_running(True)
         out = self.out.text().strip()
-        self.worker = OcrWorker(list(self.files), Path(out) if out else None, pages, opts)
+        self._run_out = Path(out) if out else None   # chốt lúc bắt đầu: người dùng đổi ô khi đang chạy không ảnh hưởng
+        self.worker = OcrWorker(list(self.files), self._run_out, pages, opts)
         self.worker.progress.connect(self._on_progress)
         self.worker.file_state.connect(self._set_file_state)
         self.worker.finished_ok.connect(self._on_done)
@@ -634,8 +635,7 @@ class OcrPage(QWidget):
         self.banner.setText(("⚠ " if failed else "✔ ") + msg)
         self.banner.setVisible(True)
         QAccessible.updateAccessibility(QAccessibleEvent(self.banner, QAccessible.Event.Alert))   # báo kết quả cho trình đọc màn hình
-        out_text = self.out.text().strip()
-        self._out_dir = Path(out_text) if out_text else (outputs[0][0].parent if outputs else None)
+        self._out_dir = self._run_out or (outputs[0][0].parent if outputs else None)
         self.btn_open_out.setVisible(bool(outputs) and self._out_dir is not None)
         self.btn_log.setVisible(failed)
         self.progress.setValue(100)
@@ -652,6 +652,7 @@ class OcrPage(QWidget):
 
     _SAVED = ("txt", "marker", "ruby", "cell_reocr", "use_cache", "upscale", "crop", "pages", "out")
     _out_dir: Path | None = None   # thư mục kết quả của lần chạy gần nhất (nút "Mở thư mục kết quả")
+    _run_out: Path | None = None   # thư mục lưu chốt khi bấm chạy
 
     _COMBOS = ("engine", "device", "merge", "kana", "lang", "dpi")   # lưu theo khóa, không theo nhãn
 
@@ -834,6 +835,7 @@ class MainWindow(QMainWindow):
         if self.ocr.busy() and self.stack.currentIndex() == 0:
             if QMessageBox.question(self, "Dừng OCR", "Dừng sau trang hiện tại? Các trang đã đọc vẫn được lưu.") == QMessageBox.StandardButton.Yes:
                 self.ocr.request_stop()
+                self.stop_btn.setEnabled(False)   # đã yêu cầu dừng; bật lại khi OCR kết thúc (busy_changed)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
