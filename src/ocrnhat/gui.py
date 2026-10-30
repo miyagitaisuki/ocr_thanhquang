@@ -186,6 +186,20 @@ class App(_Base):
             self.dl_status = tk.StringVar(value="Đã có model Chandra trên máy." if ready else "Chưa có model Chandra (vài GB, chỉ tải một lần).")
             ttk.Label(row, textvariable=self.dl_status, style="Hint.TLabel").pack(side="left", padx=(10, 0))
         Tip(proc.grid_slaves(row=7, column=1)[0], "Thử nghiệm. Đọc ô bảng chữ kana (trang 13–16, 19). Mẫu IPAGothic cho kết quả tốt hơn; ô không chắc để trống. Luôn xuất file *_kana_review.html để đối chiếu.")
+        self.LANG_LABELS = {"ja": "Tiếng Nhật (mặc định)", "all": "Mọi ngôn ngữ (chỉ Chandra)"}
+        lang_cb = ttk.Combobox(proc, textvariable=self._var("lang", self.LANG_LABELS["ja"]), values=list(self.LANG_LABELS.values()), state="readonly", width=34)
+        self._row(proc, 10, "Ngôn ngữ", lang_cb)
+        self.lang_cb = lang_cb
+        ttk.Label(proc, text="Chỉ mở khi chọn Engine = chandra. Mọi ngôn ngữ: giữ toàn bộ chữ, không lọc tiếng Nhật.", style="Hint.TLabel").grid(row=10, column=2, sticky="w", padx=(8, 0))
+        engine_var = self._var("engine", "auto")
+        def _sync_lang(*_):
+            if engine_var.get() == "chandra":
+                lang_cb.config(state="readonly")
+            else:
+                lang_cb.config(state="disabled")
+                self._var("lang", self.LANG_LABELS["ja"]).set(self.LANG_LABELS["ja"])
+        engine_var.trace_add("write", _sync_lang)
+        _sync_lang()
         proc.columnconfigure(1, weight=1)
 
         # --- rà soát ---
@@ -332,7 +346,8 @@ class App(_Base):
         except ValueError as e:
             raise ValueError(f"Vùng cắt không hợp lệ: {e}") from None
         dev = next(k for k, v in self.DEV_LABELS.items() if v == self._var("dev", "").get())
-        return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(),
+        lang = next(k for k, v in self.LANG_LABELS.items() if v == self._var("lang", self.LANG_LABELS["ja"]).get())
+        return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(), lang=lang,
                     device=dev, ruby=self._var("ruby", False).get(),
                     review=self._var("review", False).get(), conf_threshold=conf,
                     engine=self._var("engine", "auto").get(), crop=crop, upscale=upscale,

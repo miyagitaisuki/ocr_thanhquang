@@ -141,3 +141,13 @@ def test_tu_vung_ngan_dung_rieng_khong_phai_tieu_de():
                        ("混入", 292), ("手配", 372)])
     paras = [i for i in build_page(page) if isinstance(i, Para)]
     assert all(p.kind == "body" for p in paras)
+
+
+def test_lang_all_giu_chu_latin_con_ja_van_loc():
+    page = Page(1000, 600, [Block("text", 100, 20, 800, 200, [
+        _line("Hello world", 100, 20, 1),
+        _line("日本語です。", 100, 80, 2),
+    ])])
+    texts = [i.text for i in build_page(page, lang="all") if isinstance(i, Para)]
+    assert "Hello world" in "".join(texts) and "日本語です。" in "".join(texts)
+    assert [i.text for i in build_page(page) if isinstance(i, Para)] == ["日本語です。"]
