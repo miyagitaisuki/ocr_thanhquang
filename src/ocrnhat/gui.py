@@ -289,9 +289,10 @@ class _CatMixin:
     Vị trí theo tiến trình OCR; chân đổi khung mỗi 130 ms khi đang chạy; về đích thì đứng cạnh cờ.
     """
 
-    def _cat_init(self, parent):
+    def _cat_init(self, parent, before):
+        """Vùng mèo nằm ngay trên thanh tiến trình; chân mèo chạm mép trên thanh."""
         self.cat = tk.Canvas(parent, height=34, highlightthickness=0, bd=0, bg=_parent_bg(parent))
-        self.cat.pack(fill="x", pady=(0, 6))
+        self.cat.pack(fill="x", pady=(10, 0), before=before)
         self._cat_pos, self._cat_frame, self._cat_running, self._cat_job = 0.0, 0, False, None
         self._cat_finished = False
         self.cat.bind("<Configure>", lambda e: self._cat_draw())
@@ -329,8 +330,7 @@ class _CatMixin:
         c = self.cat
         c.delete("all")
         w = max(1, c.winfo_width())
-        ground = 30
-        c.create_line(0, ground + 1, w, ground + 1, fill=self.pal["TROUGH"], width=3)
+        ground = max(10, c.winfo_height() - 1)   # mép trên thanh tiến trình
         # cờ về đích
         if self._cat_finished:
             c.create_line(w - 10, ground, w - 10, 4, fill=self.pal["MUTED"], width=2)
@@ -551,8 +551,8 @@ class App(_CatMixin, _Base):
         Tip(self.btn, "Bắt đầu OCR cho mọi file trong danh sách. Phím tắt: Ctrl+R hoặc F5.")
         Tip(self.stop, "Dừng sau trang hiện tại. Các trang đã xong vẫn được lưu (Esc).")
         self.pb = ttk.Progressbar(top, maximum=100, style="Accent.Horizontal.TProgressbar")
-        self.pb.pack(fill="x", pady=(10, 4))
-        self._cat_init(top)
+        self.pb.pack(fill="x", pady=(0, 4))
+        self._cat_init(top, before=self.pb)
         self.status = tk.StringVar(value="Sẵn sàng.")
         ttk.Label(top, textvariable=self.status, style="Status.TLabel", wraplength=880, justify="left").pack(fill="x")
 
