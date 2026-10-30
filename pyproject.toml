@@ -14,6 +14,7 @@ chandra = ["chandra-ocr[hf]==0.2.0"]
 
 [project.scripts]
 ocrnhat = "ocrnhat.cli:main"
+ocrnhat-pdf = "ocrnhat.pdf_extract:main"
 
 [build-system]
 requires = ["setuptools>=68"]
