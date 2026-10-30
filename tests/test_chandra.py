@@ -15,17 +15,30 @@ HTML = (
 
 def test_khoi_van_ban_va_tieu_de_co_toa_do_pixel():
     page = parse_chandra_html(HTML, 1000, 1000)
-    head, body = page.blocks[0], page.blocks[1]
-    assert head.kind == "text" and head.lines[0].text == "第一章 日本語の基本"
+    head = page.blocks[0]
+    body_lines = [l for b in page.blocks if b.label == "Text" for l in b.lines]
+    assert head.lines[0].text == "第一章 日本語の基本" and head.lines[0].type == "タイトル本文"
     assert (head.x, head.y) == (100, 50)
-    assert [l.text for l in body.lines] == ["これは本文の一段落です。", "次の段落です。"]
-    # bbox y 150..300 -> cao 150 px, chia đều cho hai đoạn
-    assert body.lines[1].y == 150 + 75
+    assert [l.text for l in body_lines] == ["これは本文の一段落です。", "次の段落です。"]
+    # mỗi đoạn là một khối riêng, đoạn sau nằm dưới đoạn trước
+    body_blocks = [b for b in page.blocks if b.label == "Text"]
+    assert len(body_blocks) == 2 and body_blocks[1].y > body_blocks[0].y + body_blocks[0].h
+
+
+def test_tieu_de_va_ngat_doan_qua_build_page():
+    # đầu ra cuối cùng: tiêu đề là Para kind heading, hai đoạn không bị gộp
+    from ocrnhat.layout import Para, build_page
+    items = [i for i in build_page(parse_chandra_html(HTML, 1000, 1000)) if isinstance(i, Para)]
+    assert [(p.kind, p.text) for p in items][:3] == [
+        ("heading", "第一章 日本語の基本"),
+        ("body", "これは本文の一段落です。"),
+        ("body", "次の段落です。"),
+    ]
 
 
 def test_bang_co_rowspan_colspan_va_o_dung_vi_tri():
     page = parse_chandra_html(HTML, 1000, 1000)
-    table = page.blocks[2]
+    table = next(b for b in page.blocks if b.label == "Table")
     assert table.kind == "table"
     cells = {l.text: l for l in table.lines}
     assert set(cells) == {"会社", "株式会社", "電話", "番号"}
