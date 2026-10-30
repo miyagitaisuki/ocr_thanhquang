@@ -17,7 +17,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import gpu, gpupack, pipeline, textview
+from . import gpu, gpupack, pdf_extract as pe, pipeline, textview
 from .cli import collect
 
 gpupack.activate()   # trước khi App.ENGINES đọc find_spec('chandra')
@@ -776,9 +776,8 @@ class App(_CatMixin, _Base):
         row["btn"].config(state="normal" if not ok else "disabled")
 
     def _tab_pdf(self):
-        """Chỗ giữ chỗ cho các công cụ PDF (cắt, ghép, nén, theo dõi thư mục). Chưa có chức năng; nút đều bị khóa."""
+        self._tab_extract()
         groups = (
-            ("Cắt PDF", ("Trích xuất trang", "Tách theo trang", "Tách theo bookmark", "Tách theo dung lượng")),
             ("Ghép PDF", ("Ghép xen kẽ", "Ghép nhiều file", "Chèn trang lặp lại")),
             ("Khác", ("Xoay trang", "Nén PDF", "Tự động theo thư mục")),
         )
@@ -789,6 +788,156 @@ class App(_CatMixin, _Base):
             for name in names:
                 GradientButton(row, text=name, state="disabled").pack(side="left", padx=(0, 8), pady=4)
             ttk.Label(card, text="Sắp có. Chưa có chức năng.", style="Status.TLabel").pack(anchor="w", pady=(4, 0))
+
+    def _tab_extract(self):
+        """Trích xuất trang: danh sách PDF, số trang cần lấy và các tùy chọn đầu ra."""
+        self.pdfx_items: list[tuple[Path, int]] = []   # (file, số trang)
+        files = self._card(self.tab_pdf, "Tệp PDF")
+        bar = ttk.Frame(files, style="Card.TFrame")
+        bar.pack(fill="x", pady=(0, 8))
+        b_add = GradientButton(bar, text="Thêm file…", command=self._pdfx_add); b_add.pack(side="left")
+        b_del = GradientButton(bar, text="Bỏ mục đã chọn", command=self._pdfx_remove); b_del.pack(side="left", padx=6)
+        b_clr = GradientButton(bar, text="Bỏ tất cả", command=self._pdfx_clear); b_clr.pack(side="left")
+        Tip(b_add, "Chọn một hoặc nhiều file PDF. File gốc không bị thay đổi.")
+        Tip(b_del, "Bỏ mục đang chọn khỏi danh sách (Delete).")
+        self.pdfx_count = tk.StringVar(value="Chưa có file nào")
+        ttk.Label(bar, textvariable=self.pdfx_count, style="Muted.TLabel").pack(side="right")
+        table = ttk.Frame(files, style="Card.TFrame")
+        table.pack(fill="both", expand=True)
+        self.pdfx_tree = ttk.Treeview(table, columns=("no", "name", "pages", "folder"), show="headings", height=5, selectmode="extended")
+        for col, text, w in (("no", "#", 50), ("name", "Tên file", 300), ("pages", "Số trang", 90), ("folder", "Thư mục", 420)):
+            self.pdfx_tree.heading(col, text=text, anchor="w"); self.pdfx_tree.column(col, width=w, anchor="w")
+        self.pdfx_tree.pack(side="left", fill="both", expand=True)
+        self.pdfx_tree.bind("<Delete>", lambda e: self._pdfx_remove())
+
+        cfg = self._card(self.tab_pdf, "Cài đặt trích xuất")
+        self._row(cfg, 0, "Trang cần lấy", ttk.Entry(cfg, textvariable=self._var("pdfx_pages", ""), width=INPUT_W))
+        ttk.Label(cfg, text="ví dụ 2 hoặc 5-23 hoặc 2,5-7,12- (12- là đến trang cuối)", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        cb_sep = self._check(cfg, "pdfx_separate", False, "Một file riêng cho mỗi nhóm trang")
+        cb_sep.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
+        Tip(cb_sep, "Mỗi nhóm cách nhau bởi dấu phẩy thành một file. Tắt: gộp mọi trang thành một file.")
+        self._row(cfg, 2, "Thư mục lưu", ttk.Entry(cfg, textvariable=self._var("pdfx_out", ""), width=INPUT_W))
+        b_out = GradientButton(cfg, text="Chọn…", command=self._pdfx_pick_out); b_out.grid(row=2, column=2, sticky="w", padx=(8, 0), pady=4)
+        Tip(b_out, "Để trống thì lưu cạnh file gốc.")
+        self._row(cfg, 3, "Phiên bản PDF", ttk.Combobox(cfg, textvariable=self._var("pdfx_version", "1.5"), values=list(pe.PDF_VERSIONS),
+                                                         state="readonly", width=INPUT_W))
+        checks = ttk.Frame(cfg, style="Card.TFrame")
+        checks.grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        cb_ow = self._check(checks, "pdfx_overwrite", False, "Ghi đè nếu file đã có"); cb_ow.pack(anchor="w", pady=2)
+        cb_cp = self._check(checks, "pdfx_compress", True, "Nén file đầu ra"); cb_cp.pack(anchor="w", pady=2)
+        cb_bm = self._check(checks, "pdfx_nobm", False, "Bỏ bookmark"); cb_bm.pack(anchor="w", pady=2)
+        Tip(cb_ow, "Tắt: file trùng tên được ghi thêm số (2), (3)... Bật: thay file cũ.")
+        Tip(cb_bm, "Tắt (mặc định): giữ bookmark trỏ tới trang được chọn; mục bị loại thì con của nó được chuyển lên cấp trên.")
+        run = ttk.Frame(cfg, style="Card.TFrame")
+        run.grid(row=5, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self.pdfx_btn = GradientButton(run, text="▶  Trích xuất", style="Run.TButton", command=self._pdfx_run, width=HEADER_BTN_W)
+        self.pdfx_btn.pack(side="left")
+        self.pdfx_status = tk.StringVar(value="Thêm file PDF, nhập trang rồi bấm Trích xuất.")
+        ttk.Label(run, textvariable=self.pdfx_status, style="Status.TLabel", wraplength=640, justify="left").pack(side="left", padx=12)
+        cfg.columnconfigure(1, weight=1)
+
+        split = self._card(self.tab_pdf, "Tách PDF")
+        self._row(split, 0, "Kiểu tách", ttk.Combobox(split, textvariable=self._var("pdfx_split", self.SPLIT_LABELS["pages"]),
+                                                       values=list(self.SPLIT_LABELS.values()), state="readonly", width=INPUT_W))
+        Tip(split.grid_slaves(row=0, column=1)[0], "Theo trang: mỗi file một số trang cố định. Theo bookmark: mỗi mục cấp 1 là một file. Theo dung lượng: gộp trang liên tiếp, mỗi file không quá giới hạn.")
+        self._row(split, 1, "Số trang / MB", ttk.Entry(split, textvariable=self._var("pdfx_split_val", "1"), width=INPUT_W))
+        ttk.Label(split, text="Theo trang: số trang mỗi file. Theo dung lượng: MB tối đa mỗi file. Bookmark: không dùng.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(split, text="Dùng chung thư mục lưu, ghi đè, nén và bookmark ở thẻ “Cài đặt trích xuất”.", style="Hint.TLabel").grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self.pdfx_split_btn = GradientButton(split, text="▶  Tách file", style="Run.TButton", command=self._pdfx_split_run, width=HEADER_BTN_W)
+        self.pdfx_split_btn.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        split.columnconfigure(1, weight=1)
+
+    SPLIT_LABELS = {"pages": "Theo số trang", "bookmark": "Theo bookmark cấp 1", "size": "Theo dung lượng tối đa"}
+
+    def _pdfx_add(self):
+        for f in map(Path, filedialog.askopenfilenames(filetypes=[("PDF", "*.pdf")])):
+            if any(f == g for g, _ in self.pdfx_items):
+                continue
+            try:
+                n = pe.page_count(f)
+            except Exception as e:   # PDF hỏng hoặc có mật khẩu
+                log.exception("Không đọc được PDF %s", f)
+                messagebox.showerror("Không mở được PDF", f"{f.name}: {e}")
+                continue
+            self.pdfx_items.append((f, n))
+        self._pdfx_refresh()
+
+    def _pdfx_remove(self):
+        for iid in sorted(self.pdfx_tree.selection(), key=int, reverse=True):
+            del self.pdfx_items[int(iid)]
+        self._pdfx_refresh()
+
+    def _pdfx_clear(self):
+        self.pdfx_items.clear()
+        self._pdfx_refresh()
+
+    def _pdfx_refresh(self):
+        self.pdfx_tree.delete(*self.pdfx_tree.get_children())
+        for i, (f, n) in enumerate(self.pdfx_items):
+            self.pdfx_tree.insert("", "end", iid=str(i), values=(i + 1, f.name, n, str(f.parent)))
+        self.pdfx_count.set(f"{len(self.pdfx_items)} file" if self.pdfx_items else "Chưa có file nào")
+
+    def _pdfx_pick_out(self):
+        d = filedialog.askdirectory()
+        if d:
+            self._var("pdfx_out", "").set(d)
+
+    def _pdfx_run(self):
+        if not self.pdfx_items:
+            messagebox.showinfo("Trích xuất trang", "Thêm ít nhất một file PDF.")
+            return
+        spec = self._var("pdfx_pages", "").get().strip()
+        if not spec:
+            messagebox.showinfo("Trích xuất trang", "Nhập trang cần lấy, ví dụ 2 hoặc 5-23 hoặc 2,5-7,12-.")
+            return
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_start(lambda f: pe.extract_pages(f, spec, out, opts), "Đang trích xuất")
+
+    def _pdfx_split_run(self):
+        if not self.pdfx_items:
+            messagebox.showinfo("Tách PDF", "Thêm ít nhất một file PDF.")
+            return
+        label = self._var("pdfx_split", self.SPLIT_LABELS["pages"]).get()
+        mode = next(k for k, v in self.SPLIT_LABELS.items() if v == label)
+        raw = self._var("pdfx_split_val", "1").get().strip()
+        try:
+            value = None if mode == "bookmark" else (int(raw) if mode == "pages" else float(raw))
+        except ValueError:
+            messagebox.showinfo("Tách PDF", "Số trang hoặc dung lượng (MB) phải là số.")
+            return
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_start(lambda f: pe.split_pdf(f, mode, value, out, opts), "Đang tách")
+
+    def _pdfx_options(self):
+        return pe.ExtractOptions(
+            separate=self._var("pdfx_separate", False).get(), overwrite=self._var("pdfx_overwrite", False).get(),
+            compress=self._var("pdfx_compress", True).get(), keep_bookmarks=not self._var("pdfx_nobm", False).get(),
+            pdf_version=self._var("pdfx_version", "1.5").get())
+
+    def _pdfx_out(self):
+        return Path(self._var("pdfx_out", "").get().strip()) if self._var("pdfx_out", "").get().strip() else None
+
+    def _pdfx_start(self, task, verb: str):
+        """Chạy task(file) cho từng file trong danh sách, ở luồng nền. Hai nút đều khóa cho đến khi xong."""
+        self.pdfx_btn.config(state="disabled"); self.pdfx_split_btn.config(state="disabled")
+        files = [f for f, _ in self.pdfx_items]
+        threading.Thread(target=self._pdfx_worker, args=(files, task, verb), daemon=True).start()
+
+    def _pdfx_worker(self, files, task, verb):
+        done, errors = [], []
+        for i, f in enumerate(files, 1):
+            self.q.put(("pdfx", f"[{i}/{len(files)}] {verb} {f.name}…"))
+            try:
+                done += task(f)
+            except Exception as e:   # một file lỗi không dừng các file còn lại
+                log.exception("Lỗi PDF %s", f)
+                errors.append(f"{f.name}: {e}")
+        msg = f"Xong: {len(done)} file PDF" + (f", lưu tại {done[-1].parent}" if done else "") + "."
+        if errors:
+            msg += " Lỗi: " + "; ".join(errors)
+        self.q.put(("pdfx_done", msg))
 
     def _tab_review(self):
         rev = self._card(self.tab_rev, "Kiểm tra kết quả")
@@ -1277,6 +1426,10 @@ class App(_CatMixin, _Base):
                     self._on_model_done(*v)
                 elif k == "pack":
                     self.pack_status.set(v)
+                elif k == "pdfx":
+                    self.pdfx_status.set(v)
+                elif k == "pdfx_done":
+                    self.pdfx_status.set(v); self.pdfx_btn.config(state="normal"); self.pdfx_split_btn.config(state="normal")
                 elif k == "packdone":
                     self.pack_pb.stop(); self.pack_pb.pack_forget()
                     self.pack_status.set(v); self.pack_btn.config(state="normal")

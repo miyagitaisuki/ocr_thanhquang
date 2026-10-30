@@ -4,6 +4,7 @@ numpy
 opencv-python-headless
 Pillow
 pypdfium2
+pypdf>=6   # công cụ PDF: trích xuất trang (BSD-3)
 python-docx
 PyYAML
 lxml

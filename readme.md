@@ -35,6 +35,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `docx_out.py` | Xuất Word (font Yu Mincho, Heading, bảng, ruby) và txt. |
 | `cache.py` | Cache kết quả OCR theo hash file, dpi, crop/upscale, engine và version. Lưu ở `<out>/.cache`. |
 | `review.py` | `--review`: HTML đối chiếu ảnh trang với text, tô đỏ dòng độ tin cậy thấp. |
+| `pdf_extract.py` | Công cụ PDF: trích xuất trang và tách file (pypdf): cú pháp `2,5-7,12-`, file riêng cho mỗi nhóm, ghi đè, nén, bỏ bookmark, phiên bản PDF. Lệnh `ocrnhat-pdf`. Tab "Công cụ PDF" trong GUI. |
 | `suspect.py` | `--suspect` (thử nghiệm, tắt mặc định): BERT tiếng Nhật đánh dấu ký tự nghi ngờ, không sửa văn bản. |
 | `gpupack.py` | Gói GPU tùy chọn: chọn torch cu126 + torchvision từ chỉ mục PyTorch, cài Chandra bằng pip (có sẵn trong exe) vào `%LOCALAPPDATA%\OCR-Nhat\gpu`; `activate()` đưa vào đường dẫn import lúc khởi động. |
 | `gpu.py` | Dò GPU NVIDIA, chọn thiết bị cho NDLOCR (cuda chỉ khi onnxruntime có CUDA provider). |
@@ -45,7 +46,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 
 ## Thư mục và file khác
 - `scripts/`: `fetch_ndlocr.py` (tải engine), `fetch_models.py` (model PaddleOCR, kiểm SHA-256), `export_vi.py` (tạo lại `assets/vi-ocr/` từ VietOCR gốc, cần torch), `smoke_test.py` (OCR ảnh mẫu, dựng bảng), `compare_engines.py` (đối chiếu với YomiToku, chỉ để so sánh, không đóng gói vì giấy phép CC BY-NC-SA).
-- `tests/`: pytest (`test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`, `test_engines_lang` không cần model, `test_engines_models` chạy khi có `models/`).
+- `tests/`: pytest (`test_pdf_extract` (PDF tạo trong test), `test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`, `test_engines_lang` không cần model, `test_engines_models` chạy khi có `models/`).
 - `tests/data/pretest_sample.pdf`: sổ tay tiếng Nhật thương mại 4 trang, file mẫu chính cho các test và đo độ chính xác từ nay.
 - `.github/workflows/`: `test.yml` (mỗi push/PR), `build-exe.yml` (exe CPU, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`), `build-exe-gpu.yml` (exe GPU: onnxruntime-gpu; chạy thủ công). Ô Thiết bị chỉ có "GPU (NVIDIA)" khi onnxruntime có CUDA, tức bản GPU. Gói GPU tùy chọn chỉ tăng tốc Chandra; NDLOCR trong bản CPU vẫn chạy CPU. Torch CUDA và Chandra KHÔNG nằm trong exe: `gpupack.py` tải về khi người dùng bấm "Cài gói GPU + Chandra".
 - `requirements.txt`: nguồn duy nhất của dependency. `pyproject.toml` đọc từ đó. Extra: `test`, `suspect`.
@@ -57,7 +58,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - Đã làm: rà soát ruby (`--ruby`), cache, OCR song song, nhận dạng lại ô, đối chiếu YomiToku (script), dò chữ nghi ngờ (thử nghiệm), GUI kiểu PDFsam.
 - GUI: thanh đầu có Chạy OCR (xanh lá), Dừng, tiến trình, ước lượng thời gian và trạng thái phần cứng. Bốn tab: Tài liệu (trạng thái từng file, xóa mục), Xử lý OCR (mẫu tài liệu, Nâng cao thu gọn, Engine AI có thanh tiến trình tải), Rà soát, Kết quả (danh sách, mở file, xem trước trang). Phím tắt: Ctrl+O, Ctrl+R/F5, Esc, Delete. Menu Hiển thị: giao diện tối/sáng và cỡ chữ (áp dụng sau khi khởi động lại). Nhật ký lỗi: `%LOCALAPPDATA%\OCR-Nhat\logs\app.log`. Module `textview.py` tách chữ theo trang cho khung xem trước.
 - Lỗi "pip thoát với mã 2" khi cài gói GPU: bản --windowed có stdout = None; đầu ra pip nay ghi vào `%LOCALAPPDATA%\OCR-Nhat\gpu\install.log`.
-- Công cụ PDF (chỗ giữ chỗ, CHƯA có chức năng): tab "Công cụ PDF" trong `gui.py` (`_tab_pdf`) có nút khóa cho: cắt (trích xuất trang, tách theo trang / bookmark / dung lượng), ghép (ghép xen kẽ, ghép nhiều file, chèn trang lặp lại kiểu B1 A B2 A B3 A), khác (xoay, nén, tự động theo thư mục). Hướng nghiên cứu: `pypdf` (BSD-3) cho cắt/ghép/bookmark; `pikepdf` (MPL-2.0) cho nén; theo dõi thư mục bằng `watchdog` (Apache-2.0). Tránh PyMuPDF (AGPL) và Ghostscript (AGPL) khi đóng gói. Chưa thêm gói nào vào `requirements.txt`.
+- Công cụ PDF: ĐÃ CÓ "Trích xuất trang" (`pdf_extract.py`, pypdf >=6, BSD-3): tab "Công cụ PDF" có danh sách PDF (Thêm/Bỏ, số trang), ô "Trang cần lấy" (`2`, `5-23`, `2,5-7,12-`), "Một file riêng cho mỗi nhóm trang", "Thư mục lưu", "Phiên bản PDF" (1.4–1.7, mặc định 1.5), "Ghi đè", "Nén file đầu ra" (mặc định bật), "Bỏ bookmark" (mặc định tắt: giữ bookmark trỏ tới trang được chọn). Tên file: `<tên gốc>_trang_<nhóm>.pdf`; không ghi đè thì thêm ` (2)`. ĐÃ CÓ "Tách PDF" (`split_pdf`): theo số trang (mặc định 1), theo bookmark cấp 1 (trang trước bookmark đầu thành `_phan_dau`), theo dung lượng tối đa MB (gộp trang liên tiếp; ước lượng vì mỗi trang đo riêng, file thật thường nhỏ hơn). Lệnh `ocrnhat-pdf file.pdf --split pages|bookmark|size --every N --max-mb X`. Chưa làm (vẫn là nút khóa): ghép (xen kẽ, nhiều file, chèn trang lặp), xoay, nén PDF riêng, theo dõi thư mục (`watchdog`, Apache-2.0). Tránh PyMuPDF (AGPL) và Ghostscript (AGPL) khi đóng gói. Chưa kiểm trên GUI thật: môi trường không có tkinter.
 - Gộp trang (mặc định): `layout.merge_pages` nối đoạn bị cắt giữa trang, bỏ trang trống, không ngắt trang trong Word. `--keep-pages` hoặc ô "Gộp trang" = Giữ nguyên trang để có một trang Word cho mỗi trang gốc.
 - Engine theo ngôn ngữ: "Tiếng Nhật – NDLOCR/Chandra", "Tiếng Anh/Trung – PaddleOCR" (`paddle`), "Tiếng Việt – VietOCR" (`ocr_vi`). Chọn engine chưa có model sẽ báo thiếu gì. Engine AI nằm ở tab "AI powered".
 - Ngôn ngữ: `--lang ja` (mặc định), `en`, `zh`, `vi`, `all` (chỉ Chandra). Mỗi ngôn ngữ chỉ giữ chữ của ngôn ngữ đó (`layout._script_keep`). `auto` chọn engine theo ngôn ngữ: en/zh -> paddle, vi -> ocr_vi. Ô Ngôn ngữ trong GUI chỉ liệt kê ngôn ngữ mà engine đang chọn hỗ trợ. Với en/vi, nối dòng bằng khoảng trắng và kết câu bằng `.!?:;`. Heuristic ngắt đoạn vẫn thiên về tiếng Nhật (dấu 。, hạt).
@@ -86,6 +87,8 @@ pytest -q
 python scripts/smoke_test.py
 ocrnhat file.pdf -o out --pages 1-5
 python scripts/fetch_models.py            # PaddleOCR và VietOCR vào models/
+ocrnhat-pdf file.pdf --pages 2,5-7,12- --separate -o out   # trích xuất trang (không cần OCR)
+ocrnhat-pdf file.pdf --split size --max-mb 5 -o out          # tách file
 ocrnhat file.pdf -o out --lang en         # hoặc zh, vi
 ```
 Build exe chỉ chạy được trên GitHub Actions (workflow_dispatch). Không build từ Linux.
