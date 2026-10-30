@@ -778,7 +778,7 @@ class App(_CatMixin, _Base):
     def _tab_pdf(self):
         self._tab_extract()
         groups = (
-            ("Ghép PDF", ("Ghép xen kẽ", "Ghép nhiều file", "Chèn trang lặp lại")),
+            ("Ghép PDF", ("Ghép xen kẽ", "Chèn trang lặp lại")),
             ("Khác", ("Xoay trang", "Nén PDF", "Tự động theo thư mục")),
         )
         for title, names in groups:
@@ -798,6 +798,10 @@ class App(_CatMixin, _Base):
         b_add = GradientButton(bar, text="Thêm file…", command=self._pdfx_add); b_add.pack(side="left")
         b_del = GradientButton(bar, text="Bỏ mục đã chọn", command=self._pdfx_remove); b_del.pack(side="left", padx=6)
         b_clr = GradientButton(bar, text="Bỏ tất cả", command=self._pdfx_clear); b_clr.pack(side="left")
+        b_up = GradientButton(bar, text="Lên", command=lambda: self._pdfx_move(-1)); b_up.pack(side="left", padx=(12, 0))
+        b_dn = GradientButton(bar, text="Xuống", command=lambda: self._pdfx_move(1)); b_dn.pack(side="left", padx=6)
+        Tip(b_up, "Đổi thứ tự: đưa mục đang chọn lên trước. Thứ tự này dùng khi ghép file.")
+        Tip(b_dn, "Đổi thứ tự: đưa mục đang chọn xuống sau.")
         Tip(b_add, "Chọn một hoặc nhiều file PDF. File gốc không bị thay đổi.")
         Tip(b_del, "Bỏ mục đang chọn khỏi danh sách (Delete).")
         self.pdfx_count = tk.StringVar(value="Chưa có file nào")
@@ -846,6 +850,13 @@ class App(_CatMixin, _Base):
         self.pdfx_split_btn = GradientButton(split, text="▶  Tách file", style="Run.TButton", command=self._pdfx_split_run, width=HEADER_BTN_W)
         self.pdfx_split_btn.grid(row=3, column=0, sticky="w", pady=(10, 0))
         split.columnconfigure(1, weight=1)
+
+        merge = self._card(self.tab_pdf, "Ghép nhiều file")
+        self._row(merge, 0, "Tên file kết quả", ttk.Entry(merge, textvariable=self._var("pdfx_merge_name", "ghep"), width=INPUT_W))
+        ttk.Label(merge, text="Ghép theo đúng thứ tự trong danh sách trên, lưu vào thư mục lưu.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self.pdfx_merge_btn = GradientButton(merge, text="▶  Ghép file", style="Run.TButton", command=self._pdfx_merge_run, width=HEADER_BTN_W)
+        self.pdfx_merge_btn.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        merge.columnconfigure(1, weight=1)
 
     SPLIT_LABELS = {"pages": "Theo số trang", "bookmark": "Theo bookmark cấp 1", "size": "Theo dung lượng tối đa"}
 
@@ -910,6 +921,41 @@ class App(_CatMixin, _Base):
         out = self._pdfx_out()
         self._pdfx_start(lambda f: pe.split_pdf(f, mode, value, out, opts), "Đang tách")
 
+    def _pdfx_move(self, step: int):
+        sel = self.pdfx_tree.selection()
+        if len(sel) != 1:
+            return
+        i = int(sel[0]); j = i + step
+        if 0 <= j < len(self.pdfx_items):
+            self.pdfx_items[i], self.pdfx_items[j] = self.pdfx_items[j], self.pdfx_items[i]
+            self._pdfx_refresh()
+            self.pdfx_tree.selection_set(str(j))
+
+    def _pdfx_merge_run(self):
+        if len(self.pdfx_items) < 2:
+            messagebox.showinfo("Ghép file", "Thêm ít nhất hai file PDF.")
+            return
+        name = self._var("pdfx_merge_name", "ghep").get().strip() or "ghep"
+        files = [f for f, _ in self.pdfx_items]
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_busy(True)
+        threading.Thread(target=self._pdfx_merge_worker, args=(files, name, out, opts), daemon=True).start()
+
+    def _pdfx_merge_worker(self, files, name, out, opts):
+        try:
+            res = pe.merge_pdfs(files, name, out, opts)
+            msg = f"Xong: đã ghép {len(files)} file thành {res}."
+        except Exception as e:
+            log.exception("Lỗi ghép PDF")
+            msg = f"Lỗi ghép: {e}"
+        self.q.put(("pdfx_done", msg))
+
+    def _pdfx_busy(self, busy: bool):
+        state = "disabled" if busy else "normal"
+        for b in (self.pdfx_btn, self.pdfx_split_btn, self.pdfx_merge_btn):
+            b.config(state=state)
+
     def _pdfx_options(self):
         return pe.ExtractOptions(
             separate=self._var("pdfx_separate", False).get(), overwrite=self._var("pdfx_overwrite", False).get(),
@@ -921,7 +967,7 @@ class App(_CatMixin, _Base):
 
     def _pdfx_start(self, task, verb: str):
         """Chạy task(file) cho từng file trong danh sách, ở luồng nền. Hai nút đều khóa cho đến khi xong."""
-        self.pdfx_btn.config(state="disabled"); self.pdfx_split_btn.config(state="disabled")
+        self._pdfx_busy(True)
         files = [f for f, _ in self.pdfx_items]
         threading.Thread(target=self._pdfx_worker, args=(files, task, verb), daemon=True).start()
 
@@ -1429,7 +1475,7 @@ class App(_CatMixin, _Base):
                 elif k == "pdfx":
                     self.pdfx_status.set(v)
                 elif k == "pdfx_done":
-                    self.pdfx_status.set(v); self.pdfx_btn.config(state="normal"); self.pdfx_split_btn.config(state="normal")
+                    self.pdfx_status.set(v); self._pdfx_busy(False)
                 elif k == "packdone":
                     self.pack_pb.stop(); self.pack_pb.pack_forget()
                     self.pack_status.set(v); self.pack_btn.config(state="normal")

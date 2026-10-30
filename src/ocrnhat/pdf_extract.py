@@ -228,10 +228,39 @@ def split_pdf(src: Path, mode: str, value: float | int | None = None, out_dir: P
     return _write_groups(reader, src, groups, out_dir, opts)
 
 
+def merge_pdfs(srcs: list[Path], name: str = "ghep", out_dir: Path | None = None,
+               opts: ExtractOptions | None = None) -> Path:
+    """Ghép các file theo đúng thứ tự trong `srcs` thành một file PDF. Mỗi file nguồn có một bookmark cấp 1
+    mang tên file (khi giữ bookmark), bookmark gốc của file nằm dưới đó."""
+    opts = opts or ExtractOptions()
+    _check_version(opts)
+    if not srcs:
+        raise ValueError("Chưa có file nào để ghép")
+    srcs = [Path(s) for s in srcs]
+    out_dir = Path(out_dir) if out_dir else srcs[0].parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    writer = PdfWriter()
+    for src in srcs:
+        reader = _open(src)
+        writer.append(reader, outline_item=src.stem if opts.keep_bookmarks else None,
+                      import_outline=opts.keep_bookmarks)
+    if opts.compress:
+        for page in writer.pages:
+            page.compress_content_streams()
+        writer.compress_identical_objects(remove_duplicates=True, remove_unreferenced=True)
+    writer.pdf_header = f"%PDF-{opts.pdf_version}"
+    target = _target(out_dir, name, opts.overwrite)
+    with open(target, "wb") as f:
+        writer.write(f)
+    return target
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ocrnhat-pdf", description="Trích xuất trang hoặc tách file PDF.")
     ap.add_argument("inputs", nargs="+", help="file PDF")
     ap.add_argument("--pages", default="", help="trích xuất: ví dụ 2 hoặc 5-23 hoặc 2,5-7,12-")
+    ap.add_argument("--merge", action="store_true", help="ghép các file đầu vào theo thứ tự thành một PDF")
+    ap.add_argument("--name", default="ghep", help="--merge: tên file kết quả, không gồm .pdf (mặc định ghep)")
     ap.add_argument("--split", choices=SPLIT_MODES, help="tách file thay vì trích xuất: pages | bookmark | size")
     ap.add_argument("--every", type=int, default=1, help="--split pages: số trang mỗi file (mặc định 1)")
     ap.add_argument("--max-mb", type=float, default=10, help="--split size: dung lượng tối đa mỗi file, MB (mặc định 10)")
@@ -242,8 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-bookmarks", action="store_true", help="bỏ bookmark")
     ap.add_argument("--pdf-version", default="1.5", choices=PDF_VERSIONS, help="phiên bản PDF ghi trong file (mặc định 1.5)")
     a = ap.parse_args(argv)
-    if not a.split and not a.pages:
-        ap.error("cần --pages (trích xuất) hoặc --split (tách file)")
+    if not (a.split or a.merge or a.pages):
+        ap.error("cần --pages (trích xuất), --split (tách file) hoặc --merge (ghép file)")
     for st in (sys.stdout, sys.stderr):
         try:
             st.reconfigure(encoding="utf-8", errors="replace")
@@ -253,6 +282,13 @@ def main(argv: list[str] | None = None) -> int:
                           keep_bookmarks=not a.no_bookmarks, pdf_version=a.pdf_version)
     out = Path(a.out) if a.out else None
     code = 0
+    if a.merge:
+        try:
+            print(f"-> {merge_pdfs([Path(x) for x in a.inputs], a.name, out, opts)}")
+        except (ValueError, OSError) as e:
+            print(f"Lỗi ghép: {e}", file=sys.stderr)
+            return 1
+        return 0
     for name in a.inputs:
         try:
             if a.split:

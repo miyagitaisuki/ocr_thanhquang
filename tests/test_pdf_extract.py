@@ -156,3 +156,36 @@ def test_cli_split(tmp_path):
     src = _make_pdf(tmp_path / "doc.pdf", 4)
     assert pe.main([str(src), "--split", "pages", "--every", "2", "-o", str(tmp_path / "out")]) == 0
     assert len(list((tmp_path / "out").glob("*.pdf"))) == 2
+
+
+def test_merge_keeps_order_pages_and_bookmarks(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 2, outline=[("Mục A", 0)])
+    b = _make_pdf(tmp_path / "b.pdf", 3)
+    out = pe.merge_pdfs([b, a], "ghep", tmp_path / "out")
+    r = PdfReader(str(out))
+    assert out.name == "ghep.pdf" and len(r.pages) == 5
+    assert [o.title for o in r.outline if not isinstance(o, list)] == ["b", "a"]
+
+
+def test_merge_without_bookmarks(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 1, outline=[("Mục A", 0)])
+    b = _make_pdf(tmp_path / "b.pdf", 1)
+    out = pe.merge_pdfs([a, b], "ghep", tmp_path / "out", pe.ExtractOptions(keep_bookmarks=False))
+    assert len(PdfReader(str(out)).pages) == 2 and not PdfReader(str(out)).outline
+
+
+def test_merge_overwrite_and_empty(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 1)
+    out1 = pe.merge_pdfs([a], "ghep", tmp_path / "out")
+    out2 = pe.merge_pdfs([a], "ghep", tmp_path / "out")
+    assert out2.name == "ghep (2).pdf" and out1 != out2
+    assert pe.merge_pdfs([a], "ghep", tmp_path / "out", pe.ExtractOptions(overwrite=True)) == out1
+    with pytest.raises(ValueError):
+        pe.merge_pdfs([], "ghep", tmp_path / "out")
+
+
+def test_cli_merge(tmp_path, capsys):
+    a = _make_pdf(tmp_path / "a.pdf", 1)
+    b = _make_pdf(tmp_path / "b.pdf", 2)
+    assert pe.main([str(a), str(b), "--merge", "--name", "tong", "-o", str(tmp_path / "out")]) == 0
+    assert len(PdfReader(str(tmp_path / "out" / "tong.pdf")).pages) == 3
