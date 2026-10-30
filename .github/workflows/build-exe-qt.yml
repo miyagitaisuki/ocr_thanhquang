@@ -19,7 +19,7 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt pyinstaller
-          pip install -e ".[qt]"
+          pip install -e ".[test,qt]"
       - name: Test giao diện Qt
         run: pytest -q tests/test_gui_qt.py tests/test_gui_qt_pdf.py tests/test_gui_qt_extra.py tests/test_ui_logic.py
       - name: Build exe (giao diện Qt)
