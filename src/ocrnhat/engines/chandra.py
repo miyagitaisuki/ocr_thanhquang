@@ -235,7 +235,25 @@ def model_downloaded() -> bool:
         return False
 
 
-def download_model() -> str:
-    """Tải trọng số Chandra từ Hugging Face vào cache (vài GB, cần Internet). Trả về đường dẫn thư mục."""
+def bytes_tqdm(cb):
+    """Lớp tqdm báo số byte đã tải cho cb(done, total). Dùng làm tqdm_class của huggingface_hub."""
+    from tqdm.auto import tqdm
+
+    class _Bytes(tqdm):
+        def update(self, n=1):
+            r = super().update(n)
+            if getattr(self, "unit", "") == "B" and self.total:
+                cb(self.n, self.total)
+            return r
+    return _Bytes
+
+
+def download_model(progress=None) -> str:
+    """Tải trọng số Chandra từ Hugging Face vào cache (vài GB, cần Internet). Trả về đường dẫn thư mục.
+    progress(done, total) nhận số byte nếu huggingface_hub hỗ trợ tqdm_class (bản mới)."""
+    import inspect
     from huggingface_hub import snapshot_download
-    return snapshot_download(repo_id=model_repo())
+    kw = {}
+    if progress is not None and "tqdm_class" in inspect.signature(snapshot_download).parameters:
+        kw["tqdm_class"] = bytes_tqdm(progress)
+    return snapshot_download(repo_id=model_repo(), **kw)

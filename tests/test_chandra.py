@@ -104,3 +104,14 @@ def test_batch_theo_vram():
     assert batch_for_vram(12288) == 8
     assert batch_for_vram(4096) == 1      # dưới 6 GB không gom batch
     assert batch_for_vram(None) == 1
+
+
+def test_bytes_tqdm_bao_so_byte(monkeypatch):
+    from ocrnhat.engines.chandra import bytes_tqdm
+    seen = []
+    cls = bytes_tqdm(lambda d, t: seen.append((d, t)))
+    import io
+    bar = cls(total=100, unit="B", file=io.StringIO())
+    bar.update(40); bar.update(60)
+    bar.close()
+    assert seen[-1] == (100, 100) and seen[0] == (40, 100)
