@@ -14,8 +14,8 @@ except ImportError:
 
 from pypdf import PdfWriter  # noqa: E402
 
-from ocrnhat import gui_qt, ui_logic as L  # noqa: E402
-from ocrnhat.gui_qt_extra import ModelBox, ResultsBox, apply_view, drag_rect, source_image, to_source  # noqa: E402
+from ocrnhat import gui, ui_logic as L  # noqa: E402
+from ocrnhat.gui_extra import ModelBox, ResultsBox, apply_view, drag_rect, source_image, to_source  # noqa: E402
 
 
 def _pdf(path, pages=2):
@@ -90,7 +90,7 @@ def test_ket_qua_rong_tat_nut(tmp_path):
 
 def test_vung_cat_trong_o_nhap_khop_khung_tren_anh(tmp_path, store):
     src = _pdf(tmp_path / "a.pdf", 1)
-    w = gui_qt.MainWindow()
+    w = gui.MainWindow()
     w.ocr._add([src])
     w.ocr.crop.setText("10,20,300,400")
     assert w.ocr.crop_view.crops == [(10, 20, 300, 400)]   # ô nhập vẽ thành khung
@@ -112,9 +112,9 @@ def test_chandra_chi_hien_khi_co_engine(tmp_path):
 
 
 def test_hien_thi_ap_dung_ngay_va_luu(store):
-    w = gui_qt.MainWindow()
+    w = gui.MainWindow()
     w.settings.setdefault("qt_view", {})
-    from ocrnhat import gui_qt_extra as ex
+    from ocrnhat import gui_extra as ex
     ex._set(w, QApplication.instance(), w.settings, w._save_view, theme="tối", alpha=90, font_pt=12)
     assert w.windowOpacity() == pytest.approx(0.9, abs=0.01)
     assert QApplication.instance().font().pointSize() == 12
@@ -124,7 +124,7 @@ def test_hien_thi_ap_dung_ngay_va_luu(store):
 
 
 def test_ket_qua_co_trong_ocr_va_tuy_chon_kiem_tra(store):
-    w = gui_qt.MainWindow()
+    w = gui.MainWindow()
     w.ocr.conf.setText("0.6")
     w.ocr.review.setChecked(True)
     opts = w.ocr.options()
@@ -133,7 +133,7 @@ def test_ket_qua_co_trong_ocr_va_tuy_chon_kiem_tra(store):
 
 
 def test_tay_nam_goc_nhan_dien_va_doi_kich_thuoc():
-    from ocrnhat.gui_qt_extra import corner_at, resize_rect
+    from ocrnhat.gui_extra import corner_at, resize_rect
     rect = (100, 100, 300, 200)
     assert corner_at(rect, (101, 99), tol=4) == "tl"
     assert corner_at(rect, (299, 201), tol=4) == "br"
@@ -153,7 +153,7 @@ def test_anh_trang_theo_dpi_dang_chon(tmp_path):
 
 
 def test_doi_dpi_nhan_vung_cat_de_giu_dung_phan_trang(store):
-    w = gui_qt.MainWindow()
+    w = gui.MainWindow()
     w.ocr.crop.setText("100,100,200,200")
     w.ocr.dpi.setCurrentIndex(w.ocr.dpi.findData(300))   # 200 -> 300 dpi: nhân 1,5
     assert w.ocr.crop.text() == "150,150,300,300"
@@ -174,7 +174,7 @@ def _mouse(kind, x, y, shift=False):
 
 def test_chuot_them_vung_bang_shift_va_thay_vung_khi_khong_shift():
     from PySide6.QtGui import QImage
-    from ocrnhat.gui_qt_extra import PageView
+    from ocrnhat.gui_extra import PageView
     pv = PageView(mode="crop", min_size=(300, 300))
     pv.resize(300, 300)
     pv.set_image(QImage(300, 300, QImage.Format.Format_RGB888), 300, 300)
@@ -195,7 +195,7 @@ def test_chuot_them_vung_bang_shift_va_thay_vung_khi_khong_shift():
 
 
 def test_o_nhap_nhieu_vung_khop_khung(store):
-    w = gui_qt.MainWindow()
+    w = gui.MainWindow()
     w.ocr.crop.setText("10,10,100,100;150,150,250,250")
     assert w.ocr.crop_view.crops == [(10, 10, 100, 100), (150, 150, 250, 250)]
     assert w.ocr.options()["crop"] == [(10, 10, 100, 100), (150, 150, 250, 250)]

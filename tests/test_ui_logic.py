@@ -1,4 +1,4 @@
-"""Test logic giao diện không cần Tkinter: nhãn, ánh xạ nhãn -> khóa, đọc tùy chọn, kiểm tra engine."""
+"""Test logic giao diện không cần cửa sổ: nhãn, ánh xạ nhãn -> khóa, đọc tùy chọn, kiểm tra engine."""
 import pytest
 
 from ocrnhat import ui_logic as L

@@ -32,17 +32,17 @@ Dùng kiến trúc và trọng số `vgg_seq2seq.pth` của **VietOCR** (pbcquoc
 - Chủ dự án xác nhận Apache-2.0 cho gói này. Ghi chú: file LICENSE trong gói ghi Apache-2.0, còn metadata ghi MIT.
 - Các file ONNX và từ điển được tải trong GUI (tab AI powered) từ chính repo này, kiểm SHA-256.
 
-## PySide6 (giao diện Qt, `OCR-Nhat-Qt.exe`)
+## PySide6 (giao diện chính, `OCR-Nhat.exe`)
 
 **PySide6** (Qt for Python) theo giấy phép **LGPL-3.0** (Qt Company / Qt Project). Dùng dạng thư viện động, không sửa Qt; người dùng có thể thay thế thư viện Qt trong thư mục exe. Gói dùng: PySide6-Essentials.
 
 ## Thành phần đóng gói trong bộ cài `OCR-Nhat-setup.exe`
 
 Bộ cài (exe CPU) chứa các thành phần sau. Mỗi thành phần theo giấy phép riêng; xem file LICENSE của dự án gốc.
-- **Python** và thư viện chuẩn, gồm Tkinter (Python Software Foundation License).
+- **Python** và thư viện chuẩn (Python Software Foundation License).
 - **PyInstaller** (đóng gói exe; GPL-2.0-or-later với ngoại lệ cho phép đóng gói chương trình không phải GPL).
 - **pip** (MIT): dùng để cài gói GPU tùy chọn ngay trong app.
-- **onnxruntime** (MIT), **OpenCV** (Apache-2.0), **pypdfium2** (Apache-2.0 / BSD-3-Clause), **python-docx** (MIT), **NumPy** (BSD-3-Clause), **Pillow** (MIT-CMU), **tkinterdnd2** (MIT), **PyYAML**, **lxml**, **tqdm**, **networkx** (BSD).
+- **onnxruntime** (MIT), **OpenCV** (Apache-2.0), **pypdfium2** (Apache-2.0 / BSD-3-Clause), **python-docx** (MIT), **NumPy** (BSD-3-Clause), **Pillow** (MIT-CMU), **PyYAML**, **lxml**, **tqdm**, **networkx** (BSD).
 
 Công cụ **Inno Setup** chỉ dùng để tạo bộ cài trong CI, không đóng gói vào bộ cài.
 

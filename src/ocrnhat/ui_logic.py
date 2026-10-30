@@ -1,4 +1,4 @@
-"""Nhãn, ánh xạ nhãn -> khóa và đọc tùy chọn OCR cho giao diện. Không phụ thuộc Tkinter, test được không cần cửa sổ.
+"""Nhãn, ánh xạ nhãn -> khóa và đọc tùy chọn OCR cho giao diện. Không phụ thuộc giao diện, test được không cần cửa sổ.
 
 Giao diện truyền vào hàm get(tên, mặc định) để lấy giá trị ô nhập; hàm trả về dict đúng với pipeline.process_file.
 """

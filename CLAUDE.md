@@ -16,7 +16,7 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 - `engines/ndlocr.py`: bọc NDLOCR-Lite (ONNX), đọc XML trang -> Block/Line (text, table 表組, ruby ルビ, 柱, ノンブル). Commit ghim: xem `scripts/fetch_ndlocr.py`.
 - `layout.py`: lọc tiếng Nhật, bỏ furigana, gộp đoạn, nhận tiêu đề, dựng bảng từ đường kẻ (OpenCV) kèm ô gộp; dự phòng theo cụm tọa độ.
 - `docx_out.py`: xuất Word (font Yu Mincho, Heading, bảng) và txt.
-- `pipeline.py` / `cli.py` / `gui.py`: PDF/ảnh -> kết quả; dòng lệnh; giao diện Tkinter.
+- `pipeline.py` / `cli.py` / `gui.py`: PDF/ảnh -> kết quả; dòng lệnh; giao diện PySide6 (Qt).
 - Mã NDLOCR-Lite KHÔNG nằm trong repo: tải bằng `python scripts/fetch_ndlocr.py` vào `vendor/ndlocr-lite` (đã gitignore). Ghi công trong `NOTICE.md`.
 
 ## Build / kiểm tra

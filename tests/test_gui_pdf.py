@@ -14,7 +14,7 @@ except ImportError:
 
 from pypdf import PdfReader, PdfWriter  # noqa: E402
 
-from ocrnhat import gui_qt, ui_logic as L  # noqa: E402
+from ocrnhat import gui, ui_logic as L  # noqa: E402
 
 
 def _pdf(path, pages):
@@ -43,7 +43,7 @@ def store(monkeypatch):
 
 @pytest.fixture
 def window(store):
-    w = gui_qt.MainWindow()
+    w = gui.MainWindow()
     yield w
     w.close()
 
@@ -98,7 +98,7 @@ def test_xoay_trang_that(window, tmp_path):
 
 def test_ghep_can_it_nhat_hai_file(window, tmp_path, monkeypatch):
     shown = []
-    monkeypatch.setattr(gui_qt_pdf_mod(), "QMessageBox", _Box(shown))
+    monkeypatch.setattr(gui_pdf_mod(), "QMessageBox", _Box(shown))
     window.merge.files_box.add_paths([str(_pdf(tmp_path / "a.pdf", 1))])
     window.merge.run_merge()
     assert shown and "Thêm ít nhất 2" in shown[0]
@@ -118,12 +118,12 @@ def test_chon_file_chen_trang_giu_theo_duong_dan(window, tmp_path):
 
 def test_luu_khoi_phuc_thu_muc_va_danh_sach(store, tmp_path):
     a = _pdf(tmp_path / "a.pdf", 1)
-    w1 = gui_qt.MainWindow()
+    w1 = gui.MainWindow()
     w1.split.files_box.add_paths([str(a)])
     w1.split.output.folder.setText(str(tmp_path))
     w1.split.fields["pages"].setText("1")
     w1.close()
-    w2 = gui_qt.MainWindow()
+    w2 = gui.MainWindow()
     assert w2.split.output.folder.text() == str(tmp_path)
     assert w2.split.fields["pages"].text() == "1"
     assert [str(f) for f in w2.split.files_box.files()] == [str(a)]
@@ -132,8 +132,8 @@ def test_luu_khoi_phuc_thu_muc_va_danh_sach(store, tmp_path):
 
 # ---------- trợ giúp kiểm tra hộp thoại ----------
 
-def gui_qt_pdf_mod():
-    import ocrnhat.gui_qt_pdf as m
+def gui_pdf_mod():
+    import ocrnhat.gui_pdf as m
     return m
 
 
