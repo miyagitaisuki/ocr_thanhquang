@@ -6,6 +6,7 @@ thư mục riêng (`%LOCALAPPDATA%\\OCR-Nhat\\gpu`). Lần khởi động sau, `
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import sys
@@ -82,8 +83,11 @@ def install(progress=print) -> None:
     progress("Đang chọn phiên bản torch CUDA…")
     pins = cuda_pins()
     progress(f"Đang tải {', '.join(pins)} và Chandra (có thể mất nhiều phút)…")
-    code = pip_main(pip_args(pins, d))
+    # bản --windowed có sys.stdout/stderr = None: pip ghi log vào đó và thoát mã 2. Chuyển đầu ra vào file log.
+    log = d / "install.log"
+    with open(log, "w", encoding="utf-8") as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+        code = pip_main(pip_args(pins, d))
     if code != 0:
-        raise RuntimeError(f"pip thoát với mã {code}")
+        raise RuntimeError(f"pip thoát với mã {code}; chi tiết trong {log}")
     (d / MARKER).write_text("\n".join(pins), encoding="utf-8")
     activate()
