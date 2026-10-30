@@ -59,6 +59,7 @@ class Tip:
 
 class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
+    KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
     # chandra còn là placeholder (chưa cài đặt) nên không đưa lên giao diện; dòng lệnh vẫn có
     ENGINES = ("auto", "ndlocr")
 
@@ -158,6 +159,8 @@ class App(_Base):
         cb_k = self._check(proc, "use_cache", True, "Dùng cache kết quả OCR (chạy lại cùng file sẽ nhanh hơn)")
         cb_k.grid(row=6, column=0, columnspan=3, sticky="w", pady=2)
         Tip(cb_k, "Lưu kết quả từng trang trong thư mục đầu ra (.cache). Tắt nếu muốn OCR lại từ đầu.")
+        self._row(proc, 7, "Đọc bảng kana", ttk.Combobox(proc, textvariable=self._var("kana", self.KANA_LABELS[""]), values=list(self.KANA_LABELS.values()), state="readonly", width=34))
+        Tip(proc.grid_slaves(row=7, column=1)[0], "Thử nghiệm. Đọc ô bảng chữ kana (trang 13–16, 19). Mẫu IPAGothic cho kết quả tốt hơn; ô không chắc để trống. Luôn xuất file *_kana_review.html để đối chiếu.")
         proc.columnconfigure(1, weight=1)
 
         # --- rà soát ---
@@ -308,7 +311,8 @@ class App(_Base):
                     device=dev, ruby=self._var("ruby", False).get(),
                     review=self._var("review", False).get(), conf_threshold=conf,
                     engine=self._var("engine", "auto").get(), crop=crop, upscale=upscale,
-                    cell_reocr=self._var("cell_reocr", True).get(), use_cache=self._var("use_cache", True).get())
+                    cell_reocr=self._var("cell_reocr", True).get(), use_cache=self._var("use_cache", True).get(),
+                    kana_reader=next(k for k, v in self.KANA_LABELS.items() if v == self._var("kana", "").get()))
 
     def start(self):
         if not self.files:

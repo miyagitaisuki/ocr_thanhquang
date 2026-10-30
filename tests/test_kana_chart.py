@@ -65,3 +65,20 @@ def test_file_ra_soat_co_anh_va_o_trong(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert text.count("data:image/png;base64,") == 2
     assert "p.13 → <b>あ</b>" in text and "∅" in text and 'class="empty"' in text
+
+
+def test_suy_luoi_tu_romaji_bang_dakuten():
+    from ocrnhat.layout import _chart_grid
+    # 5 hàng × 5 cột như bảng dakuten: romaji ở bên phải ô, bước cột 170 px, bước hàng 64 px
+    lines = []
+    for r in range(5):
+        for c in range(5):
+            cx = 273 + c * 170 + (c * 0)           # tâm romaji
+            cy = 265 + r * 66
+            lines.append(Line("ga", x=cx - 20, y=cy - 8, w=40, h=16, conf=0.9))
+    # vài romaji nhiễu rời rạc ở cột tiêu đề không được làm lệch lưới
+    lines.append(Line("Ex", x=122, y=260, w=24, h=16, conf=0.5))
+    lines.append(Line("bl", x=128, y=460, w=24, h=16, conf=0.5))
+    ys, xs = _chart_grid(lines)
+    assert len(xs) - 1 == 5 and len(ys) - 1 == 5
+    assert all(abs((b - a) - 170) < 5 for a, b in zip(xs[1:-2], xs[2:-1]))

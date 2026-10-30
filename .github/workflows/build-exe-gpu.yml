@@ -34,6 +34,7 @@ jobs:
           --paths src --paths vendor/ndlocr-lite/src
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
+          --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
           --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
           run_gui.py
       - name: Build exe (dòng lệnh GPU)
@@ -42,6 +43,7 @@ jobs:
           --paths src --paths vendor/ndlocr-lite/src
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
+          --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
           --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
           run_gui.py
       - name: "Kiểm tra exe GPU (runner không có GPU: phải lùi về CPU và vẫn OCR đúng)"

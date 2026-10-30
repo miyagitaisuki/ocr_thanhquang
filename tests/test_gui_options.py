@@ -20,9 +20,10 @@ class _Var:
 class _Form:
     """Thay cho App: chỉ giữ biến và nhãn thiết bị, để gọi trực tiếp App._read_options."""
     DEV_LABELS = gui.App.DEV_LABELS
+    KANA_LABELS = gui.App.KANA_LABELS
 
     def __init__(self, **values):
-        self.values = {"dev": gui.App.DEV_LABELS["auto"], **values}   # giá trị mặc định như khi mở GUI
+        self.values = {"dev": gui.App.DEV_LABELS["auto"], "kana": gui.App.KANA_LABELS[""], **values}   # giá trị mặc định như khi mở GUI
 
     def _var(self, name, default):
         return _Var(self.values.get(name, default))
@@ -59,3 +60,11 @@ def test_crop_sai_bao_loi_tieng_viet():
 def test_upscale_khong_phai_so_bao_loi():
     with pytest.raises(ValueError, match="Phóng to"):
         _read(upscale="abc")
+
+
+def test_chon_doc_kana_duoc_chuyen_thanh_kana_reader():
+    assert _read()["kana_reader"] == ""
+    assert _read(kana="Mẫu IPAGothic (thử nghiệm)")["kana_reader"] == "template"
+    assert _read(kana="Tesseract (thử nghiệm)")["kana_reader"] == "tesseract"
+    params = inspect.signature(pipeline.process_file).parameters
+    assert "kana_reader" in params

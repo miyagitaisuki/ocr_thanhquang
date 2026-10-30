@@ -31,3 +31,10 @@ def test_chu_kho_phan_biet_thi_de_trong_chu_khong_doan_sai():
 def test_o_trong_tra_ve_rong():
     blank = np.full((67, 170, 3), 255, np.uint8)
     assert kana.read_cell_template(blank) == ""
+
+
+def test_font_di_kem_goi_ton_tai():
+    from pathlib import Path
+    bundled = Path(kana.__file__).parent / "fonts" / "ipag.ttf"
+    assert bundled.is_file()
+    assert (bundled.parent / "IPA_FONT_LICENSE.txt").is_file()

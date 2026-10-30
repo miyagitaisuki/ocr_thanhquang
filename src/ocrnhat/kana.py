@@ -52,7 +52,12 @@ def _norm(mask: np.ndarray, size: int = 40) -> np.ndarray:
     return (out > 127).astype(np.float32)
 
 
-_FONT_PATHS = ["/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf", "/usr/share/fonts/truetype/ipafont-gothic/ipag.ttf"]
+# font đi kèm gói (IPAfont, IPA Font License v1.0 — xem fonts/IPA_FONT_LICENSE.txt); dự phòng là font hệ thống
+_FONT_PATHS = [
+    str(Path(__file__).parent / "fonts" / "ipag.ttf"),
+    "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf",
+    "/usr/share/fonts/truetype/ipafont-gothic/ipag.ttf",
+]
 _TEMPLATES: dict[str, np.ndarray] | None = None
 _KANA_SET = [chr(c) for c in range(0x3041, 0x3097)] + [chr(c) for c in range(0x30A1, 0x30FB)]
 
