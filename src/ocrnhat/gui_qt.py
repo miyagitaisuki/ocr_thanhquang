@@ -20,7 +20,7 @@ from . import gpu, gpupack, pipeline
 from . import ui_logic as L
 from .cli import collect
 from .gui_qt_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
-from .gui_qt_style import APP_NAME, state_key
+from .gui_qt_style import APP_NAME, add_soft_shadows, state_key
 from .gui_qt_pdf import MergeSection, SplitSection, ToolsSection
 
 gpupack.activate()   # trước khi đọc find_spec('chandra')
@@ -655,6 +655,7 @@ class MainWindow(QMainWindow):
         hl.addWidget(side)
         hl.addWidget(content, 1)
         self.setCentralWidget(central)
+        add_soft_shadows(central)   # bóng mềm cho các thẻ sau khi đã dựng xong
 
         self.run_btn.clicked.connect(self.ocr.start)
         self.ocr.busy_changed.connect(lambda on: self.run_btn.setEnabled(not on))
