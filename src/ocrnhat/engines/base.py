@@ -21,3 +21,7 @@ class OcrEngine(ABC):
     @abstractmethod
     def ocr(self, img_rgb: np.ndarray, name: str = "page.png") -> Page:
         """Nhận ảnh trang RGB, trả về khối/dòng có tọa độ pixel và độ tin cậy 0..1."""
+
+    def ocr_many(self, imgs: list[np.ndarray], names: list[str]) -> list[Page]:
+        """Nhiều trang một lần. Mặc định OCR từng trang; engine hỗ trợ batch thì ghi đè."""
+        return [self.ocr(img, name) for img, name in zip(imgs, names)]

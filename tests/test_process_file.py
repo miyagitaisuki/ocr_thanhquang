@@ -7,10 +7,11 @@ import pytest
 from PIL import Image
 
 from ocrnhat import engines, layout, pipeline
+from ocrnhat.engines.base import OcrEngine
 from ocrnhat.model import Block, Line, Page
 
 
-class _CountingEngine:
+class _CountingEngine(OcrEngine):
     calls = 0
 
     def __init__(self, device="cpu"):
@@ -79,3 +80,25 @@ def test_cell_reocr_duoc_truyen_xuong_layout(fake_engine, pdf, tmp_path, monkeyp
     pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, cell_reocr=cell_reocr)
     assert len(seen) == 1
     assert (seen[0] is not None) == expect_callable
+
+
+def test_batch_gom_trang_va_giu_thu_tu(monkeypatch, tmp_path):
+    # PDF 5 trang, batch 2: engine nhận nhóm 2,2,1 và kết quả vẫn theo đúng thứ tự trang
+    pdf5 = tmp_path / "five.pdf"
+    imgs = [Image.new("RGB", (800, 1000), "white") for _ in range(5)]
+    imgs[0].save(pdf5, "PDF", resolution=200, save_all=True, append_images=imgs[1:])
+    seen = []
+
+    class _Batch(_CountingEngine):
+        def ocr_many(self, imgs, names):
+            seen.append(len(imgs))
+            return [self.ocr(i, n) for i, n in zip(imgs, names)]
+
+    monkeypatch.setattr(engines, "create", lambda name, device="cpu": _Batch(device))
+    monkeypatch.setattr(engines, "resolve", lambda name=None: (name or "ndlocr", "test"))
+    monkeypatch.setattr(engines, "engine_version", lambda name: "test")
+    monkeypatch.setattr(engines, "batch_size", lambda name: 2)
+    monkeypatch.setattr(pipeline, "_tls", threading.local())
+    r = pipeline.process_file(pdf5, tmp_path / "out", 200, None, device="cpu", use_cache=False, engine="chandra")
+    assert r["pages"] == 5
+    assert seen == [2, 2, 1]
