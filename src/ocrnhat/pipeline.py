@@ -165,7 +165,7 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
                  workers: int | None = None, cell_reocr: bool = True,
                  crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
                  suspect: bool = False, suspect_threshold: float = 0.0005,
-                 kana_reader: str = "") -> dict:
+                 kana_reader: str = "", vi_fix: bool = True) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -308,6 +308,9 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
         if merge_pages:
             from .layout import merge_pages as _merge
             results = _merge(results)
+        if lang == "vi" and vi_fix:
+            from .vi_text import correct_results
+            results = correct_results(results)
         write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby, page_break=not merge_pages)
         if write_txt:
             _txt(results, out_dir / f"{stem}.txt")
