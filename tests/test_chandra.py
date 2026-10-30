@@ -69,3 +69,19 @@ def test_engine_chua_cai_thi_auto_khong_chon_chandra(monkeypatch):
     ok, why = ChandraEngine.is_available()
     assert ok is False and "pip install" in why
     assert resolve("auto")[0] == "ndlocr"
+
+
+def test_khong_co_cuda_thi_chandra_khong_san_sang(monkeypatch):
+    # máy có NVIDIA nhưng torch bản CPU: không được chọn Chandra (chạy CPU quá chậm)
+    import torch
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    ok, why = ChandraEngine.is_available()
+    assert ok is False and "CUDA" in why
+    assert resolve("auto")[0] == "ndlocr"
+
+
+def test_auto_khong_chon_chandra_khi_khong_co_nvidia(monkeypatch):
+    # AMD/Intel hoặc không có card: nvidia-smi không có -> ndlocr, không cần kiểm tra Chandra
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert resolve("auto")[0] == "ndlocr"

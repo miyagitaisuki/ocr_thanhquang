@@ -175,14 +175,20 @@ class ChandraEngine(OcrEngine):
     @classmethod
     def is_available(cls):
         if importlib.util.find_spec("chandra") is None:
-            return False, "chưa cài (pip install chandra-ocr)"
+            return False, "chưa cài (pip install \".[chandra]\")"
+        try:
+            import torch
+        except ImportError:
+            return False, "thiếu torch (pip install \".[chandra]\")"
+        if not torch.cuda.is_available():
+            return False, "không có CUDA trong torch (cần bản torch CUDA; bản CPU quá chậm)"
         return True, ""
 
-    def __init__(self, method: str = "hf", **_):
-        ok, why = self.is_available()
-        if not ok:
-            raise RuntimeError(f"Engine Chandra {why}.")
+    def __init__(self, method: str = "hf", device: str = "auto", **_):
         from chandra.model import InferenceManager   # import lười: chỉ khi thật sự dùng
+        from chandra.settings import settings as cfg
+        if device == "cpu":
+            cfg.TORCH_DEVICE = "cpu"    # ô Thiết bị = CPU: ép chạy CPU (mặc định HF tự chọn GPU)
         self.manager = InferenceManager(method=method)
 
     def ocr(self, img_rgb: np.ndarray, name: str = "page.png") -> Page:
