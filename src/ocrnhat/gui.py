@@ -36,6 +36,7 @@ PALETTES = {
                 SEL="#2F4A70", HEAD="#2F343D", TROUGH="#343A44", FIELD="#1E2228"),
 }
 FONT_SIZES = {"Nhỏ": 9, "Vừa": 10, "Lớn": 12}
+ALPHA_LEVELS = (100, 95, 90, 85, 80)   # độ đục của cửa sổ, phần trăm
 PRESETS = {   # mẫu tài liệu: đặt sẵn một số tùy chọn; các ô khác giữ nguyên
     "Sổ tay / sách (mặc định)": dict(upscale="1", cell_reocr=True),
     "Ảnh chụp điện thoại": dict(upscale="2", cell_reocr=True),
@@ -371,8 +372,20 @@ class App(_Base):
         for label, pt in FONT_SIZES.items():
             size.add_command(label=f"{label} ({pt})", command=lambda p=pt: self._set_font(p))
         view.add_cascade(label="Cỡ chữ", menu=size)
+        trans = tk.Menu(view, tearoff=0)
+        self._alpha = tk.IntVar(value=int(self.settings.get("alpha", 100)))
+        for pct in ALPHA_LEVELS:
+            trans.add_radiobutton(label=f"{pct}%", variable=self._alpha, value=pct, command=lambda p=pct: self._set_alpha(p))
+        view.add_cascade(label="Độ trong suốt cửa sổ", menu=trans)
         menubar.add_cascade(label="Hiển thị", menu=view)
         self.config(menu=menubar)
+        self.attributes("-alpha", self._alpha.get() / 100)   # áp dụng ngay khi mở
+
+    def _set_alpha(self, pct: int):
+        """Độ mờ của cả cửa sổ (100% = đục). Áp dụng ngay, không cần khởi động lại."""
+        self.settings["alpha"] = pct
+        save_settings(self.settings)
+        self.attributes("-alpha", pct / 100)
 
     def _set_theme(self, name: str):
         self.settings["theme"] = name
