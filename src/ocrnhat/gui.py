@@ -219,7 +219,7 @@ class App(_CatMixin, _Base):
         ttk.Label(top, textvariable=self.status, style="Status.TLabel", wraplength=_sc(self, 880), justify="left").pack(fill="x")
 
     def _shortcuts(self):
-        self.bind("<Control-o>", lambda e: self.add_files())
+        self.bind("<Control-o>", lambda e: self._pdfx_add() if self.tab_pdf.winfo_ismapped() else self.add_files())
         self.bind("<Control-r>", lambda e: self.start())
         self.bind("<F5>", lambda e: self.start())
         self.bind("<Escape>", lambda e: self._confirm_stop() if self.worker and self.worker.is_alive() else None)
@@ -297,8 +297,9 @@ class App(_CatMixin, _Base):
         self.basic_count = tk.StringVar()
         ttk.Label(bar, textvariable=self.basic_count, style="Muted.TLabel").pack(side="left", padx=12)
         basic_langs = [self.LANG_LABELS[k] for k in ("ja", "en", "zh", "vi")]
-        self._row(card, 1, "Ngôn ngữ", ttk.Combobox(card, textvariable=self._var("lang", self.LANG_LABELS["ja"]),
-                                                    values=basic_langs, state="readonly", width=INPUT_W))
+        self.basic_lang_cb = ttk.Combobox(card, textvariable=self._var("lang", self.LANG_LABELS["ja"]),
+                                                    values=basic_langs, state="readonly", width=INPUT_W)
+        self._row(card, 1, "Ngôn ngữ", self.basic_lang_cb)
         ttk.Label(card, text="Tiếng Nhật dùng NDLOCR. Công cụ khác và chỉnh sâu ở tab Tùy chọn.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         self._row(card, 2, "Thư mục lưu", ttk.Entry(card, textvariable=self._var("out", ""), width=INPUT_W))
         GradientButton(card, text="Chọn…", command=self.pick_out).grid(row=2, column=2, sticky="w", padx=(8, 0), pady=4)
@@ -509,8 +510,14 @@ class App(_CatMixin, _Base):
         self.pdfx_tree = ttk.Treeview(table, columns=("no", "name", "pages", "folder"), show="headings", height=5, selectmode="extended")
         for col, text, w in (("no", "#", 50), ("name", "Tên file", 300), ("pages", "Số trang", 90), ("folder", "Thư mục", 420)):
             self.pdfx_tree.heading(col, text=text, anchor="w"); self.pdfx_tree.column(col, width=w, anchor="w")
+        pscroll = ttk.Scrollbar(table, orient="vertical", command=self.pdfx_tree.yview)
+        self.pdfx_tree.configure(yscrollcommand=pscroll.set)
         self.pdfx_tree.pack(side="left", fill="both", expand=True)
+        pscroll.pack(side="right", fill="y")
         self.pdfx_tree.bind("<Delete>", lambda e: self._pdfx_remove())
+        if HAS_DND:   # kéo PDF từ Explorer vào danh sách
+            self.pdfx_tree.drop_target_register(DND_FILES)
+            self.pdfx_tree.dnd_bind("<<Drop>>", self._pdfx_on_drop)
 
         self.pdfx_status = tk.StringVar(value="Thêm file PDF, chọn thao tác rồi bấm nút chạy.")
         ttk.Label(files, textvariable=self.pdfx_status, style="Card.TLabel",
@@ -587,8 +594,15 @@ class App(_CatMixin, _Base):
 
     SPLIT_LABELS = {"pages": "Theo số trang", "bookmark": "Theo bookmark cấp 1", "size": "Theo dung lượng tối đa"}
 
+    def _pdfx_on_drop(self, event):
+        self._pdfx_add_paths(Path(p) for p in self.tk.splitlist(event.data) if p.lower().endswith(".pdf"))
+        return event.action
+
     def _pdfx_add(self):
-        for f in map(Path, filedialog.askopenfilenames(filetypes=[("PDF", "*.pdf")])):
+        self._pdfx_add_paths(map(Path, filedialog.askopenfilenames(filetypes=[("PDF", "*.pdf")])))
+
+    def _pdfx_add_paths(self, paths):
+        for f in paths:
             if any(f == g for g, _ in self.pdfx_items):
                 continue
             try:
@@ -1066,6 +1080,8 @@ class App(_CatMixin, _Base):
         key = self._engine_key()
         allowed = [self.LANG_LABELS[k] for k in self.ENGINE_LANGS.get(key, self.ENGINE_LANGS["auto"])]
         self.lang_cb.config(values=allowed, state="readonly")
+        if hasattr(self, "basic_lang_cb"):   # tab Cơ bản dùng cùng biến nên phải cùng danh sách
+            self.basic_lang_cb.config(values=allowed, state="readonly")
         if self._var("lang", self.LANG_LABELS["ja"]).get() not in allowed:
             self._var("lang", self.LANG_LABELS["ja"]).set(allowed[0])
 
@@ -1249,7 +1265,7 @@ class App(_CatMixin, _Base):
             try:
                 r = pipeline.process_file(
                     f, out, 200, pages if f.suffix.lower() == ".pdf" else None,
-                    progress=lambda d, t, m: self.q.put(("prog", (d, t, m))),
+                    progress=lambda d, t, m, i=i, n=len(files): self.q.put(("prog", (d, t, m, i, n))),
                     cancel=self.cancel.is_set, **opts)
                 self.results.append((f, r))
                 self.q.put(("file", (i, "Dừng" if self.cancel.is_set() else "Xong")))
@@ -1334,7 +1350,8 @@ class App(_CatMixin, _Base):
         self.b_dir.config(state="normal" if has else "disabled")
         if has:
             self.res.selection_set("0")
-            self.nb.select(self.tab_res)
+            if not self.cancel.is_set():   # đã bấm Dừng thì giữ nguyên tab người dùng đang xem
+                self.nb.select(self.tab_res)
         self._preview_refresh()
 
     def _selected_result(self):
@@ -1436,14 +1453,16 @@ class App(_CatMixin, _Base):
             while True:
                 k, v = self.q.get_nowait()
                 if k == "prog":
-                    d, t, m = v
-                    self.pb["value"] = 100 * d / max(1, t)
-                    self._cat_move(d / max(1, t))
+                    d, t, m, i, n = v
+                    frac = (i + d / max(1, t)) / max(1, n)   # tiến trình chung của cả lượt, không đặt lại theo file
+                    self.pb["value"] = 100 * frac
+                    self._cat_move(frac)
                     eta = ""
-                    if d >= 2:
-                        rem = (time.time() - self._t0) / d * (t - d)
+                    if (i > 0 or d >= 2) and frac > 0:
+                        rem = (time.time() - self._t0) / frac * (1 - frac)
                         eta = " · còn khoảng dưới 1 phút" if rem < 60 else f" · còn khoảng {round(rem / 60)} phút"
-                    self.status.set(f"[{d}/{t}] {m}{eta}")
+                    head = f"File {i + 1}/{n} · " if n > 1 else ""
+                    self.status.set(f"{head}[{d}/{t}] {m}{eta}")
                 elif k == "status":
                     self.status.set(v)
                 elif k == "file":
