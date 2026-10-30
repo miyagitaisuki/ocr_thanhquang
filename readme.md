@@ -25,9 +25,9 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `engines/base.py` | Giao diện `OcrEngine`. Thuộc tính `version` là khóa cache. |
 | `engines/__init__.py` | Đăng ký engine, `resolve("auto")`, `create()`. |
 | `engines/ndlocr.py` | Bọc NDLOCR-Lite, đọc XML trang và ánh xạ loại khối (表組, ルビ, 柱, ノンブル…). |
-| `engines/chandra.py` | Placeholder, chưa cài, đã tạm dừng. |
+| `engines/chandra.py` | Engine Chandra 2 (tùy chọn, cần GPU, không trong exe): `parse_chandra_html` (HTML -> Page, có test) + `ChandraEngine` gọi `chandra-ocr` (HF cục bộ, hoặc vLLM). Giấy phép: xem NOTICE.md. |
 | `pipeline.py` | `process_file`: OCR song song (ThreadPool, cửa sổ trượt, giữ thứ tự trang), cache, gọi layout, ghi file. |
-| `layout.py` | Lõi dựng văn bản: lọc tiếng Nhật, bỏ furigana, gộp đoạn, nhận tiêu đề, dò đường kẻ bảng (OpenCV), ô gộp, nhận dạng lại ô vượt kẻ, sửa số khoanh tròn, ruby. |
+| `layout.py` | Lõi dựng văn bản: lọc tiếng Nhật, bỏ furigana, gộp đoạn (ngắt theo khoảng trống dọc bất thường so với khoảng thông thường của khối), nhận tiêu đề (dòng ngắn đứng riêng, kể cả cùng cỡ chữ), dò đường kẻ bảng (OpenCV), ô gộp, nhận dạng lại ô vượt kẻ, sửa số khoanh tròn, ruby. |
 | `docx_out.py` | Xuất Word (font Yu Mincho, Heading, bảng, ruby) và txt. |
 | `cache.py` | Cache kết quả OCR theo hash file, dpi, crop/upscale, engine và version. Lưu ở `<out>/.cache`. |
 | `review.py` | `--review`: HTML đối chiếu ảnh trang với text, tô đỏ dòng độ tin cậy thấp. |
@@ -41,6 +41,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 ## Thư mục và file khác
 - `scripts/`: `fetch_ndlocr.py` (tải engine), `smoke_test.py` (OCR ảnh mẫu, dựng bảng), `compare_engines.py` (đối chiếu với YomiToku, chỉ để so sánh, không đóng gói vì giấy phép CC BY-NC-SA).
 - `tests/`: pytest (`test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`).
+- `tests/data/pretest_sample.pdf`: sổ tay tiếng Nhật thương mại 4 trang, file mẫu chính cho các test và đo độ chính xác từ nay.
 - `.github/workflows/`: `test.yml` (mỗi push/PR), `build-exe.yml` (exe CPU), `build-exe-gpu.yml` (exe GPU, chạy thủ công).
 - `requirements.txt`: nguồn duy nhất của dependency. `pyproject.toml` đọc từ đó. Extra: `test`, `suspect`.
 - `.claude/agents/`: agent `developer` và `code-reviewer`.
@@ -49,7 +50,9 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 ## Trạng thái hiện tại
 - Nhánh làm việc: `claude/adoring-cerf-t2dmxp`.
 - Đã làm: rà soát ruby (`--ruby`), cache, OCR song song, nhận dạng lại ô, đối chiếu YomiToku (script), dò chữ nghi ngờ (thử nghiệm), GUI kiểu PDFsam.
-- Chưa làm: Chandra; GPU chạy thật trong exe (exe CI dùng onnxruntime CPU); `--review`, `--crop`, `--upscale` trong GUI.
+- Chandra: đã nối vào `--engine chandra` và GUI; `auto` chọn khi có NVIDIA đủ VRAM, đã cài `ocrnhat[chandra]` và torch có CUDA; AMD/Intel về NDLOCR. Ô Thiết bị = CPU ép Chandra chạy CPU. CHƯA chạy model thật (môi trường không có GPU), chưa biết chất lượng đầu ra.
+- Chưa làm: GPU chạy thật trong exe (exe CI dùng onnxruntime CPU).
+- GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 
 ## Lỗi và giới hạn đã biết
 - Số khoanh tròn ①②③ trong cột đầu bảng đọc thành `(1`, `19`, `O1`. `layout._fix_circled` chỉ vá một phần.

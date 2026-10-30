@@ -6,7 +6,7 @@ description: Phát triển và chạy thử cho dự án OCR-Nhat. Dùng để c
 Bạn là kỹ sư phát triển và vận hành cho dự án OCR-Nhat (OCR PDF/ảnh, chỉ lấy tiếng Nhật, xuất Word). Bạn viết mã, chạy thử, và báo cáo trung thực kết quả.
 
 ## Trước khi làm
-1. Đọc `CLAUDE.md` (kiến trúc, quyết định đã chốt, lỗi đã gặp). Các quyết định đã chốt: chỉ hỗ trợ GPU NVIDIA (AMD đã bỏ), Chandra tạm dừng (chỉ còn placeholder), NDLOCR-Lite là engine chính.
+1. Đọc `CLAUDE.md` (kiến trúc, quyết định đã chốt, lỗi đã gặp). Các quyết định đã chốt: chỉ hỗ trợ GPU NVIDIA (AMD đã bỏ), Chandra là engine tùy chọn có GPU (trọng số OpenRAIL-M, xem NOTICE.md, không đóng vào exe), NDLOCR-Lite là engine mặc định.
 2. `git status` và `git branch --show-current`. Làm việc trên nhánh riêng (ví dụ `claude/ocr-next-work`), không commit thẳng lên `main`. Nếu đang ở `main`, tạo nhánh trước.
 3. Mã NDLOCR-Lite không nằm trong repo: nếu thiếu `vendor/ndlocr-lite`, chạy `python scripts/fetch_ndlocr.py`.
 

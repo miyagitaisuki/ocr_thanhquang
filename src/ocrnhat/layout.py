@@ -81,6 +81,7 @@ class Para:
     ruby: list = field(default_factory=list)   # [(bắt đầu, kết thúc, cách đọc)] theo chỉ số ký tự của text
     toc: bool = False                          # dòng mục lục (có dấu chấm dẫn): không nối với đoạn khác
     bullet: bool = False                       # đoạn mở đầu bằng ký hiệu đầu dòng của sách: xuất thành danh sách Word
+    hard_break: bool = False                   # đoạn tách vì khoảng trống lớn trong khối: không nối lại với đoạn trước
 
 
 @dataclass
@@ -227,7 +228,7 @@ def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Pa
     for o, it in items:
         if out and isinstance(it, Para) and isinstance(out[-1][1], Para):
             a: Para = out[-1][1]
-            if (a.kind == "body" and it.kind == "body" and not a.toc and not it.toc and not it.bullet and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
+            if (a.kind == "body" and it.kind == "body" and not it.hard_break and not a.toc and not it.toc and not it.bullet and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
                     and abs(it.x - a.x) < 1.2 * a.size and -0.5 * a.size < it.y - a.y1 < 1.6 * a.size):
                 a.ruby += [(s + len(a.text), e + len(a.text), r) for s, e, r in it.ruby]; a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
                 continue
@@ -251,21 +252,45 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
             and not re.search(r"[をにはがでとのへもや、,]$", text_all)):
         return [_mk(ls, "heading", flt)]
     left = min(l.x for l in ls); right = max(l.x1 for l in ls)
+    # khoảng cách dọc giữa hai dòng liền nhau: khoảng thông thường của khối là trung vị;
+    # khoảng lớn hơn hẳn trung vị là khoảng cách giữa hai đoạn
+    gaps = [b.y - a.y1 for a, b in zip(ls, ls[1:]) if not a.vertical and not b.vertical]
+    gmed = statistics.median(gaps) if gaps else 0.0
+    def wide(a: Line, b: Line) -> bool:
+        g = b.y - a.y1
+        return not a.vertical and not b.vertical and g > 1.25 * gmed and g > 0.4 * H
     paras: list[list[Line]] = []
-    for l in ls:
-        new = not paras or id(l) in toc
-        if paras and not new:
+    hard: list[bool] = []   # đoạn mở đầu bằng khoảng trống lớn: không được nối lại ở _merge_paras
+    for prev, l in zip([None] + ls[:-1], ls):
+        new = prev is None or id(l) in toc
+        wide_gap = False
+        if not new:
             p = paras[-1][-1]
             if not l.vertical and not p.vertical:
                 if l.x - left > 0.6 * H: new = True
                 elif _SENT_END.search(p.text) and p.x1 < right - 1.5 * H: new = True
                 elif _BULLET.match(l.text): new = True
-        if new: paras.append([l])
+                elif wide(p, l): new = wide_gap = True
+        if new:
+            paras.append([l]); hard.append(wide_gap)
         else: paras[-1].append(l)
+    # dòng đơn, ngắn, đứng riêng giữa hai khoảng trống lớn: tiêu đề (kể cả khi cùng cỡ chữ)
+    pos = {id(l): i for i, l in enumerate(ls)}
+    def isolated_title(g: list[Line]) -> bool:
+        if len(g) != 1 or id(g[0]) in toc or g[0].vertical or _BULLET.match(g[0].text):
+            return False
+        t = g[0].text
+        if not 5 <= len(t) <= 30 or t.endswith(("。", "、")) or re.search(r"[をにはがでとのへもや]$", t):
+            return False
+        i = pos[id(g[0])]
+        above = i == 0 or wide(ls[i - 1], g[0])
+        below = i == len(ls) - 1 or wide(g[0], ls[i + 1])
+        return above and below and len(ls) > 1
     out = []
-    for g in paras:
-        para = _mk(g, "body", flt)
+    for g, h in zip(paras, hard):
+        para = _mk(g, "heading" if isolated_title(g) else "body", flt)
         para.toc = any(id(l) in toc for l in g)
+        para.hard_break = h
         out.append(para)
     return out
 
