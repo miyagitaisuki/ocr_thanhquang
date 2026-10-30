@@ -7,6 +7,8 @@ dynamic = ["dependencies"]
 
 [project.optional-dependencies]
 test = ["pytest"]
+# dò chữ nghi ngờ (--suspect), thử nghiệm; không đóng gói vào exe
+suspect = ["torch", "transformers", "fugashi", "unidic-lite"]
 
 [project.scripts]
 ocrnhat = "ocrnhat.cli:main"
