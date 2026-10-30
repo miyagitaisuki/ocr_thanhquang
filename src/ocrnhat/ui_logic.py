@@ -4,9 +4,16 @@ Giao diện truyền vào hàm get(tên, mặc định) để lấy giá trị �
 """
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from . import pipeline
+from . import gpupack, pipeline
+
+SETTINGS = gpupack.pack_dir().parent / "settings.json"   # dùng chung cho cả hai giao diện
+LOG_FILE = gpupack.pack_dir().parent / "logs" / "app.log"
 
 ENGINE_LABELS = {"auto": "Tự động (công cụ phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
                  "chandra": "Tiếng Nhật – Chandra", "paddle": "Tiếng Anh, Trung – PaddleOCR",
@@ -18,6 +25,29 @@ ENGINE_LANGS = {"ndlocr": ("ja",), "chandra": ("ja", "en", "zh", "vi", "all"), "
                 "ocr_vi": ("vi",), "auto": ("ja", "en", "zh", "vi", "all")}
 KANA_LABELS = {"": "Tắt", "template": "Mẫu chữ IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
 MERGE_LABELS = {True: "Gộp trang (mặc định)", False: "Giữ nguyên trang"}
+
+
+def load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_settings(data: dict) -> None:
+    try:
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def open_path(p: Path) -> None:
+    """Mở file hoặc thư mục bằng ứng dụng mặc định của hệ điều hành."""
+    if os.name == "nt":
+        os.startfile(str(p))  # noqa: S606 (chủ ý: mở bằng ứng dụng mặc định)
+    else:
+        subprocess.Popen(["xdg-open", str(p)])
 
 
 def dev_labels(cuda: bool) -> dict[str, str]:

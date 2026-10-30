@@ -5,11 +5,8 @@ thanh tiến trình khi tải engine AI (gói GPU, model Chandra).
 from __future__ import annotations
 
 import importlib.util
-import json
 import logging
-import os
 import queue
-import subprocess
 import threading
 import time
 import tkinter as tk
@@ -48,32 +45,11 @@ INPUT_W = 34   # độ rộng thống nhất của mọi ô nhập và danh sác
 HEADER_BTN_W = 150   # ba nút trên thanh đầu (Chạy OCR, Dừng, Tìm nhanh) có cùng kích thước
 BTN_W = 300    # chiều rộng chung (px) của các nút tải model và cài gói
 INPUT_PX = 330  # độ rộng tối thiểu (px) của cột ô nhập, khớp INPUT_W
-SETTINGS = gpupack.pack_dir().parent / "settings.json"
-LOG_FILE = gpupack.pack_dir().parent / "logs" / "app.log"
+LOG_FILE = L.LOG_FILE
 log = logging.getLogger("ocrnhat.gui")
 
 
-def load_settings() -> dict:
-    try:
-        return json.loads(SETTINGS.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def save_settings(data: dict) -> None:
-    try:
-        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-        SETTINGS.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        pass
-
-
-def open_path(p: Path) -> None:
-    """Mở file hoặc thư mục bằng ứng dụng mặc định của hệ điều hành."""
-    if os.name == "nt":
-        os.startfile(str(p))  # noqa: S606 (chủ ý: mở bằng ứng dụng mặc định)
-    else:
-        subprocess.Popen(["xdg-open", str(p)])
+load_settings, save_settings, open_path = L.load_settings, L.save_settings, L.open_path
 
 
 def _pick_font() -> str | None:
