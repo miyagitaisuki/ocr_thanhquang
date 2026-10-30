@@ -156,3 +156,96 @@ def test_cli_split(tmp_path):
     src = _make_pdf(tmp_path / "doc.pdf", 4)
     assert pe.main([str(src), "--split", "pages", "--every", "2", "-o", str(tmp_path / "out")]) == 0
     assert len(list((tmp_path / "out").glob("*.pdf"))) == 2
+
+
+def test_merge_keeps_order_pages_and_bookmarks(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 2, outline=[("Mục A", 0)])
+    b = _make_pdf(tmp_path / "b.pdf", 3)
+    out = pe.merge_pdfs([b, a], "ghep", tmp_path / "out")
+    r = PdfReader(str(out))
+    assert out.name == "ghep.pdf" and len(r.pages) == 5
+    assert [o.title for o in r.outline if not isinstance(o, list)] == ["b", "a"]
+
+
+def test_merge_without_bookmarks(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 1, outline=[("Mục A", 0)])
+    b = _make_pdf(tmp_path / "b.pdf", 1)
+    out = pe.merge_pdfs([a, b], "ghep", tmp_path / "out", pe.ExtractOptions(keep_bookmarks=False))
+    assert len(PdfReader(str(out)).pages) == 2 and not PdfReader(str(out)).outline
+
+
+def test_merge_overwrite_and_empty(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 1)
+    out1 = pe.merge_pdfs([a], "ghep", tmp_path / "out")
+    out2 = pe.merge_pdfs([a], "ghep", tmp_path / "out")
+    assert out2.name == "ghep (2).pdf" and out1 != out2
+    assert pe.merge_pdfs([a], "ghep", tmp_path / "out", pe.ExtractOptions(overwrite=True)) == out1
+    with pytest.raises(ValueError):
+        pe.merge_pdfs([], "ghep", tmp_path / "out")
+
+
+def test_cli_merge(tmp_path, capsys):
+    a = _make_pdf(tmp_path / "a.pdf", 1)
+    b = _make_pdf(tmp_path / "b.pdf", 2)
+    assert pe.main([str(a), str(b), "--merge", "--name", "tong", "-o", str(tmp_path / "out")]) == 0
+    assert len(PdfReader(str(tmp_path / "out" / "tong.pdf")).pages) == 3
+
+
+
+def _sized_pdf(path, widths):
+    """Mỗi trang có chiều rộng riêng để kiểm tra thứ tự trang sau khi ghép."""
+    w = PdfWriter()
+    for width in widths:
+        w.add_blank_page(width=width, height=100)
+    with open(path, "wb") as f:
+        w.write(f)
+    return path
+
+
+def _widths(path):
+    return [float(p.mediabox.width) for p in PdfReader(str(path)).pages]
+
+
+def test_interleave_round_robin_order(tmp_path):
+    a = _sized_pdf(tmp_path / "a.pdf", [1, 2, 3])
+    b = _sized_pdf(tmp_path / "b.pdf", [11, 12])
+    out = pe.interleave_pdfs([a, b], "xen", tmp_path / "out")
+    assert _widths(out) == [1, 11, 2, 12, 3]
+
+
+def test_interleave_reverse_second(tmp_path):
+    a = _sized_pdf(tmp_path / "a.pdf", [1, 2])
+    b = _sized_pdf(tmp_path / "b.pdf", [11, 12])
+    out = pe.interleave_pdfs([a, b], "rev", tmp_path / "out", reverse_second=True)
+    assert _widths(out) == [1, 12, 2, 11]
+
+
+def test_interleave_needs_two_files(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 2)
+    with pytest.raises(ValueError):
+        pe.interleave_pdfs([a], "xen", tmp_path / "out")
+
+
+def test_insert_repeated_after_and_before(tmp_path):
+    main = _sized_pdf(tmp_path / "main.pdf", [1, 2, 3])
+    ins = _sized_pdf(tmp_path / "ins.pdf", [50, 60])
+    after = pe.insert_repeated(main, ins, "sau", tmp_path / "out", insert_page=2)
+    before = pe.insert_repeated(main, ins, "truoc", tmp_path / "out", insert_page=1, before=True)
+    assert _widths(after) == [1, 60, 2, 60, 3, 60]
+    assert _widths(before) == [50, 1, 50, 2, 50, 3]
+
+
+def test_insert_page_out_of_range(tmp_path):
+    main = _make_pdf(tmp_path / "main.pdf", 2)
+    ins = _make_pdf(tmp_path / "ins.pdf", 1)
+    with pytest.raises(ValueError, match="nằm ngoài"):
+        pe.insert_repeated(main, ins, "x", tmp_path / "out", insert_page=3)
+
+
+def test_cli_interleave_and_insert(tmp_path):
+    a = _make_pdf(tmp_path / "a.pdf", 2)
+    b = _make_pdf(tmp_path / "b.pdf", 2)
+    assert pe.main([str(a), str(b), "--interleave", "--name", "xen", "-o", str(tmp_path / "out")]) == 0
+    assert pe.main([str(a), str(b), "--insert", "--name", "chen", "-o", str(tmp_path / "out")]) == 0
+    assert len(PdfReader(str(tmp_path / "out" / "xen.pdf")).pages) == 4
+    assert len(PdfReader(str(tmp_path / "out" / "chen.pdf")).pages) == 4

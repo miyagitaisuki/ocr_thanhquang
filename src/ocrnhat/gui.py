@@ -778,7 +778,6 @@ class App(_CatMixin, _Base):
     def _tab_pdf(self):
         self._tab_extract()
         groups = (
-            ("Ghép PDF", ("Ghép xen kẽ", "Ghép nhiều file", "Chèn trang lặp lại")),
             ("Khác", ("Xoay trang", "Nén PDF", "Tự động theo thư mục")),
         )
         for title, names in groups:
@@ -798,6 +797,10 @@ class App(_CatMixin, _Base):
         b_add = GradientButton(bar, text="Thêm file…", command=self._pdfx_add); b_add.pack(side="left")
         b_del = GradientButton(bar, text="Bỏ mục đã chọn", command=self._pdfx_remove); b_del.pack(side="left", padx=6)
         b_clr = GradientButton(bar, text="Bỏ tất cả", command=self._pdfx_clear); b_clr.pack(side="left")
+        b_up = GradientButton(bar, text="Lên", command=lambda: self._pdfx_move(-1)); b_up.pack(side="left", padx=(12, 0))
+        b_dn = GradientButton(bar, text="Xuống", command=lambda: self._pdfx_move(1)); b_dn.pack(side="left", padx=6)
+        Tip(b_up, "Đổi thứ tự: đưa mục đang chọn lên trước. Thứ tự này dùng khi ghép file.")
+        Tip(b_dn, "Đổi thứ tự: đưa mục đang chọn xuống sau.")
         Tip(b_add, "Chọn một hoặc nhiều file PDF. File gốc không bị thay đổi.")
         Tip(b_del, "Bỏ mục đang chọn khỏi danh sách (Delete).")
         self.pdfx_count = tk.StringVar(value="Chưa có file nào")
@@ -847,6 +850,37 @@ class App(_CatMixin, _Base):
         self.pdfx_split_btn.grid(row=3, column=0, sticky="w", pady=(10, 0))
         split.columnconfigure(1, weight=1)
 
+        merge = self._card(self.tab_pdf, "Ghép nhiều file")
+        self._row(merge, 0, "Tên file kết quả", ttk.Entry(merge, textvariable=self._var("pdfx_merge_name", "ghep"), width=INPUT_W))
+        ttk.Label(merge, text="Ghép theo đúng thứ tự trong danh sách trên, lưu vào thư mục lưu.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self.pdfx_merge_btn = GradientButton(merge, text="▶  Ghép file", style="Run.TButton", command=self._pdfx_merge_run, width=HEADER_BTN_W)
+        self.pdfx_merge_btn.grid(row=1, column=0, sticky="w", pady=(10, 0))
+        merge.columnconfigure(1, weight=1)
+
+        inter = self._card(self.tab_pdf, "Ghép xen kẽ")
+        self._row(inter, 0, "Tên file kết quả", ttk.Entry(inter, textvariable=self._var("pdfx_inter_name", "xen_ke"), width=INPUT_W))
+        cb_rev = self._check(inter, "pdfx_reverse", False, "Đảo thứ tự file thứ hai (scan mặt sau theo chiều ngược)")
+        cb_rev.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
+        Tip(cb_rev, "Dùng khi mặt sau được quét theo thứ tự ngược. File thứ hai trong danh sách sẽ bị đảo.")
+        ttk.Label(inter, text="Lấy lần lượt trang 1 của từng file, rồi trang 2... Cần ít nhất hai file trong danh sách.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self.pdfx_inter_btn = GradientButton(inter, text="▶  Ghép xen kẽ", style="Run.TButton", command=self._pdfx_inter_run, width=HEADER_BTN_W)
+        self.pdfx_inter_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
+        inter.columnconfigure(1, weight=1)
+
+        rep_card = self._card(self.tab_pdf, "Chèn trang lặp lại")
+        self.rep_main = ttk.Combobox(rep_card, state="readonly", width=INPUT_W)
+        self._row(rep_card, 0, "File chính", self.rep_main)
+        self.rep_ins = ttk.Combobox(rep_card, state="readonly", width=INPUT_W)
+        self._row(rep_card, 1, "File chứa trang chèn", self.rep_ins)
+        self._row(rep_card, 2, "Số trang chèn", ttk.Entry(rep_card, textvariable=self._var("pdfx_insert_page", "1"), width=INPUT_W))
+        cb_before = self._check(rep_card, "pdfx_insert_before", False, "Chèn trước mỗi trang thay vì sau")
+        cb_before.grid(row=3, column=0, columnspan=3, sticky="w", pady=2)
+        ttk.Label(rep_card, text="Ví dụ: trang chính B1 B2 B3, trang chèn A → B1 A B2 A B3 A.", style="Hint.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self._row(rep_card, 5, "Tên file kết quả", ttk.Entry(rep_card, textvariable=self._var("pdfx_rep_name", "chen_trang"), width=INPUT_W))
+        self.pdfx_rep_btn = GradientButton(rep_card, text="▶  Chèn trang", style="Run.TButton", command=self._pdfx_rep_run, width=HEADER_BTN_W)
+        self.pdfx_rep_btn.grid(row=6, column=0, sticky="w", pady=(10, 0))
+        rep_card.columnconfigure(1, weight=1)
+
     SPLIT_LABELS = {"pages": "Theo số trang", "bookmark": "Theo bookmark cấp 1", "size": "Theo dung lượng tối đa"}
 
     def _pdfx_add(self):
@@ -876,6 +910,9 @@ class App(_CatMixin, _Base):
         for i, (f, n) in enumerate(self.pdfx_items):
             self.pdfx_tree.insert("", "end", iid=str(i), values=(i + 1, f.name, n, str(f.parent)))
         self.pdfx_count.set(f"{len(self.pdfx_items)} file" if self.pdfx_items else "Chưa có file nào")
+        names = [f"{i + 1}. {f.name}" for i, (f, _) in enumerate(self.pdfx_items)]
+        for cb in (self.rep_main, self.rep_ins):   # danh sách đổi thì bỏ chọn cũ, tránh trỏ nhầm file
+            cb.config(values=names); cb.set("")
 
     def _pdfx_pick_out(self):
         d = filedialog.askdirectory()
@@ -910,6 +947,85 @@ class App(_CatMixin, _Base):
         out = self._pdfx_out()
         self._pdfx_start(lambda f: pe.split_pdf(f, mode, value, out, opts), "Đang tách")
 
+    def _pdfx_move(self, step: int):
+        sel = self.pdfx_tree.selection()
+        if len(sel) != 1:
+            return
+        i = int(sel[0]); j = i + step
+        if 0 <= j < len(self.pdfx_items):
+            self.pdfx_items[i], self.pdfx_items[j] = self.pdfx_items[j], self.pdfx_items[i]
+            self._pdfx_refresh()
+            self.pdfx_tree.selection_set(str(j))
+
+    def _pdfx_merge_run(self):
+        if len(self.pdfx_items) < 2:
+            messagebox.showinfo("Ghép file", "Thêm ít nhất hai file PDF.")
+            return
+        name = self._var("pdfx_merge_name", "ghep").get().strip() or "ghep"
+        files = [f for f, _ in self.pdfx_items]
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_busy(True)
+        threading.Thread(target=self._pdfx_merge_worker, args=(files, name, out, opts), daemon=True).start()
+
+    def _pdfx_merge_worker(self, files, name, out, opts):
+        try:
+            res = pe.merge_pdfs(files, name, out, opts)
+            msg = f"Xong: đã ghép {len(files)} file thành {res}."
+        except Exception as e:
+            log.exception("Lỗi ghép PDF")
+            msg = f"Lỗi ghép: {e}"
+        self.q.put(("pdfx_done", msg))
+
+    def _pdfx_inter_run(self):
+        if len(self.pdfx_items) < 2:
+            messagebox.showinfo("Ghép xen kẽ", "Thêm ít nhất hai file PDF.")
+            return
+        name = self._var("pdfx_inter_name", "xen_ke").get().strip() or "xen_ke"
+        files = [f for f, _ in self.pdfx_items]
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        rev = self._var("pdfx_reverse", False).get()
+        self._pdfx_busy(True)
+        threading.Thread(target=self._pdfx_task_worker, args=(
+            lambda: pe.interleave_pdfs(files, name, out, opts, rev), f"Đã ghép xen kẽ {len(files)} file"), daemon=True).start()
+
+    def _pdfx_rep_run(self):
+        if len(self.pdfx_items) < 2:
+            messagebox.showinfo("Chèn trang lặp lại", "Thêm ít nhất hai file PDF.")
+            return
+        mi, ii = self.rep_main.current(), self.rep_ins.current()
+        if mi < 0 or ii < 0:
+            messagebox.showinfo("Chèn trang lặp lại", "Chọn file chính và file chứa trang chèn.")
+            return
+        try:
+            page = int(self._var("pdfx_insert_page", "1").get().strip() or "1")
+        except ValueError:
+            messagebox.showinfo("Chèn trang lặp lại", "Số trang chèn phải là số.")
+            return
+        name = self._var("pdfx_rep_name", "chen_trang").get().strip() or "chen_trang"
+        main, ins = self.pdfx_items[mi][0], self.pdfx_items[ii][0]
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        before = self._var("pdfx_insert_before", False).get()
+        self._pdfx_busy(True)
+        threading.Thread(target=self._pdfx_task_worker, args=(
+            lambda: pe.insert_repeated(main, ins, name, out, opts, page, before), "Đã chèn trang"), daemon=True).start()
+
+    def _pdfx_task_worker(self, task, done_text: str):
+        try:
+            res = task()
+            msg = f"Xong: {done_text}: {res}."
+        except Exception as e:
+            log.exception("Lỗi PDF")
+            msg = f"Lỗi: {e}"
+        self.q.put(("pdfx_done", msg))
+
+    def _pdfx_busy(self, busy: bool):
+        state = "disabled" if busy else "normal"
+        for b in (self.pdfx_btn, self.pdfx_split_btn, self.pdfx_merge_btn, self.pdfx_inter_btn, self.pdfx_rep_btn):
+            b.config(state=state)
+
     def _pdfx_options(self):
         return pe.ExtractOptions(
             separate=self._var("pdfx_separate", False).get(), overwrite=self._var("pdfx_overwrite", False).get(),
@@ -921,7 +1037,7 @@ class App(_CatMixin, _Base):
 
     def _pdfx_start(self, task, verb: str):
         """Chạy task(file) cho từng file trong danh sách, ở luồng nền. Hai nút đều khóa cho đến khi xong."""
-        self.pdfx_btn.config(state="disabled"); self.pdfx_split_btn.config(state="disabled")
+        self._pdfx_busy(True)
         files = [f for f, _ in self.pdfx_items]
         threading.Thread(target=self._pdfx_worker, args=(files, task, verb), daemon=True).start()
 
@@ -1429,7 +1545,7 @@ class App(_CatMixin, _Base):
                 elif k == "pdfx":
                     self.pdfx_status.set(v)
                 elif k == "pdfx_done":
-                    self.pdfx_status.set(v); self.pdfx_btn.config(state="normal"); self.pdfx_split_btn.config(state="normal")
+                    self.pdfx_status.set(v); self._pdfx_busy(False)
                 elif k == "packdone":
                     self.pack_pb.stop(); self.pack_pb.pack_forget()
                     self.pack_status.set(v); self.pack_btn.config(state="normal")
