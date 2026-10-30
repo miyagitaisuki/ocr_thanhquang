@@ -22,6 +22,9 @@ class _Form:
     DEV_LABELS = gui.App.DEV_LABELS
     KANA_LABELS = gui.App.KANA_LABELS
     LANG_LABELS = gui.App.LANG_LABELS
+    ENGINE_LABELS = gui.App.ENGINE_LABELS
+    MERGE_LABELS = gui.App.MERGE_LABELS
+    _engine_key = gui.App._engine_key
 
     def __init__(self, **values):
         self.values = {"dev": gui.App.DEV_LABELS["auto"], "kana": gui.App.KANA_LABELS[""], **values}   # giá trị mặc định như khi mở GUI

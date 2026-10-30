@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -764,3 +764,25 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_r
             for p in _paragraphs(Block(b.kind, b.x, b.y, b.w, b.h, rest, b.label), flt): items.append((b.order, p))
     items.sort(key=lambda it: it[0])
     return [it for _, it in _merge_paras(items)]
+
+
+def merge_pages(pages: list[tuple[int, list]]) -> list[tuple[int, list]]:
+    """Gộp các trang thành một khối liền mạch: đoạn bị cắt ở cuối trang nối với đoạn đầu trang sau
+    (khi đoạn trước chưa kết câu), trang không còn chữ bị bỏ. Tiêu đề, bảng và danh sách không nối."""
+    out: list[tuple[int, list]] = []
+    for pno, items in pages:
+        items = list(items)
+        prev = out[-1][1] if out else None
+        if prev and items and isinstance(prev[-1], Para) and isinstance(items[0], Para):
+            a, b = prev[-1], items[0]
+            if (a.kind == "body" and b.kind == "body" and not a.toc and not b.toc and not a.bullet and not b.bullet
+                    and not _SENT_END.search(a.text) and not _BULLET.match(b.text)):
+                joined = replace(a, text=a.text + b.text, x1=max(a.x1, b.x1), y1=b.y1,
+                                 conf=min(a.conf, b.conf),
+                                 ruby=a.ruby + [(s + len(a.text), e + len(a.text), r) for s, e, r in b.ruby])
+                prev[-1] = joined
+                items = items[1:]
+        if items:
+            out.append((pno, items))
+    return out
+

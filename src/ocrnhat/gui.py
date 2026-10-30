@@ -111,7 +111,16 @@ class App(_Base):
     KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
     LANG_LABELS = {"ja": "Tiếng Nhật", "all": "Mọi ngôn ngữ"}
     # chandra chỉ hiện khi đã cài (exe GPU hoặc gói GPU tùy chọn đã kích hoạt)
-    ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ())
+    ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("ocr_en", "ocr_vi")
+    # danh sách engine theo ngôn ngữ; tiếng Anh và tiếng Việt là chỗ giữ, chưa có engine
+    ENGINE_LABELS = {"auto": "Tự động (engine phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
+                     "chandra": "Tiếng Nhật – Chandra", "ocr_en": "Tiếng Anh – [chưa có engine]",
+                     "ocr_vi": "Tiếng Việt – [chưa có engine]"}
+    MERGE_LABELS = {True: "Gộp trang (mặc định)", False: "Giữ nguyên trang"}
+
+    def _engine_key(self) -> str:
+        label = self._var("engine", self.ENGINE_LABELS["auto"]).get()
+        return next((k for k, v in self.ENGINE_LABELS.items() if v == label), "auto")
 
     def __init__(self):
         super().__init__()
@@ -156,7 +165,9 @@ class App(_Base):
         self.tab_rev = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_res = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.nb.add(self.tab_src, text="  Tài liệu  ")
+        self.tab_ai = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.nb.add(self.tab_proc, text="  Xử lý OCR  ")
+        self.nb.add(self.tab_ai, text="  AI powered  ")
         self.nb.add(self.tab_rev, text="  Rà soát  ")
         self.nb.add(self.tab_res, text="  Kết quả  ")
         self._tab_sources()
@@ -271,8 +282,13 @@ class App(_Base):
         Tip(b_out, "Chọn thư mục để lưu file kết quả (.docx và .txt).")
         self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=INPUT_W))
         ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        cb_mg = ttk.Combobox(out, textvariable=self._var("merge", self.MERGE_LABELS[True]), values=list(self.MERGE_LABELS.values()),
+                             state="readonly", width=INPUT_W)
+        self._row(out, 2, "Gộp trang", cb_mg)
+        ttk.Label(out, text="Gộp: nối các đoạn bị cắt giữa trang thành một khối liền mạch, bỏ khoảng trống.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
+        Tip(cb_mg, "Gộp trang: khối văn bản liền mạch, không ngắt trang trong Word. Giữ nguyên trang: mỗi trang một trang Word.")
         checks = ttk.Frame(out, style="Card.TFrame")
-        checks.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        checks.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
         cb_m = self._check(checks, "marker", True, "Ghi số trang gốc 【原本 p.N】"); cb_m.pack(anchor="w", pady=2)
         cb_t = self._check(checks, "txt", True, "Ghi kèm file .txt"); cb_t.pack(anchor="w", pady=2)
         cb_r = self._check(checks, "ruby", False, "Giữ furigana thành ruby của Word"); cb_r.pack(anchor="w", pady=2)
@@ -292,7 +308,8 @@ class App(_Base):
                   style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
 
         proc = self._card(self.tab_proc, "Engine và thiết bị")
-        self.engine_cb = ttk.Combobox(proc, textvariable=self._var("engine", "auto"), values=list(self.ENGINES),
+        self.engine_cb = ttk.Combobox(proc, textvariable=self._var("engine", self.ENGINE_LABELS["auto"]),
+                                      values=[self.ENGINE_LABELS[k] for k in self.ENGINES],
                                       state="readonly", width=INPUT_W)
         self._row(proc, 0, "Engine", self.engine_cb)
         ttk.Label(proc, text="auto: tự chọn. ndlocr: engine chính.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
@@ -303,7 +320,8 @@ class App(_Base):
                                     values=list(self.LANG_LABELS.values()), state="readonly", width=INPUT_W)
         self._row(proc, 2, "Ngôn ngữ", self.lang_cb)
         ttk.Label(proc, text="“Mọi ngôn ngữ” chỉ mở khi Engine = chandra.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
-        self._engine_sync = self._var("engine", "auto").trace_add("write", lambda *_: self._sync_lang())
+        self.engine_cb.bind("<<ComboboxSelected>>", lambda e: self._check_engine_choice())
+        self._engine_sync = self._var("engine", self.ENGINE_LABELS["auto"]).trace_add("write", lambda *_: self._sync_lang())
         self._sync_lang()
 
         # mục Nâng cao: thu gọn, ít dùng
@@ -330,7 +348,7 @@ class App(_Base):
         self._ai_card()
 
     def _ai_card(self):
-        ai = self._card(self.tab_proc, "Engine AI (tùy chọn, tải một lần)")
+        ai = self._card(self.tab_ai, "Engine AI (tùy chọn, tải một lần)")
         if not gpupack.installed():
             row = ttk.Frame(ai, style="Card.TFrame")
             row.pack(fill="x", pady=(0, 6))
@@ -476,8 +494,13 @@ class App(_Base):
         self._var("upscale", "1").set(p["upscale"])
         self._var("cell_reocr", True).set(p["cell_reocr"])
 
+    def _check_engine_choice(self):
+        if self._engine_key() in ("ocr_en", "ocr_vi"):
+            messagebox.showinfo("Engine", "Engine này chưa được phát triển. Hiện chỉ có tiếng Nhật (NDLOCR, Chandra).")
+            self._var("engine", self.ENGINE_LABELS["auto"]).set(self.ENGINE_LABELS["auto"])
+
     def _sync_lang(self):
-        if self._var("engine", "auto").get() == "chandra":
+        if self._engine_key() == "chandra":
             self.lang_cb.config(state="readonly")
         else:
             self.lang_cb.config(state="disabled")
@@ -567,7 +590,8 @@ class App(_Base):
         return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(), lang=lang,
                     device=dev, ruby=self._var("ruby", False).get(),
                     review=self._var("review", False).get(), conf_threshold=conf,
-                    engine=self._var("engine", "auto").get(), crop=crop, upscale=upscale,
+                    engine=self._engine_key(), crop=crop, upscale=upscale,
+                    merge_pages=self._var("merge", self.MERGE_LABELS[True]).get() == self.MERGE_LABELS[True],
                     cell_reocr=self._var("cell_reocr", True).get(), use_cache=self._var("use_cache", True).get(),
                     kana_reader=next(k for k, v in self.KANA_LABELS.items() if v == self._var("kana", "").get()))
 

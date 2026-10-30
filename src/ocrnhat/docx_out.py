@@ -81,10 +81,10 @@ def _add_table(d, t: Table):
 
 
 def write_docx(pages: list[tuple[int, list[Para | Table]]], out: Path, title: str | None = None,
-               page_marker: bool = True, ruby: bool = False) -> None:
+               page_marker: bool = True, ruby: bool = False, page_break: bool = True) -> None:
     d = _new_doc(title)
     for i, (pno, items) in enumerate(pages):
-        if i:
+        if i and page_break:
             d.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
         if page_marker:
             p = d.add_paragraph(); _font(p.add_run(f"【原本 p.{pno}】"), 8, gray=True)

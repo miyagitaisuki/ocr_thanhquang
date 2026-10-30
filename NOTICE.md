@@ -20,4 +20,14 @@ Engine này dùng **Chandra OCR 2** của Datalab (`datalab-to/chandra-ocr-2`, g
 - Gói GPU (tải khi người dùng bấm nút trong GUI, không đóng vào exe) gồm torch và torchvision (BSD-3, PyTorch), `chandra-ocr` (Apache-2.0) và các phụ thuộc. Trọng số Chandra vẫn tải riêng từ Hugging Face khi người dùng bấm, và người dùng phải chấp nhận điều khoản OpenRAIL-M của trọng số. Gói GPU có thể kèm thư viện CUDA của NVIDIA theo giấy phép của NVIDIA.
 - **Phạm vi sử dụng hiện tại: chỉ cá nhân chủ dự án, không phân phối.** Theo điều khoản, sử dụng cá nhân/nghiên cứu được miễn ngưỡng thương mại. Nếu chia sẻ exe, đưa cho người khác, hoặc dùng cho mục đích có doanh thu, phải xem lại điều khoản trên trước.
 
-Các thư viện khác: onnxruntime, OpenCV, pypdfium2, python-docx, NumPy, Pillow (giấy phép riêng của từng thư viện).
+## Thành phần đóng gói trong bộ cài `OCR-Nhat-setup.exe`
+
+Bộ cài (exe CPU) chứa các thành phần sau. Mỗi thành phần theo giấy phép riêng; xem file LICENSE của dự án gốc.
+- **Python** và thư viện chuẩn, gồm Tkinter (Python Software Foundation License).
+- **PyInstaller** (đóng gói exe; GPL-2.0-or-later với ngoại lệ cho phép đóng gói chương trình không phải GPL).
+- **pip** (MIT): dùng để cài gói GPU tùy chọn ngay trong app.
+- **onnxruntime** (MIT), **OpenCV** (Apache-2.0), **pypdfium2** (Apache-2.0 / BSD-3-Clause), **python-docx** (MIT), **NumPy** (BSD-3-Clause), **Pillow** (MIT-CMU), **tkinterdnd2** (MIT), **PyYAML**, **lxml**, **tqdm**, **networkx** (BSD).
+
+Công cụ **Inno Setup** chỉ dùng để tạo bộ cài trong CI, không đóng gói vào bộ cài.
+
+Các thư viện khác: NumPy, Pillow (giấy phép riêng của từng thư viện).
