@@ -69,7 +69,7 @@ def parse_crop(spec: str | None) -> tuple[int, int, int, int] | None:
         return None
     x0, y0, x1, y1 = (int(v) for v in spec.split(","))
     if x1 <= x0 or y1 <= y0:
-        raise ValueError("--crop cần x1 > x0 và y1 > y0")
+        raise ValueError("cần x1 > x0 và y1 > y0")
     return x0, y0, x1, y1
 
 

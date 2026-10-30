@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-page-marker", action="store_true", help="không ghi dòng 【原本 p.N】 đầu mỗi trang")
     ap.add_argument("--review", action="store_true", help="xuất thêm *_review.html: ảnh trang cạnh text, tô đỏ chỗ độ tin cậy thấp")
     ap.add_argument("--conf", type=float, default=0.8, help="ngưỡng độ tin cậy cho --review (mặc định 0.8)")
-    ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định ndlocr)")
+    ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định auto)")
     ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--device", default="auto", choices=gpu_mod.DEVICES, help="auto | cpu | cuda (GPU NVIDIA, cần onnxruntime-gpu)")
     ap.add_argument("--no-cell-reocr", action="store_true", help="không nhận dạng lại các ô bảng có dòng vượt đường kẻ")
@@ -56,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not a.inputs:
         ap.error("cần ít nhất một file PDF/ảnh hoặc thư mục (xem --help)")
+    try:
+        crop = pipeline.parse_crop(a.crop)
+    except ValueError as e:
+        ap.error(str(e))
     files = collect(a.inputs)
     if not files:
         return 1
@@ -64,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         r = pipeline.process_file(
             f, Path(a.out), a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
-            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, crop=pipeline.parse_crop(a.crop), upscale=a.upscale, suspect=a.suspect,
+            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, crop=crop, upscale=a.upscale, suspect=a.suspect,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
         if r.get("suspect"):
