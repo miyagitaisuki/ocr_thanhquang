@@ -43,6 +43,7 @@ def test_bo_so_tieu_de_chay_va_o_vuong_o_dau_doan():
     from ocrnhat.layout import _strip_prefix
     assert _strip_prefix("2すぐに使える例文集:社外編") == "すぐに使える例文集:社外編"
     assert _strip_prefix("1日本語メールの基本とコツ") == "日本語メールの基本とコツ"
+    assert _strip_prefix("1 日本語メールの基本とコツ") == "日本語メールの基本とコツ"
     assert _strip_prefix("□と判明しました") == "□と判明しました"   # ký hiệu của sách: giữ
     assert _strip_prefix("※名前がわからない相手") == "※名前がわからない相手"   # ghi chú của sách: giữ
     assert _strip_prefix("10月に展示会を開催します") == "10月に展示会を開催します"   # số trong câu: giữ
