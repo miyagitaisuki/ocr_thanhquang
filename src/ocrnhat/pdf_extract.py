@@ -255,12 +255,75 @@ def merge_pdfs(srcs: list[Path], name: str = "ghep", out_dir: Path | None = None
     return target
 
 
+def _finish(writer: PdfWriter, name: str, out_dir: Path, opts: ExtractOptions) -> Path:
+    """Nén (nếu bật), đặt phiên bản PDF và ghi ra file mới trong out_dir."""
+    if opts.compress:
+        for page in writer.pages:
+            page.compress_content_streams()
+        writer.compress_identical_objects(remove_duplicates=True, remove_unreferenced=True)
+    writer.pdf_header = f"%PDF-{opts.pdf_version}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = _target(out_dir, name, opts.overwrite)
+    with open(target, "wb") as f:
+        writer.write(f)
+    return target
+
+
+def interleave_pdfs(srcs: list[Path], name: str = "xen_ke", out_dir: Path | None = None,
+                    opts: ExtractOptions | None = None, reverse_second: bool = False) -> Path:
+    """Ghép xen kẽ: lấy lần lượt trang 1 của file 1, file 2, ..., rồi trang 2 của từng file...
+    File hết trang trước thì bỏ qua. Dùng cho bản scan hai mặt: quét mặt trước một lần, mặt sau một lần.
+    reverse_second: đảo thứ tự file thứ hai (thường quét mặt sau theo chiều ngược)."""
+    opts = opts or ExtractOptions()
+    _check_version(opts)
+    if len(srcs) < 2:
+        raise ValueError("Ghép xen kẽ cần ít nhất hai file")
+    srcs = [Path(s) for s in srcs]
+    readers = [_open(s) for s in srcs]
+    orders = [list(r.pages) for r in readers]
+    if reverse_second:
+        orders[1] = orders[1][::-1]
+    writer = PdfWriter()
+    for i in range(max(len(o) for o in orders)):
+        for order in orders:
+            if i < len(order):
+                writer.add_page(order[i])
+    return _finish(writer, name, Path(out_dir) if out_dir else srcs[0].parent, opts)
+
+
+def insert_repeated(main: Path, insert: Path, name: str = "chen_trang", out_dir: Path | None = None,
+                    opts: ExtractOptions | None = None, insert_page: int = 1, before: bool = False) -> Path:
+    """Chèn lặp lại một trang của file `insert` vào sau (hoặc trước) mỗi trang của file `main`:
+    B1 A B2 A B3 A (before=False) hoặc A B1 A B2 A B3 (before=True)."""
+    opts = opts or ExtractOptions()
+    _check_version(opts)
+    main, insert = Path(main), Path(insert)
+    mreader = _open(main)
+    ireader = _open(insert)
+    if not 1 <= insert_page <= len(ireader.pages):
+        raise ValueError(f"Trang chèn {insert_page} nằm ngoài khoảng 1–{len(ireader.pages)} của file {insert.name}")
+    piece = ireader.pages[insert_page - 1]
+    writer = PdfWriter()
+    for page in mreader.pages:
+        if before:
+            writer.add_page(piece)
+        writer.add_page(page)
+        if not before:
+            writer.add_page(piece)
+    return _finish(writer, name, Path(out_dir) if out_dir else main.parent, opts)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ocrnhat-pdf", description="Trích xuất trang hoặc tách file PDF.")
     ap.add_argument("inputs", nargs="+", help="file PDF")
     ap.add_argument("--pages", default="", help="trích xuất: ví dụ 2 hoặc 5-23 hoặc 2,5-7,12-")
     ap.add_argument("--merge", action="store_true", help="ghép các file đầu vào theo thứ tự thành một PDF")
-    ap.add_argument("--name", default="ghep", help="--merge: tên file kết quả, không gồm .pdf (mặc định ghep)")
+    ap.add_argument("--name", default="ghep", help="--merge, --interleave, --insert: tên file kết quả, không gồm .pdf")
+    ap.add_argument("--interleave", action="store_true", help="ghép xen kẽ các file đầu vào (trang 1 của từng file, rồi trang 2...)")
+    ap.add_argument("--reverse-second", action="store_true", help="--interleave: đảo thứ tự file thứ hai (scan mặt sau)")
+    ap.add_argument("--insert", action="store_true", help="chèn lặp lại: inputs[0] là file chính, inputs[1] là file chứa trang chèn")
+    ap.add_argument("--insert-page", type=int, default=1, help="--insert: số trang của file chèn (mặc định 1)")
+    ap.add_argument("--insert-before", action="store_true", help="--insert: chèn trước mỗi trang thay vì sau")
     ap.add_argument("--split", choices=SPLIT_MODES, help="tách file thay vì trích xuất: pages | bookmark | size")
     ap.add_argument("--every", type=int, default=1, help="--split pages: số trang mỗi file (mặc định 1)")
     ap.add_argument("--max-mb", type=float, default=10, help="--split size: dung lượng tối đa mỗi file, MB (mặc định 10)")
@@ -271,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-bookmarks", action="store_true", help="bỏ bookmark")
     ap.add_argument("--pdf-version", default="1.5", choices=PDF_VERSIONS, help="phiên bản PDF ghi trong file (mặc định 1.5)")
     a = ap.parse_args(argv)
-    if not (a.split or a.merge or a.pages):
+    if not (a.split or a.merge or a.interleave or a.insert or a.pages):
         ap.error("cần --pages (trích xuất), --split (tách file) hoặc --merge (ghép file)")
     for st in (sys.stdout, sys.stderr):
         try:
@@ -282,6 +345,19 @@ def main(argv: list[str] | None = None) -> int:
                           keep_bookmarks=not a.no_bookmarks, pdf_version=a.pdf_version)
     out = Path(a.out) if a.out else None
     code = 0
+    if a.interleave or a.insert:
+        try:
+            if a.insert:
+                if len(a.inputs) != 2:
+                    raise ValueError("--insert cần đúng hai file: file chính rồi file chèn")
+                res = insert_repeated(Path(a.inputs[0]), Path(a.inputs[1]), a.name, out, opts, a.insert_page, a.insert_before)
+            else:
+                res = interleave_pdfs([Path(x) for x in a.inputs], a.name, out, opts, a.reverse_second)
+            print(f"-> {res}")
+        except (ValueError, OSError) as e:
+            print(f"Lỗi: {e}", file=sys.stderr)
+            return 1
+        return 0
     if a.merge:
         try:
             print(f"-> {merge_pdfs([Path(x) for x in a.inputs], a.name, out, opts)}")
