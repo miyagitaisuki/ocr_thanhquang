@@ -227,7 +227,8 @@ class ModelBox(QGroupBox):
         from .engines.viet import VietnameseEngine
 
         self.rows = {}
-        root = QVBoxLayout(self)
+        self.body = QWidget()   # nội dung thu gọn: ẩn hẳn khi bỏ chọn
+        root = QVBoxLayout(self.body)
         self.status = QLabel("")
         self.status.setWordWrap(True)
         self.bar = QProgressBar()
@@ -268,6 +269,9 @@ class ModelBox(QGroupBox):
         root.addWidget(self.pack_btn)
         root.addWidget(self.bar)
         root.addWidget(self.status)
+        QVBoxLayout(self).addWidget(self.body)
+        self.body.setVisible(False)
+        self.toggled.connect(self.body.setVisible)
         self._refresh_status()
 
     def _refresh_status(self):

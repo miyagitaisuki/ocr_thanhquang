@@ -13,7 +13,7 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton, QSplitter,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from . import gpu, gpupack, pipeline
@@ -159,7 +159,9 @@ class OcrPage(QWidget):
         adv = QGroupBox("Nâng cao")
         adv.setCheckable(True)
         adv.setChecked(False)
-        agrid = QVBoxLayout(adv)
+        adv_body = QWidget()   # nội dung thu gọn: ẩn hẳn khi bỏ chọn, không chỉ làm mờ
+        agrid = QVBoxLayout(adv_body)
+        QVBoxLayout(adv).addWidget(adv_body)
         self.upscale = QLineEdit("1")
         self.crop = QLineEdit()
         self.crop.setPlaceholderText("trái, trên, phải, dưới (pixel) · để trống = cả trang")
@@ -181,6 +183,8 @@ class OcrPage(QWidget):
         agrid.addWidget(QLabel("Ngưỡng nghi ngờ (file so sánh)"))
         agrid.addWidget(self.conf)
         self.advanced = adv
+        adv_body.setVisible(False)
+        adv.toggled.connect(adv_body.setVisible)
         root.addWidget(adv)
 
         run = QHBoxLayout()
@@ -418,7 +422,11 @@ class MainWindow(QMainWindow):
         self.merge = MergeSection("Ghép PDF", self.settings, "merge")
         self.tools = ToolsSection("Công cụ khác", self.settings, "tools")
         for page in (self.ocr, self.split, self.merge, self.tools):
-            self.stack.addWidget(page)
+            scroll = QScrollArea()   # mỗi mục cuộn được khi cửa sổ thấp (laptop 768 px)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setWidget(page)
+            self.stack.addWidget(scroll)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
 
