@@ -51,3 +51,4 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 ## Ngữ cảnh phiên làm việc
 - Khi bắt đầu phiên, đọc `readme.md` (tổng quan dự án, bản đồ mã nguồn, trạng thái) trước khi làm việc khác.
 - Không quét toàn bộ thư mục gốc (Glob/Grep trên `.` hoặc `**/*`) khi `readme.md` đã đủ thông tin; chỉ mở file cụ thể cần sửa.
+- Khi có thay đổi dự án (mã, cấu hình, workflow, cách chạy, trạng thái, lỗi đã biết), cập nhật `readme.md` trong cùng commit để file luôn đúng với mã hiện tại.
