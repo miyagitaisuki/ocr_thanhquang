@@ -59,6 +59,7 @@ class Tip:
 
 class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
+    KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
     # chandra còn là placeholder (chưa cài đặt) nên không đưa lên giao diện; dòng lệnh vẫn có
     ENGINES = ("auto", "ndlocr")
 
@@ -152,6 +153,14 @@ class App(_Base):
         ttk.Label(proc, text="1 = không phóng to · 2 = ảnh chữ nhỏ", style="Hint.TLabel").grid(row=3, column=2, sticky="w", padx=(8, 0))
         self._row(proc, 4, "Cắt vùng", ttk.Entry(proc, textvariable=self._var("crop", ""), width=24))
         ttk.Label(proc, text="x0,y0,x1,y1 theo pixel · để trống = cả trang", style="Hint.TLabel").grid(row=4, column=2, sticky="w", padx=(8, 0))
+        cb_c = self._check(proc, "cell_reocr", True, "Nhận dạng lại ô bảng có dòng vượt đường kẻ")
+        cb_c.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        Tip(cb_c, "Cắt riêng từng ô bị engine nối chữ qua đường kẻ rồi đọc lại. Chậm hơn một chút; tắt nếu muốn nhanh hơn.")
+        cb_k = self._check(proc, "use_cache", True, "Dùng cache kết quả OCR (chạy lại cùng file sẽ nhanh hơn)")
+        cb_k.grid(row=6, column=0, columnspan=3, sticky="w", pady=2)
+        Tip(cb_k, "Lưu kết quả từng trang trong thư mục đầu ra (.cache). Tắt nếu muốn OCR lại từ đầu.")
+        self._row(proc, 7, "Đọc bảng kana", ttk.Combobox(proc, textvariable=self._var("kana", self.KANA_LABELS[""]), values=list(self.KANA_LABELS.values()), state="readonly", width=34))
+        Tip(proc.grid_slaves(row=7, column=1)[0], "Thử nghiệm. Đọc ô bảng chữ kana (trang 13–16, 19). Mẫu IPAGothic cho kết quả tốt hơn; ô không chắc để trống. Luôn xuất file *_kana_review.html để đối chiếu.")
         proc.columnconfigure(1, weight=1)
 
         # --- rà soát ---
@@ -301,7 +310,9 @@ class App(_Base):
         return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(),
                     device=dev, ruby=self._var("ruby", False).get(),
                     review=self._var("review", False).get(), conf_threshold=conf,
-                    engine=self._var("engine", "auto").get(), crop=crop, upscale=upscale)
+                    engine=self._var("engine", "auto").get(), crop=crop, upscale=upscale,
+                    cell_reocr=self._var("cell_reocr", True).get(), use_cache=self._var("use_cache", True).get(),
+                    kana_reader=next(k for k, v in self.KANA_LABELS.items() if v == self._var("kana", "").get()))
 
     def start(self):
         if not self.files:

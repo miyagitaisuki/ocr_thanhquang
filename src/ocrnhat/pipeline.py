@@ -127,7 +127,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  engine: str | None = None, ruby: bool = False, device: str = "auto",
                  workers: int | None = None, cell_reocr: bool = True,
                  crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
-                 suspect: bool = False, suspect_threshold: float = 0.0005) -> dict:
+                 suspect: bool = False, suspect_threshold: float = 0.0005,
+                 kana_reader: str = "") -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -147,6 +148,21 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         pre_tag += f"u{upscale:g}"
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
+    from . import kana as _kana
+    kana_log: list[tuple[int, np.ndarray, str]] = []   # thử nghiệm: mỗi ô kana được ghi lại để rà soát
+    kana_pno = [0]
+    read_one = None
+    if kana_reader == "tesseract" and _kana.available():
+        read_one = _kana.read_cell
+    elif kana_reader == "template" and _kana.font_available():
+        read_one = _kana.read_cell_template
+    if read_one is not None:
+        def kana_fn(crop):
+            text = read_one(crop)
+            kana_log.append((kana_pno[0], crop.copy(), text))
+            return text
+    else:
+        kana_fn = None
 
     def reocr(crop):
         """Nhận dạng lại một ô bảng (engine của luồng gọi, lấy lười)."""
@@ -184,7 +200,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             fut = pending.pop(0)               # giữ thứ tự trang
             pno, page, img = fut.result()
             submit_next()
-            items = build_page(page, img, reocr if cell_reocr else None)
+            kana_pno[0] = pno
+            items = build_page(page, img, reocr if cell_reocr else None, kana_fn)
             if suspect:
                 suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
             if review:
@@ -210,6 +227,11 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         from .review import write_review
         review_path = out_dir / f"{path.stem}_review.html"
         write_review(sections, review_path, path.name)
+    kana_review = None
+    if kana_log:
+        kana_review = out_dir / f"{path.stem}_kana_review.html"
+        _kana.write_review(kana_log, kana_review)
     return {"file": str(path), "pages": done, "tables": n_tables, "docx": str(docx_path),
+            "kana_review": str(kana_review) if kana_review else None,
             "review": str(review_path) if review_path else None, "low_conf": n_low,
             "suspect": str(suspect_path) if suspect_path else None, "suspect_lines": len(suspect_rows)}

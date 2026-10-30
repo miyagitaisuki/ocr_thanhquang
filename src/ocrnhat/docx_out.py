@@ -93,7 +93,8 @@ def write_docx(pages: list[tuple[int, list[Para | Table]]], out: Path, title: st
             elif it.kind == "heading":
                 h = d.add_heading(level=2); _font(h.add_run(it.text), 12, True)
             else:
-                p = d.add_paragraph(); p.paragraph_format.space_after = Pt(4); _add_text(p, it, ruby)
+                p = d.add_paragraph(style="List Bullet") if it.bullet else d.add_paragraph()
+                p.paragraph_format.space_after = Pt(4); _add_text(p, it, ruby)
     d.save(str(out))
 
 

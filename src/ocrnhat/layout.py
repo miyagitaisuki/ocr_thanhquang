@@ -22,9 +22,45 @@ def _kana_core(text: str) -> str:
     if re.search(r"[.:;]", text) or len(re.findall(r"[A-Za-z]", text)) > 2:
         return ""
     return _NOISE.sub("", text)
-_LATIN_WORD = re.compile(r"[A-Za-zÀ-ỹ]{3,}")
+_LATIN_WORD = re.compile(r"[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u1EF9]{3,}")
+# dòng mục lục: chuỗi dấu chấm dẫn và số trang ở cuối ('……012', '確認する 064')
+_LEADER_END = re.compile(r"(?:[.…‥･・]{2,}\s*\d*|\s+\d{2,4})\s*$")
+_LATIN_RUN = re.compile(r"[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u1EF9][A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u1EF9 .,'’()\-]*")
+
+
+# tiêu đề chạy đầu trang bị dính số trang/mục ('2すぐに使える例文集', '1日本語メールの基本とコツ'): chỉ bỏ số ở các dòng này
+_RUNNING_HEADER = re.compile(r"^[0-9０-９]{1,2}\s*(?=(?:すぐに使える|日本語メールの基本|日本語入力の基本|覚えておきたい|より良いメール))")
+
+
+# ký hiệu đầu dòng của sách (■ □ • ・ …): đổi thành danh sách có dấu đầu dòng; ※ là ghi chú nên giữ nguyên
+_BULLET_MARK = re.compile(r"^[■□•▪▫●◆◇・]\s*(?=\S)")
+
+
+def _split_bullet(text: str) -> tuple[str, bool]:
+    """(chữ sau ký hiệu, có phải đầu dòng danh sách không)."""
+    m = _BULLET_MARK.match(text)
+    return (text[m.end():], True) if m else (text, False)
+
+
+def _strip_prefix(text: str) -> str:
+    """Bỏ số đầu tiêu đề chạy. Số trong câu ('10月に', '4月1日') và ký hiệu của sách (□, ※) được giữ nguyên."""
+    return _RUNNING_HEADER.sub("", text, count=1)
+
+
+_OCR_SYMBOL_NOISE = re.compile(r"[×@]{2,}")   # '@' và chuỗi '×' là nhiễu của engine trong câu tiếng Nhật
+
+
+def _jp_part(text: str) -> str:
+    """Phần tiếng Nhật của một dòng: bỏ đoạn Latin, dấu chấm dẫn và số trang cuối dòng.
+    'Basics of inputting…………012' -> '' ; '日本語入力の基本Basics of inputting…012' -> '日本語入力の基本'."""
+    t = _LEADER_END.sub("", text.strip())
+    t = _LATIN_RUN.sub("", _OCR_SYMBOL_NOISE.sub("", t))
+    return t.strip()
 _SENT_END = re.compile(r"[。！？!?」』）)]$")
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
+
+
+_CIRC_MARKS = frozenset(chr(0x2460 + i) for i in range(20))   # ①..⑳: ký hiệu số của mục
 
 
 def jp_ratio(text: str) -> float:
@@ -43,6 +79,8 @@ class Para:
     size: float = 0
     conf: float = 1.0
     ruby: list = field(default_factory=list)   # [(bắt đầu, kết thúc, cách đọc)] theo chỉ số ký tự của text
+    toc: bool = False                          # dòng mục lục (có dấu chấm dẫn): không nối với đoạn khác
+    bullet: bool = False                       # đoạn mở đầu bằng ký hiệu đầu dòng của sách: xuất thành danh sách Word
 
 
 @dataclass
@@ -60,6 +98,7 @@ class Table:
     n_rows: int
     n_cols: int
     cells: list[Cell] = field(default_factory=list)
+    kana: bool = False      # bảng chữ kana: ô đọc bằng kana_reader (Tesseract), ô trống là không chắc
 
 
 # ---------- lọc dòng ----------
@@ -126,12 +165,20 @@ class _Filter:
 
     def keep(self, l: Line, table: bool = False) -> bool:
         t = l.text.strip()
-        if not t or self.furigana(l) or _LATIN_WORD.search(t):
+        if not t or self.furigana(l):
             return False
-        if _JP.search(t):
-            return jp_ratio(t) >= 0.6
-        return (table and l.conf >= 0.7 and (not self.ref or l.size >= 0.85 * self.ref)
-                and bool(re.fullmatch(r"[\d０-９.,・\-～~:：/／()（）%％]+", t)))
+        if table:   # ô bảng giữ nguyên quy tắc cũ: dòng có từ Latin bị loại hẳn
+            if _LATIN_WORD.search(t):
+                return False
+            if _JP.search(t):
+                return jp_ratio(t) >= 0.6
+            return (l.conf >= 0.7 and (not self.ref or l.size >= 0.85 * self.ref)
+                    and bool(re.fullmatch(r"[\d０-９.,・\-～~:：/／()（）%％]+", t)))
+        jp = _jp_part(t)   # đoạn văn: giữ phần tiếng Nhật của dòng hỗn hợp, bỏ phần Latin
+        if jp[:1] in _CIRC_MARKS:   # mục đánh số ①..: cần ít nhất hai chữ Nhật sau số, tránh dòng ký hiệu lẻ
+            body = jp[1:]
+            return len(_JP.findall(body)) >= 2 and jp_ratio(body) >= 0.6
+        return bool(_JP.search(jp)) and jp_ratio(jp) >= 0.6
 
 
 # ---------- đoạn văn ----------
@@ -162,6 +209,8 @@ def _line_ruby(l: Line, anns: list[tuple[float, float, str]], off: int) -> list[
 
 
 def _mk(ls: list[Line], kind: str = "body", flt: "_Filter | None" = None) -> Para:
+    ls[0].text = _strip_prefix(ls[0].text)
+    ls[0].text, bullet = _split_bullet(ls[0].text)
     ruby, off = [], 0
     for l in ls:
         if flt is not None and id(l) in flt.ruby:
@@ -169,7 +218,7 @@ def _mk(ls: list[Line], kind: str = "body", flt: "_Filter | None" = None) -> Par
         off += len(l.text)
     return Para("".join(l.text for l in ls), kind, min(l.x for l in ls), min(l.y for l in ls),
                 max(l.x1 for l in ls), max(l.y1 for l in ls), statistics.median(l.size for l in ls),
-                min(l.conf for l in ls), ruby)
+                min(l.conf for l in ls), ruby, bullet=bullet)
 
 
 def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Para | Table"]]:
@@ -178,7 +227,7 @@ def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Pa
     for o, it in items:
         if out and isinstance(it, Para) and isinstance(out[-1][1], Para):
             a: Para = out[-1][1]
-            if (a.kind == "body" and it.kind == "body" and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
+            if (a.kind == "body" and it.kind == "body" and not a.toc and not it.toc and not it.bullet and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
                     and abs(it.x - a.x) < 1.2 * a.size and -0.5 * a.size < it.y - a.y1 < 1.6 * a.size):
                 a.ruby += [(s + len(a.text), e + len(a.text), r) for s, e, r in it.ruby]; a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
                 continue
@@ -190,6 +239,9 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
     ls = sorted((l for l in block.lines if flt.keep(l)), key=lambda l: l.order)
     if not ls:
         return []
+    toc = {id(l) for l in ls if _LEADER_END.search(l.text)}   # dòng mục lục: mỗi dòng là một mục riêng
+    for l in ls:
+        l.text = _jp_part(l.text)   # chỉ giữ tiếng Nhật trong đoạn văn (xem keep)
     H = statistics.median(l.size for l in ls) or 1
     # tiêu đề: khối ngắn, nhãn tiêu đề hoặc chữ lớn, không kết thúc bằng 。
     text_all = "".join(l.text for l in ls)
@@ -201,8 +253,8 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
     left = min(l.x for l in ls); right = max(l.x1 for l in ls)
     paras: list[list[Line]] = []
     for l in ls:
-        new = not paras
-        if paras:
+        new = not paras or id(l) in toc
+        if paras and not new:
             p = paras[-1][-1]
             if not l.vertical and not p.vertical:
                 if l.x - left > 0.6 * H: new = True
@@ -210,7 +262,12 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
                 elif _BULLET.match(l.text): new = True
         if new: paras.append([l])
         else: paras[-1].append(l)
-    return [_mk(g, "body", flt) for g in paras]
+    out = []
+    for g in paras:
+        para = _mk(g, "body", flt)
+        para.toc = any(id(l) in toc for l in g)
+        out.append(para)
+    return out
 
 
 # ---------- bảng ----------
@@ -381,13 +438,102 @@ def _fix_circled(cells: list[Cell]) -> None:
         c.text = chr(0x2460 + i)
 
 
+_ROMAJI_WORD = re.compile(r"[a-z]{2,}")
+
+
+def _is_kana_chart(block: Block, cells) -> bool:
+    """Bảng chữ kana: nhiều ô có romaji nhỏ (ka, shi…) cạnh chữ kana lớn. Bảng văn bản thường không có."""
+    if len(cells) < 20:
+        return False
+    rom = sum(1 for l in block.lines if re.fullmatch(r"[A-Za-z]{1,4}", l.text.strip()) or _ROMAJI_WORD.search(l.text))
+    return rom >= 0.25 * len(cells)
+
+
+def _split_tall_rows(edges: list[float], ratio: float = 1.7) -> list[float]:
+    """Hàng cao gấp đôi các hàng khác là hai hàng bị gộp (đường kẻ giữa chúng quá mờ): chia đều."""
+    h = np.diff(edges)
+    med = float(np.median(h))
+    out = [edges[0]]
+    for a, b in zip(edges[:-1], edges[1:]):
+        k = max(1, round((b - a) / med)) if (b - a) >= ratio * med else 1
+        for i in range(1, k + 1):
+            out.append(a + (b - a) * i / k)
+    return out
+
+
+_ROMAJI_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]{0,3}")
+_KANA_OFFSET = 0.37   # tâm chữ kana nằm cách tâm romaji cùng ô khoảng 0,37 bước cột (bảng dakuten/gojūon)
+
+
+def _cluster(vals: list[float], gap: float, min_size: int = 2) -> list[float]:
+    """Gom các tọa độ gần nhau; trả về tâm từng cụm đủ min_size thành viên (tăng dần).
+    Cụm lẻ là romaji nhiễu của engine, bỏ đi."""
+    groups, cur = [], []
+    for v in sorted(vals):
+        if cur and v - cur[-1] > gap:
+            groups.append(cur); cur = []
+        cur.append(v)
+    if cur: groups.append(cur)
+    return [sum(g) / len(g) for g in groups if len(g) >= min_size]
+
+
+def _axis(vals: list[float], gap: float) -> list[float]:
+    """Các đường lưới trên một trục: mốc là cụm có ≥2 thành viên; khoảng cách đều theo bước trung vị.
+    Cột/hàng bị thiếu (không có romaji nào) vẫn được sinh ra theo bước đều."""
+    anchors = _cluster(vals, gap, min_size=3)   # mỗi cột/hàng có 4–5 romaji; cặp nhiễu (ví dụ 'Ex', 'bl') không đủ
+    if len(anchors) < 2:
+        anchors = _cluster(vals, gap, min_size=2)
+    if len(anchors) < 2:
+        return anchors
+    step = float(np.median(np.diff(anchors)))
+    if step <= 0:
+        return anchors
+    k_max = max(round((a - anchors[0]) / step) for a in anchors)
+    return [anchors[0] + k * step for k in range(k_max + 1)]
+
+
+def _chart_grid(lines: list[Line]) -> tuple[list[float], list[float]] | None:
+    """Suy lưới của bảng chữ kana không có đường kẻ, từ tâm các romaji (ví dụ 'ga', 'shi'):
+    mỗi cụm cx là một cột, mỗi cụm cy là một hàng; biên ô đặt quanh tâm romaji."""
+    rom = [l for l in lines if _ROMAJI_TOKEN.fullmatch(l.text.strip())]
+    if len(rom) < 12:
+        return None
+    cols = _axis([l.cx for l in rom], gap=40)
+    rows = _axis([l.cy for l in rom], gap=30)
+    if len(cols) < 3 or len(rows) < 3:
+        return None
+    P = float(np.median(np.diff(cols)))
+    Q = float(np.median(np.diff(rows)))
+    xs = [c - _KANA_OFFSET * P - P / 2 for c in cols] + [cols[-1] - _KANA_OFFSET * P + P / 2]
+    ys = [r - Q / 2 for r in rows] + [rows[-1] + Q / 2]
+    xs = [xs[0]] + [xs[i] for i in range(1, len(xs))]
+    return ys, xs
+
+
+def _read_kana_chart(block: Block, gray, ys, xs, img_rgb, kana_reader) -> list[Cell]:
+    """Đọc từng ô của bảng chữ kana: tách hàng bị gộp, rồi đọc mỗi ô bằng kana_reader."""
+    ys = _split_tall_rows(list(ys))
+    cells = [Cell(r, c) for r in range(len(ys) - 1) for c in range(len(xs) - 1)]
+    H, W = img_rgb.shape[:2]
+    for cell in cells:
+        x0, y0, x1, y1 = _cell_box(cell, ys, xs)
+        crop = img_rgb[max(0, int(y0)):min(H, int(y1)), max(0, int(x0)):min(W, int(x1))]
+        cell.text = kana_reader(np.ascontiguousarray(crop)) if crop.size else ""
+        cell.conf = 1.0 if cell.text else 0.0
+    return cells, ys
+
+
 def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
-           img_rgb: np.ndarray | None = None, reocr=None) -> Table | None:
+           img_rgb: np.ndarray | None = None, reocr=None, kana_reader=None) -> Table | None:
     ls = [l for l in block.lines if flt.keep(l, table=True)]
-    if not ls: return None
     g = _detect_grid(gray, block) if gray is not None else None
     if g:
         ys, xs, cells = _grid_cells(g)
+        if kana_reader is not None and img_rgb is not None and _is_kana_chart(block, cells):
+            kcells, kys = _read_kana_chart(block, gray, ys, xs, img_rgb, kana_reader)
+            return Table(len(kys) - 1, len(xs) - 1, kcells, kana=True)
+    if not ls: return None
+    if g:
         if reocr is not None:
             ls = _reocr_cells(ls, ys, xs, cells, img_rgb, reocr, flt)
         buckets: dict[tuple[int, int], list[Line]] = {}
@@ -449,8 +595,98 @@ def _table_by_clustering(ls: list[Line]) -> Table | None:
 
 # ---------- trang ----------
 
-def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> list[Para | Table]:
-    """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại."""
+_CHAPTER = re.compile(r"Chapter\s*\d")
+_TOC_NOISE = re.compile(r"^[0-9０-９()（）↓♪Bり]+")   # ký hiệu số của mục lục bị đọc thành các ký tự này
+_CIRCLED = [chr(0x2460 + i) for i in range(20)]         # ①..⑳
+
+
+def _number_toc(page: Page) -> None:
+    """Mục lục có ký hiệu số ①②③ đứng riêng (engine đọc sai): đánh số lại theo thứ tự trong từng chương.
+    Mỗi 'Chapter N' đặt lại bộ đếm; chỉ mục có dấu chấm dẫn và chữ Nhật mới được đánh số.
+    Tên mục bị tách sang dòng bên trái cùng hàng (ví dụ '連絡する' và 'Communicating…094') được ghép lại."""
+    lines = sorted((l for b in page.blocks for l in b.lines), key=lambda l: l.cy)
+    n, active, group = 0, False, []
+
+    def flush():   # mục trong một chương đứng theo thứ tự từ trên xuống, dù engine đọc theo thứ tự khác
+        for g, o in zip(group, sorted(g.order for g in group)):
+            g.order = o
+        group.clear()
+
+    for l in lines:
+        if _CHAPTER.search(l.text):
+            flush()
+            n, active = 0, True
+            continue
+        if not active or n >= len(_CIRCLED) or not _LEADER_END.search(l.text):
+            continue
+        name = _TOC_NOISE.sub("", l.text.strip())
+        jp = _jp_part(name)
+        partner = next((o for o in lines if o is not l and o.text.strip() and o.cx < l.x
+                        and abs(o.cy - l.cy) < 0.6 * max(l.h, o.h) and _JP.search(o.text) and not _LEADER_END.search(o.text)), None)
+        # tên tách sang dòng bên trái ('連絡する'), hoặc chữ đầu bị tách ('予' + '約Making…')
+        if partner is not None and (not _JP.search(jp) or partner.text.strip().endswith(jp[:1])):
+            name = partner.text.strip() + (name[1:] if _JP.search(jp) else name)
+            partner.text = ""
+        elif not _JP.search(jp):
+            continue
+        # dòng chữ Nhật lẻ, đứng sát và là một phần của tên mục: đã được ghép vào tên, bỏ bản gốc
+        for o in lines:
+            if o is not l and o.text.strip() and abs(o.cy - l.cy) < 1.2 * max(l.h, o.h) and o.text.strip() in name \
+                    and _JP.search(o.text) and not _LEADER_END.search(o.text) and not _CHAPTER.search(o.text):
+                o.text = ""
+        n += 1
+        l.text = _CIRCLED[n - 1] + name
+        group.append(l)
+    flush()
+
+
+_SAMPLE_NUM = re.compile(r"^[0-9]{1,3}$")          # số trong ô xám của mẫu câu: '79'
+_EX_LABEL = re.compile(r"^(Ex\.?\]?|Ex\.\d\]?|Ex\]?|Ex\.)$")  # nhãn ví dụ: 'Ex.', 'Ex.2', 'Ex]'
+
+
+def _same_row(a: Line, b: Line) -> bool:
+    return abs(a.cy - b.cy) < 0.6 * max(a.h, b.h)
+
+
+def _sample_layout(page: Page) -> None:
+    """Mẫu câu và ví dụ trong sách có nhãn đứng riêng, engine đọc thành dòng lẻ:
+    - số trong ô xám ('79') được ghép vào đầu câu cùng hàng; '※' do ô xám bị đọc nhầm được bỏ;
+    - nhãn 'Ex.', 'Ex.2' bị bỏ, số dính sau nhãn ('1田中様') được bỏ, và mỗi ví dụ thành một mục danh sách (■)."""
+    lines = [l for b in page.blocks for l in b.lines]
+    for box in lines:
+        if not _SAMPLE_NUM.match(box.text.strip()) or box.x > 160 or len(box.text.strip()) < 2:
+            continue
+        # chỉ ghép khi câu cùng hàng bắt đầu bằng '※' (đã kiểm tra trên trang 53); số lẻ khác là nhiễu của engine
+        row = next((o for o in lines if o is not box and o.text.startswith("※") and o.cx > box.cx and _same_row(o, box)), None)
+        if row is None:
+            continue
+        row.text = box.text.strip() + " " + row.text.lstrip("※").lstrip()
+        box.text = ""
+    for lab in lines:
+        if not _EX_LABEL.match(lab.text.strip()):
+            continue
+        bare = lab.text.strip() == "Ex"        # chỉ nhãn 'Ex' trơ mới dính số của ví dụ kế bên
+        lab.text = ""
+        for o in lines:
+            if o is lab or not o.text.strip() or not _same_row(o, lab) or o.x < lab.x:
+                continue
+            t = _TOC_NOISE.sub("", o.text.strip()) if bare and o.x < lab.x + lab.w + 30 else o.text.strip()
+            if _JP.search(t) and not t.startswith("■"):
+                o.text = "■" + t
+    for o in lines:   # ví dụ ×: cũng là một mục
+        if o.text.startswith("×") and _JP.search(o.text):
+            o.text = "■" + o.text
+
+
+KANA_NOTE = ("※ Bảng chữ kana đọc bằng Tesseract: ô để trống là không chắc chắn; "
+             "đối chiếu với trang gốc trước khi dùng.")
+
+
+def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_reader=None) -> list[Para | Table]:
+    """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại.
+    kana_reader(crop_rgb) -> str: đọc một ô chữ kana (một ký tự hoặc ''). None = không đọc bảng kana."""
+    _number_toc(page)
+    _sample_layout(page)
     gray = None
     if img_rgb is not None:
         import cv2
@@ -466,12 +702,33 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> lis
             if len(inside) < 2:
                 continue
             taken.update(id(l) for l in inside)
-            t = _table(Block("table", region.x, region.y, region.w, region.h, inside), flt, gray)
-            if t: items.append((min(l.order for l in inside), t))
+            t = _table(Block("table", region.x, region.y, region.w, region.h, inside), flt, gray, img_rgb, None, kana_reader)
+            if t:
+                items.append((min(l.order for l in inside), t))
+                if t.kana: items.append((min(l.order for l in inside), Para(KANA_NOTE, kind="body")))
+    if kana_reader is not None and img_rgb is not None:
+        # bảng chữ kana không có đường kẻ: suy lưới từ romaji rồi đọc từng ô
+        rest = [l for b in page.blocks if b.kind in _TEXT_KINDS + ("table",) for l in b.lines if id(l) not in taken]
+        g = _chart_grid(rest)
+        if g is not None:
+            ys, xs = g
+            inside = [l for l in rest if xs[0] <= l.cx <= xs[-1] and ys[0] <= l.cy <= ys[-1]]
+            if sum(1 for l in inside if _ROMAJI_TOKEN.fullmatch(l.text.strip())) >= 12:
+                blk = Block("table", xs[0], ys[0], xs[-1] - xs[0], ys[-1] - ys[0], inside)
+                cells, kys = _read_kana_chart(blk, gray, ys, xs, img_rgb, kana_reader)
+                filled = sum(1 for c in cells if c.text) / max(1, len(cells))
+                if filled >= 0.35:   # ít ô có chữ: lưới suy ra là nhiễu từ romaji rời rạc, không phải bảng chữ
+                    taken.update(id(l) for l in inside)
+                    t = Table(len(kys) - 1, len(xs) - 1, cells, kana=True)
+                    o = min(l.order for l in inside)
+                    items.append((o, t)); items.append((o, Para(KANA_NOTE, kind="body")))
     for b in page.blocks:
         if b.kind == "table":
-            t = _table(b, flt, gray, img_rgb, reocr)
-            if t: items.append((b.order, t))
+            t = _table(Block("table", b.x, b.y, b.w, b.h, [l for l in b.lines if id(l) not in taken], b.label),
+                       flt, gray, img_rgb, reocr, kana_reader)
+            if t:
+                items.append((b.order, t))
+                if getattr(t, "kana", False): items.append((b.order, Para(KANA_NOTE, kind="body")))
         elif b.kind in _TEXT_KINDS:
             rest = [l for l in b.lines if id(l) not in taken]
             for p in _paragraphs(Block(b.kind, b.x, b.y, b.w, b.h, rest, b.label), flt): items.append((b.order, p))
