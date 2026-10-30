@@ -93,6 +93,32 @@ def default_workers(device: str) -> int:
     return max(1, min(4, (os.cpu_count() or 2) // 2))
 
 
+SUSPECT_MIN_LEN = 12   # dòng ngắn (ô bảng, nhãn) thiếu ngữ cảnh nên cho nhiều dương tính giả
+
+
+def _suspect_rows(items, threshold: float) -> list[str]:
+    """Dòng nào có ký tự nghi ngờ thì trả về một dòng báo cáo (chỉ đánh dấu, không sửa)."""
+    from .layout import Para, Table
+    from .suspect import mark, scan_line
+
+    texts = []
+    for it in items:
+        if isinstance(it, Table):
+            texts += [c.text for c in it.cells if c.text]
+        else:
+            texts.append(it.text)
+    rows = []
+    for t in texts:
+        for line in t.split("\n"):
+            if len(line) < SUSPECT_MIN_LEN:
+                continue
+            sus = scan_line(line, threshold)
+            if sus:
+                detail = ", ".join(f"{x.char} ({x.prob:.4f}; gợi ý {x.alternatives})" for x in sus[:5])
+                rows.append(f"{mark(line, sus)}  ← {detail}")
+    return rows
+
+
 def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | None = None,
                  write_txt: bool = True, page_marker: bool = True,
                  progress: Callable[[int, int, str], None] | None = None,
@@ -100,7 +126,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
                  engine: str | None = None, ruby: bool = False, device: str = "auto",
                  workers: int | None = None, cell_reocr: bool = True,
-                 crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0) -> dict:
+                 crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
+                 suspect: bool = False, suspect_threshold: float = 0.0005) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -135,6 +162,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         return pno, page, img
 
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
+    suspect_rows: list[tuple[int, str]] = []
     # Cửa sổ trượt: tối đa 2*n_workers trang đang chờ, để không giữ cả file trong RAM
     with ThreadPoolExecutor(max_workers=n_workers) as pool:
         pending = []
@@ -157,6 +185,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             pno, page, img = fut.result()
             submit_next()
             items = build_page(page, img, reocr if cell_reocr else None)
+            if suspect:
+                suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
             if review:
                 from .review import render_page
                 sec, low = render_page(pno, items, page, img, conf_threshold)
@@ -171,10 +201,15 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby)
         if write_txt:
             _txt(results, out_dir / f"{path.stem}.txt")
+    suspect_path = None
+    if suspect_rows:
+        suspect_path = out_dir / f"{path.stem}_suspect.txt"
+        suspect_path.write_text("\n".join(f"Trang {p} | {row}" for p, row in suspect_rows) + "\n", encoding="utf-8")
     review_path = None
     if review and sections:
         from .review import write_review
         review_path = out_dir / f"{path.stem}_review.html"
         write_review(sections, review_path, path.name)
     return {"file": str(path), "pages": done, "tables": n_tables, "docx": str(docx_path),
-            "review": str(review_path) if review_path else None, "low_conf": n_low}
+            "review": str(review_path) if review_path else None, "low_conf": n_low,
+            "suspect": str(suspect_path) if suspect_path else None, "suspect_lines": len(suspect_rows)}
