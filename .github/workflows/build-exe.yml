@@ -53,14 +53,8 @@ jobs:
           $t = Get-Content exe_out/smoke.txt -Encoding UTF8 -Raw
           Write-Host $t
           if ($t -notmatch "日本語") { throw "exe không OCR được" }
-      - name: Zip
-        shell: pwsh
-        run: |
-          Compress-Archive -Path dist/OCR-Nhat/* -DestinationPath OCR-Nhat-windows.zip
-          Compress-Archive -Path dist/ocrnhat-cli/* -DestinationPath ocrnhat-cli-windows.zip
+      # chỉ upload bộ cài; bản zip thư mục và bản CLI không còn được đóng gói
       - uses: actions/upload-artifact@v4
         with:
-          name: OCR-Nhat-windows
-          path: |
-            *.zip
-            installer_out/OCR-Nhat-setup.exe
+          name: OCR-Nhat-setup
+          path: installer_out/OCR-Nhat-setup.exe
