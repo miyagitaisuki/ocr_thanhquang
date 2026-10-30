@@ -37,3 +37,23 @@ def test_dong_muc_luc_thanh_cac_doan_rieng():
         Block("text", 100, 60, 800, 30, [_line("書き出し Opening words ……036", 100, 60, 2)]),
     ])
     assert [i.text for i in build_page(page)] == ["名乗る", "書き出し"]
+
+
+def test_bo_so_tieu_de_chay_va_o_vuong_o_dau_doan():
+    from ocrnhat.layout import _strip_prefix
+    assert _strip_prefix("2すぐに使える例文集:社外編") == "すぐに使える例文集:社外編"
+    assert _strip_prefix("1日本語メールの基本とコツ") == "日本語メールの基本とコツ"
+    assert _strip_prefix("□と判明しました") == "と判明しました"
+    assert _strip_prefix("■本文") == "本文"
+    assert _strip_prefix("※名前がわからない相手") == "※名前がわからない相手"   # ghi chú của sách: giữ
+    assert _strip_prefix("10月に展示会を開催します") == "10月に展示会を開催します"   # số trong câu: giữ
+    assert _strip_prefix("4月1日より御社を担当") == "4月1日より御社を担当"
+    assert _strip_prefix("19早くご返事を") == "19早くご返事を"                  # không phải tiêu đề chạy: giữ
+
+
+def test_so_dung_dau_dong_van_bi_bo_trong_doan():
+    page = Page(1000, 600, [Block("text", 100, 20, 800, 200, [
+        _line("2すぐに使える例文集", 100, 20, 1),
+        _line("本文です。", 100, 60, 2),
+    ])])
+    assert [i.text for i in build_page(page)][0].startswith("すぐに使える例文集")

@@ -28,6 +28,16 @@ _LEADER_END = re.compile(r"(?:[.…‥･・]{2,}\s*\d*|\s+\d{2,4})\s*$")
 _LATIN_RUN = re.compile(r"[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ .,'’()\-]*")
 
 
+# tiêu đề chạy đầu trang bị dính số trang/mục ('2すぐに使える例文集', '1日本語メールの基本とコツ'): chỉ bỏ số ở các dòng này
+_RUNNING_HEADER = re.compile(r"^[0-9０-９]{1,2}(?=(?:すぐに使える|日本語メールの基本|日本語入力の基本|覚えておきたい|より良いメール))")
+_LEAD_BOX = re.compile(r"^[□■▪▫]\s*(?=[぀-ヿ㐀-䶿一-鿿])")
+
+
+def _strip_prefix(text: str) -> str:
+    """Bỏ số đầu tiêu đề chạy và ô vuông trang trí ở đầu đoạn. Số trong câu ('10月に', '4月1日') được giữ nguyên."""
+    return _LEAD_BOX.sub("", _RUNNING_HEADER.sub("", text, count=1), count=1)
+
+
 def _jp_part(text: str) -> str:
     """Phần tiếng Nhật của một dòng: bỏ đoạn Latin, dấu chấm dẫn và số trang cuối dòng.
     'Basics of inputting…………012' -> '' ; '日本語入力の基本Basics of inputting…012' -> '日本語入力の基本'."""
@@ -179,6 +189,7 @@ def _line_ruby(l: Line, anns: list[tuple[float, float, str]], off: int) -> list[
 
 
 def _mk(ls: list[Line], kind: str = "body", flt: "_Filter | None" = None) -> Para:
+    ls[0].text = _strip_prefix(ls[0].text)
     ruby, off = [], 0
     for l in ls:
         if flt is not None and id(l) in flt.ruby:
