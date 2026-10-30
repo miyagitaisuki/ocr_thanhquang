@@ -7,6 +7,7 @@ thư mục riêng (`%LOCALAPPDATA%\\OCR-Nhat\\gpu`). Lần khởi động sau, `
 from __future__ import annotations
 
 import contextlib
+import importlib
 import os
 import re
 import sys
@@ -86,12 +87,26 @@ def log_file() -> Path:
     return pack_dir() / "install.log"
 
 
+def _register_frozen_finder() -> None:
+    """Trong exe PyInstaller, distlib không nhận loader của PyInstaller nên báo
+    "Unable to locate finder for 'pip._vendor.distlib'" khi pip import module cài đặt.
+    Đăng ký loader đó dùng ResourceFinder, giống module thường (đường dẫn file đã có trong thư mục exe)."""
+    if not getattr(sys, "frozen", False):
+        return
+    from pip._vendor.distlib import resources
+
+    loader = getattr(importlib.import_module("pip._vendor.distlib"), "__loader__", None)
+    if loader is not None and type(loader) not in resources._finder_registry:
+        resources.register_finder(loader, resources.ResourceFinder)
+
+
 def check_pip() -> None:
     """Kiểm tra pip đóng gói sẵn import được module mà lệnh cài dùng. Ném lỗi nếu không.
 
-    Lỗi thật gặp trên exe PyInstaller: `pip._vendor.distlib` không tìm được finder khi import
-    `pip._internal.operations.install.wheel`. Hàm này import đúng module đó để lỗi lộ ra sớm.
+    Hàm này import đúng module `pip._internal.operations.install.wheel` (nơi lỗi distlib xảy ra)
+    để lỗi lộ ra sớm, kể cả trong CI.
     """
+    _register_frozen_finder()
     from pip._internal.cli.main import main  # noqa: F401
     from pip._internal.operations.install import wheel  # noqa: F401
 

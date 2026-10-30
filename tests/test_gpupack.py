@@ -1,5 +1,6 @@
 """Gói GPU tùy chọn: chọn phiên bản cu126, đối số pip, trạng thái cài. Không tải mạng thật."""
 import io
+import sys
 from pathlib import Path
 
 from ocrnhat import gpupack
@@ -65,3 +66,14 @@ def test_cai_that_bai_bao_loi_than_thien_va_ghi_log(monkeypatch, tmp_path):
         raise AssertionError("phải ném PackError")
     log = (tmp_path / "install.log").read_text(encoding="utf-8")
     assert "distlib finder" in log and not (tmp_path / gpupack.MARKER).exists()
+
+
+def test_exe_dong_goi_dang_ky_finder_cho_distlib(monkeypatch):
+    from pip._vendor.distlib import resources
+
+    fake = type("PyiFrozenImporter", (), {})()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(gpupack.importlib, "import_module", lambda name: type("M", (), {"__loader__": fake})())
+    monkeypatch.setattr(resources, "_finder_registry", dict(resources._finder_registry))
+    gpupack._register_frozen_finder()
+    assert resources._finder_registry[type(fake)] is resources.ResourceFinder
