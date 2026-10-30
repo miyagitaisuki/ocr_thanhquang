@@ -35,7 +35,7 @@ def resolve(name: str = DEFAULT) -> tuple[str, str]:
     from .. import gpu
     g = gpu.best_gpu()
     if g is None:
-        return FALLBACK, "mặc định"
+        return FALLBACK, "không có GPU rời đủ VRAM"
     ok, why = _cls("chandra").is_available()
     if not ok:
         return FALLBACK, f"có GPU {g.name} nhưng Chandra {why}"
