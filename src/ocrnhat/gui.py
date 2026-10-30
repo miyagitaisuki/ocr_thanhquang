@@ -280,6 +280,81 @@ class GradientNotebook(tk.Frame):
         return [c for c, _ in self._tabs]
 
 
+CAT_ORANGE = "#F2A03D"
+
+
+class _CatMixin:
+    """Mèo chạy trên đường ray dưới thanh tiến trình. Vẽ bằng Canvas, không cần file ảnh.
+
+    Vị trí theo tiến trình OCR; chân đổi khung mỗi 130 ms khi đang chạy; về đích thì đứng cạnh cờ.
+    """
+
+    def _cat_init(self, parent):
+        self.cat = tk.Canvas(parent, height=34, highlightthickness=0, bd=0, bg=_parent_bg(parent))
+        self.cat.pack(fill="x", pady=(0, 6))
+        self._cat_pos, self._cat_frame, self._cat_running, self._cat_job = 0.0, 0, False, None
+        self._cat_finished = False
+        self.cat.bind("<Configure>", lambda e: self._cat_draw())
+        self.after(50, self._cat_draw)
+
+    def _cat_start(self):
+        self._cat_pos, self._cat_finished = 0.0, False
+        self._cat_running = True
+        self._cat_loop()
+
+    def _cat_loop(self):
+        if not self._cat_running:
+            return
+        self._cat_frame ^= 1
+        self._cat_draw()
+        self._cat_job = self.after(130, self._cat_loop)
+
+    def _cat_move(self, frac: float):
+        self._cat_pos = max(0.0, min(1.0, frac))
+        self._cat_draw()
+
+    def _cat_stop(self):
+        """Hết việc: mèo về đích nếu không bị dừng giữa chừng."""
+        self._cat_running = False
+        if self._cat_job is not None:
+            self.after_cancel(self._cat_job)
+            self._cat_job = None
+        self._cat_finished = not self.cancel.is_set()
+        if self._cat_finished:
+            self._cat_pos = 1.0
+        self._cat_frame = 0
+        self._cat_draw()
+
+    def _cat_draw(self):
+        c = self.cat
+        c.delete("all")
+        w = max(1, c.winfo_width())
+        ground = 30
+        c.create_line(0, ground + 1, w, ground + 1, fill=self.pal["TROUGH"], width=3)
+        # cờ về đích
+        if self._cat_finished:
+            c.create_line(w - 10, ground, w - 10, 4, fill=self.pal["MUTED"], width=2)
+            c.create_polygon(w - 10, 4, w - 1, 8, w - 10, 12, fill="#2E7D32", outline="")
+        x0 = 4 + (w - 64) * self._cat_pos
+        bob = 0 if self._cat_finished or not self._cat_running else (1 if self._cat_frame else 0)
+        y = ground - bob
+        o = CAT_ORANGE
+        # đuôi, thân, đầu, tai, mắt
+        c.create_line(x0 + 9, y - 6, x0 + 2, y - 12, x0 + 1, y - 19, smooth=True, width=3, fill=o)
+        c.create_oval(x0 + 8, y - 17, x0 + 37, y - 6, fill=o, outline="")
+        c.create_oval(x0 + 30, y - 24, x0 + 46, y - 9, fill=o, outline="")
+        c.create_polygon(x0 + 32, y - 22, x0 + 33, y - 30, x0 + 37, y - 23, fill=o, outline="")
+        c.create_polygon(x0 + 39, y - 23, x0 + 42, y - 30, x0 + 44, y - 21, fill=o, outline="")
+        c.create_oval(x0 + 40, y - 17, x0 + 43, y - 14, fill=self.pal["TEXT"], outline="")
+        # chân: hai khung xen kẽ khi chạy, đứng yên khi về đích
+        if self._cat_running and not self._cat_finished:
+            a, b = ((x0 + 33, x0 + 37), (x0 + 13, x0 + 9)) if self._cat_frame == 0 else ((x0 + 33, x0 + 29), (x0 + 13, x0 + 17))
+        else:
+            a, b = ((x0 + 33, x0 + 37), (x0 + 13, x0 + 9))
+        for fx, fy in (a, b):
+            c.create_line(fx, y - 8, fy, ground, width=3, fill=o)
+
+
 class Tip:
     """Chú thích khi di chuột vào: hiện sau 0,4 giây, ẩn khi rời chuột."""
 
@@ -337,7 +412,7 @@ class Spinner(tk.Canvas):
             self._job = None
 
 
-class App(_Base):
+class App(_CatMixin, _Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
     KANA_LABELS = {"": "Tắt", "template": "Mẫu chữ IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
     LANG_LABELS = {"ja": "Tiếng Nhật", "en": "Tiếng Anh", "zh": "Tiếng Trung", "vi": "Tiếng Việt", "all": "Mọi ngôn ngữ (cần Chandra)"}
@@ -477,6 +552,7 @@ class App(_Base):
         Tip(self.stop, "Dừng sau trang hiện tại. Các trang đã xong vẫn được lưu (Esc).")
         self.pb = ttk.Progressbar(top, maximum=100, style="Accent.Horizontal.TProgressbar")
         self.pb.pack(fill="x", pady=(10, 4))
+        self._cat_init(top)
         self.status = tk.StringVar(value="Sẵn sàng.")
         ttk.Label(top, textvariable=self.status, style="Status.TLabel", wraplength=880, justify="left").pack(fill="x")
 
@@ -970,6 +1046,7 @@ class App(_Base):
         self.results = []
         self._t0 = time.time()
         self.cancel.clear(); self.btn.config(state="disabled"); self.stop.config(state="normal")
+        self._cat_start()
         out = self._var("out", "").get().strip()
         args = (list(self.files), Path(out) if out else None, pages, opts)
         self.worker = threading.Thread(target=self.run_job, args=args, daemon=True); self.worker.start()
@@ -1144,6 +1221,7 @@ class App(_Base):
                 if k == "prog":
                     d, t, m = v
                     self.pb["value"] = 100 * d / max(1, t)
+                    self._cat_move(d / max(1, t))
                     eta = ""
                     if d >= 2:
                         rem = (time.time() - self._t0) / d * (t - d)
@@ -1174,6 +1252,7 @@ class App(_Base):
                     self.pack_pb.stop(); self.pack_pb.pack_forget()
                     self.pack_status.set(v); self.pack_btn.config(state="normal")
                 else:   # done
+                    self._cat_stop()
                     self.status.set(v); self.btn.config(state="normal"); self.stop.config(state="disabled")
                     self.pb["value"] = 100
         except queue.Empty:
