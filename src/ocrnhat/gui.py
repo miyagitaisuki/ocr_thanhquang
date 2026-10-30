@@ -17,6 +17,7 @@ from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from . import gpu, gpupack, pdf_extract as pe, pdf_ops, pipeline, textview
+from . import ui_logic as L
 from .cli import collect
 from .widgets import GradientButton, GradientNotebook, Spinner, Tip, _CatMixin, _sc
 
@@ -85,23 +86,17 @@ def _pick_font() -> str | None:
 
 
 class App(_CatMixin, _Base):
-    DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
-    KANA_LABELS = {"": "Tắt", "template": "Mẫu chữ IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
-    LANG_LABELS = {"ja": "Tiếng Nhật", "en": "Tiếng Anh", "zh": "Tiếng Trung", "vi": "Tiếng Việt", "all": "Mọi ngôn ngữ (cần Chandra)"}
-    # ngôn ngữ được chọn cho từng engine (auto: mọi ngôn ngữ, engine tự chọn theo ngôn ngữ)
-    ENGINE_LANGS = {"ndlocr": ("ja",), "chandra": ("ja", "en", "zh", "vi", "all"), "paddle": ("en", "zh"),
-                    "ocr_vi": ("vi",), "auto": ("ja", "en", "zh", "vi", "all")}
+    DEV_LABELS = L.dev_labels(gpu.ort_cuda_available())
+    KANA_LABELS = L.KANA_LABELS
+    LANG_LABELS = L.LANG_LABELS
+    ENGINE_LANGS = L.ENGINE_LANGS
+    ENGINE_LABELS = L.ENGINE_LABELS
+    MERGE_LABELS = L.MERGE_LABELS
     # chandra chỉ hiện khi đã cài (exe GPU hoặc gói GPU tùy chọn đã kích hoạt)
     ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("paddle", "ocr_vi")
-    # danh sách engine theo ngôn ngữ
-    ENGINE_LABELS = {"auto": "Tự động (công cụ phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
-                     "chandra": "Tiếng Nhật – Chandra", "paddle": "Tiếng Anh, Trung – PaddleOCR",
-                     "ocr_vi": "Tiếng Việt – VietOCR"}
-    MERGE_LABELS = {True: "Gộp trang (mặc định)", False: "Giữ nguyên trang"}
 
     def _engine_key(self) -> str:
-        label = self._var("engine", self.ENGINE_LABELS["auto"]).get()
-        return next((k for k, v in self.ENGINE_LABELS.items() if v == label), "auto")
+        return L.engine_key(self._var("engine", self.ENGINE_LABELS["auto"]).get())
 
     def __init__(self):
         super().__init__()
@@ -120,6 +115,9 @@ class App(_CatMixin, _Base):
         self._t0 = 0.0
         self._photo = None
         self._doc_cache = None   # (đường dẫn, PdfDocument) cho khung xem trước
+        self._closing = False    # đã yêu cầu dừng để đóng cửa sổ; poll() đóng khi luồng nền xong
+        self._pdfx_running = False
+        self._rep_sel = {"main": None, "ins": None}   # file đang chọn trong “Chèn trang lặp lại” (theo đường dẫn)
         self.settings = load_settings()
         self.theme = self.settings.get("theme", "sáng")
         self.font_size = int(self.settings.get("font_size", 10))
@@ -247,7 +245,7 @@ class App(_CatMixin, _Base):
         self.bind("<Control-o>", lambda e: self.add_files())
         self.bind("<Control-r>", lambda e: self.start())
         self.bind("<F5>", lambda e: self.start())
-        self.bind("<Escape>", lambda e: self._request_stop() if self.worker and self.worker.is_alive() else None)
+        self.bind("<Escape>", lambda e: self._confirm_stop() if self.worker and self.worker.is_alive() else None)
         self.tree.bind("<Delete>", lambda e: self.remove_selected())
 
     # ---------- các tab ----------
@@ -634,8 +632,22 @@ class App(_CatMixin, _Base):
             self.pdfx_tree.insert("", "end", iid=str(i), values=(i + 1, f.name, n, str(f.parent)))
         self.pdfx_count.set(f"{len(self.pdfx_items)} file" if self.pdfx_items else "Chưa có file nào")
         names = [f"{i + 1}. {f.name}" for i, (f, _) in enumerate(self.pdfx_items)]
-        for cb in (self.rep_main, self.rep_ins):   # danh sách đổi thì bỏ chọn cũ, tránh trỏ nhầm file
-            cb.config(values=names); cb.set("")
+        paths = [f for f, _ in self.pdfx_items]
+        # giữ lựa chọn theo đường dẫn file (số thứ tự có thể đã đổi); file không còn trong danh sách thì bỏ chọn
+        for key, cb in (("main", self.rep_main), ("ins", self.rep_ins)):
+            cb.config(values=names)
+            want = self._rep_sel[key]
+            cb.set("")
+            if want in paths:
+                cb.current(paths.index(want))
+            else:
+                self._rep_sel[key] = None
+            cb.bind("<<ComboboxSelected>>", lambda e, k=key, c=cb: self._rep_pick(k, c))
+
+    def _rep_pick(self, key: str, cb):
+        """Ghi nhớ file người dùng vừa chọn trong ô chèn trang (theo đường dẫn, không theo số thứ tự)."""
+        i = cb.current()
+        self._rep_sel[key] = self.pdfx_items[i][0] if 0 <= i < len(self.pdfx_items) else None
 
     def _pdfx_pick_out(self):
         d = filedialog.askdirectory()
@@ -854,6 +866,7 @@ class App(_CatMixin, _Base):
         self.q.put(("pdfx_done", msg))
 
     def _pdfx_busy(self, busy: bool):
+        self._pdfx_running = busy
         state = "disabled" if busy else "normal"
         for b in (self.pdfx_btn, self.pdfx_split_btn, self.pdfx_merge_btn, self.pdfx_inter_btn, self.pdfx_rep_btn,
                   self.pdfx_rot_btn, self.pdfx_comp_btn):
@@ -1007,9 +1020,31 @@ class App(_CatMixin, _Base):
         self.settings["vars"] = {k: v.get() for k, v in self._vars.items()}
         save_settings(self.settings)
 
+    def _busy(self) -> bool:
+        """Đang có việc nền: OCR, tải model, cài gói, hoặc Công cụ PDF."""
+        return bool(self.worker and self.worker.is_alive()) or self.watch_stop is not None or self._pdfx_running
+
     def _on_close(self):
+        """Đóng khi đang chạy: hỏi trước, rồi yêu cầu dừng và chờ luồng nền xong mới đóng (tránh ghi file dở)."""
         self._save_vars()
-        self.destroy()
+        if not self._busy():
+            self.destroy()
+            return
+        if not messagebox.askyesno("Đang xử lý", "Đang có việc chạy nền. Đóng bây giờ sẽ dừng sau trang hiện tại; "
+                                                 "các trang đã đọc vẫn được lưu. Đóng?"):
+            return
+        self.cancel.set()
+        if self.watch_stop is not None:
+            self.watch_stop.set()
+        self._closing = True
+        self.status.set("Đang dừng để đóng cửa sổ…")
+
+    def _closing_done(self) -> bool:
+        """Gọi từ poll(): đóng khi luồng nền đã kết thúc."""
+        if self._closing and not self._busy():
+            self.destroy()
+            return True
+        return False
 
     def _row(self, parent, row: int, label: str, widget):
         """Hàng nhãn + ô nhập. Bố cục dùng grid nên mọi khối cùng một cột nhãn."""
@@ -1066,6 +1101,11 @@ class App(_CatMixin, _Base):
         self.cancel.set()
         self.status.set("Đang dừng… chờ trang hiện tại đọc xong.")
 
+    def _confirm_stop(self):
+        """Esc hoặc phím tắt: hỏi trước vì dừng là mất phần chưa đọc. Nút Dừng vẫn bấm trực tiếp."""
+        if messagebox.askyesno("Dừng OCR", "Dừng sau trang hiện tại? Các trang đã đọc vẫn được lưu."):
+            self._request_stop()
+
     def _update_out_hint(self):
         """Dòng gợi ý thư mục lưu: hiện đường dẫn thật để người dùng biết file sẽ nằm ở đâu."""
         if not hasattr(self, "out_hint"):
@@ -1108,20 +1148,36 @@ class App(_CatMixin, _Base):
             self._add(collect([d]))
 
     def _add(self, fs):
+        added, dup = 0, 0
         for f in fs:
-            if f not in self.files:
-                self.files.append(f); self.statuses.append("Chờ")
+            if f in self.files:
+                dup += 1
+                continue
+            self.files.append(f); self.statuses.append("Chờ"); added += 1
         self._redraw()
+        if not fs:
+            self.status.set("Không tìm thấy PDF hoặc ảnh nào trong mục đã chọn.")
+        elif dup:
+            self.status.set(f"Đã thêm {added} file; bỏ qua {dup} file đã có trong danh sách.")
+        else:
+            self.status.set(f"Đã thêm {added} file.")
+
+    def _busy_notice(self) -> bool:
+        """Khi OCR đang chạy thì không sửa danh sách; báo lý do trên thanh trạng thái."""
+        if self.worker and self.worker.is_alive():
+            self.status.set("Đang OCR, chưa sửa được danh sách. Bấm Dừng trước.")
+            return True
+        return False
 
     def remove_selected(self):
-        if self.worker and self.worker.is_alive():
+        if self._busy_notice():
             return
         for iid in sorted((int(i) for i in self.tree.selection()), reverse=True):
             del self.files[iid]; del self.statuses[iid]
         self._redraw()
 
     def clear(self):
-        if self.worker and self.worker.is_alive():
+        if self._busy_notice():
             return
         self.files.clear(); self.statuses.clear()
         self._redraw()
@@ -1154,44 +1210,13 @@ class App(_CatMixin, _Base):
     # ---------- chạy ----------
 
     def _read_options(self) -> dict:
-        """Đọc và kiểm tra các ô nhập. Ném ValueError với thông báo tiếng Việt nếu sai."""
-        try:
-            conf = float(self._var("conf", "0.8").get())
-        except ValueError:
-            raise ValueError("Ngưỡng nghi ngờ phải là số, ví dụ 0.8.") from None
-        try:
-            upscale = float(self._var("upscale", "1").get() or "1")
-        except ValueError:
-            raise ValueError("Phóng to phải là số, ví dụ 1 hoặc 2.") from None
-        if upscale <= 0:
-            raise ValueError("Phóng to phải lớn hơn 0.")
-        try:
-            crop = pipeline.parse_crop(self._var("crop", "").get())
-        except ValueError as e:
-            raise ValueError("Vùng cắt sai. Nhập theo thứ tự: trái, trên, phải, dưới (pixel).") from None
-        dev = next((k for k, v in self.DEV_LABELS.items() if v == self._var("dev", "").get()), "auto")
-        lang = next((k for k, v in self.LANG_LABELS.items() if v == self._var("lang", self.LANG_LABELS["ja"]).get()), "ja")
-        return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(), lang=lang,
-                    device=dev, ruby=self._var("ruby", False).get(),
-                    review=self._var("review", False).get(), conf_threshold=conf,
-                    engine=self._engine_key(), crop=crop, upscale=upscale,
-                    merge_pages=self._var("merge", self.MERGE_LABELS[True]).get() == self.MERGE_LABELS[True],
-                    cell_reocr=self._var("cell_reocr", True).get(), use_cache=self._var("use_cache", True).get(),
-                    kana_reader=next((k for k, v in self.KANA_LABELS.items() if v == self._var("kana", "").get()), ""))
+        """Đọc và kiểm tra các ô nhập (logic ở ui_logic.read_options). Ném ValueError nếu sai."""
+        return L.read_options(lambda name, default: self._var(name, default).get(), self.DEV_LABELS)
 
     def _engine_problem(self, opts: dict) -> str | None:
         """Lý do công cụ đã chọn chưa dùng được (thiếu model), None nếu chạy được."""
         from .engines import paddle, viet
-        key, lang = opts["engine"], opts["lang"]
-        if lang not in self.ENGINE_LANGS.get(key, ()):   # ô Ngôn ngữ ở tab Cơ bản dùng chung biến với tab Tùy chọn
-            return f"{self.ENGINE_LABELS[key]} không đọc được {self.LANG_LABELS[lang]}. Hãy chọn công cụ hoặc ngôn ngữ khác."
-        if key == "auto":   # auto chỉ kiểm các công cụ cần model; tiếng Nhật và mọi ngôn ngữ để engine tự chọn
-            key = {"en": "paddle", "zh": "paddle", "vi": "ocr_vi"}.get(lang)
-        cls = {"paddle": paddle.PaddleEngine, "ocr_vi": viet.VietnameseEngine}.get(key)
-        if cls is None:
-            return None
-        ok, why = cls.is_available()
-        return None if ok else f"Chưa dùng được {self.ENGINE_LABELS[key]} vì {why}"
+        return L.engine_problem(opts, {"paddle": paddle.PaddleEngine, "ocr_vi": viet.VietnameseEngine}.get)
 
     def start(self):
         if self.worker and self.worker.is_alive():
@@ -1209,7 +1234,7 @@ class App(_CatMixin, _Base):
         why = self._engine_problem(opts)
         if why:
             self.nb.select(self.tab_ai)
-            messagebox.showwarning("OCR", why + "\nTab Mô hình AI đã mở để tải mô hình, hoặc chọn công cụ khác.")
+            messagebox.showwarning("OCR", why + "\nTab “AI powered” đã mở để tải mô hình, hoặc chọn công cụ khác.")
             return
         self._save_vars()
         self.statuses = ["Chờ"] * len(self.files)
@@ -1390,11 +1415,17 @@ class App(_CatMixin, _Base):
                 if pno > len(doc):
                     self.prev_info.set(f"/ {len(doc)} trang (vượt quá số trang)")
                     return
-                img = doc[pno - 1].render(scale=1.0).to_pil()
+                pw, ph = _sc(self, 420), _sc(self, 360)
+                page = doc[pno - 1]
+                # render đúng cỡ khung (không dựng ảnh 72 dpi rồi mới thu nhỏ): nhanh và ít RAM hơn với trang lớn
+                scale = min(pw / page.get_width(), ph / page.get_height())
+                img = page.render(scale=scale).to_pil()
             else:
                 from PIL import Image
                 self.prev_info.set("1 ảnh")
-                img = Image.open(f).convert("RGB")
+                img = Image.open(f)
+                img.draft("RGB", (_sc(self, 840), _sc(self, 720)))   # giải mã JPEG ở độ phân giải thấp khi có thể
+                img = img.convert("RGB")
         except Exception:
             log.exception("Không vẽ được bản xem trước %s", f)
             return
@@ -1454,6 +1485,8 @@ class App(_CatMixin, _Base):
                     self.pb["value"] = 100
         except queue.Empty:
             pass
+        if self._closing_done():   # đã yêu cầu đóng: chờ luồng nền dừng rồi mới đóng cửa sổ
+            return
         self.after(150, self.poll)
 
 

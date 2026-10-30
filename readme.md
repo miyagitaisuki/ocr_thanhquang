@@ -41,14 +41,15 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `gpupack.py` | Gói GPU tùy chọn: chọn torch cu126 + torchvision từ chỉ mục PyTorch, cài Chandra bằng pip (có sẵn trong exe) vào `%LOCALAPPDATA%\OCR-Nhat\gpu`; `activate()` đưa vào đường dẫn import lúc khởi động. |
 | `gpu.py` | Dò GPU NVIDIA, chọn thiết bị cho NDLOCR (cuda chỉ khi onnxruntime có CUDA provider). |
 | `cli.py` | Dòng lệnh `ocrnhat`. |
-| `gui.py` | Giao diện Tkinter: các tab, Công cụ PDF (danh sách thao tác bên trái), xem trước có Trước/Sau và giữ PDF đã mở, kéo-thả file. |
+| `gui.py` | Giao diện Tkinter: các tab, Công cụ PDF (danh sách thao tác bên trái), xem trước có Trước/Sau và giữ PDF đã mở, kéo-thả file. Đóng khi đang chạy: hỏi, dừng, chờ luồng nền xong rồi mới đóng. |
+| `ui_logic.py` | Nhãn, ánh xạ nhãn -> khóa và đọc tùy chọn OCR. Không import Tkinter (test được không cần cửa sổ; chuẩn bị cho bản giao diện mới). |
 | `widgets.py` | Widget dùng chung: `GradientButton` (có tiêu điểm bàn phím: Tab, Enter, Space), `GradientNotebook`, `Tip`, `Spinner`, mèo tiến trình; `_sc()` đổi px theo DPI. |
 
 Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` tải đúng commit đã ghim vào `vendor/ndlocr-lite` (đã gitignore). Ghi công trong `NOTICE.md`.
 
 ## Thư mục và file khác
 - `scripts/`: `fetch_ndlocr.py` (tải engine), `fetch_models.py` (model PaddleOCR, kiểm SHA-256), `export_vi.py` (tạo lại `assets/vi-ocr/` từ VietOCR gốc, cần torch), `smoke_test.py` (OCR ảnh mẫu, dựng bảng), `compare_engines.py` (đối chiếu với YomiToku, chỉ để so sánh, không đóng gói vì giấy phép CC BY-NC-SA).
-- `tests/`: pytest (`test_pdf_extract` (PDF tạo trong test), `test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`, `test_engines_lang` không cần model, `test_engines_models` chạy khi có `models/`).
+- `tests/`: pytest (`test_pdf_extract` (PDF tạo trong test), `test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`, `test_engines_lang` không cần model, `test_engines_models` chạy khi có `models/`, `test_ui_logic` không cần tkinter, `test_gui_options` cần tkinter nên bị bỏ qua khi thiếu).
 - `tests/data/pretest_sample.pdf`: sổ tay tiếng Nhật thương mại 4 trang, file mẫu chính cho các test và đo độ chính xác từ nay.
 - `.github/workflows/`: `test.yml` (mỗi push/PR), `build-exe.yml` (exe CPU, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`), `build-exe-gpu.yml` (exe GPU: onnxruntime-gpu; chạy thủ công). Ô Thiết bị chỉ có "GPU (NVIDIA)" khi onnxruntime có CUDA, tức bản GPU. Gói GPU tùy chọn chỉ tăng tốc Chandra; NDLOCR trong bản CPU vẫn chạy CPU. Torch CUDA và Chandra KHÔNG nằm trong exe: `gpupack.py` tải về khi người dùng bấm "Cài gói GPU + Chandra".
 - `requirements.txt`: nguồn duy nhất của dependency. `pyproject.toml` đọc từ đó. Extra: `test`, `suspect`.
@@ -70,6 +71,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - GUI: thanh tab là `GradientNotebook` (tab bo tròn, gradient xanh như Chạy OCR; tab đang chọn đậm hơn). Nút chức năng là `GradientButton` (gradient dọc, `gui.py`). Menu Hiển thị có "Độ trong suốt cửa sổ" (100–80%, lưu trong settings.json, áp dụng ngay). Trong suốt chỉ áp dụng cho cả cửa sổ; không điều khiển được taskbar của Windows.
 - Đầu ra: mặc định ghi cạnh file gốc (CLI `-o` / ô "Thư mục lưu kết quả" để trống = thư mục gốc). Tên file: `OCR_<tên không dấu>_<trang đầu>_<trang cuối>.docx/.txt` (`pipeline.output_stem`, `ascii_name`). GUI có nút "Tìm nhanh" bên cạnh Dừng: mở thư mục của kết quả đang chọn, kết quả gần nhất, hoặc thư mục lưu. Cache `.cache` nằm trong thư mục đầu ra (có thể là thư mục gốc).
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
+- Bước 1 chuyển sang PySide6 (đã thống nhất): ĐÃ LÀM trên Tkinter: tách nhãn/đọc tùy chọn sang `ui_logic.py`; đóng khi đang chạy có hỏi và chờ luồng nền dừng; Esc hỏi xác nhận; thêm/xóa khi đang OCR báo trên thanh trạng thái; file trùng được báo số lượng; "Chèn trang lặp lại" giữ lựa chọn file khi danh sách đổi; xem trước render đúng cỡ khung. CHƯA làm: lưu nhãn combobox trong settings.json vẫn là nhãn tiếng Việt (đổi nhãn thì giá trị cũ tự rơi về mặc định, chưa chuyển sang khóa); chưa kiểm GUI thật (môi trường không có tkinter).
 
 ## Lỗi và giới hạn đã biết
 - PaddleOCR/VietOCR: engine có thể bỏ khoảng trắng trong câu tiếng Anh (ví dụ "agreementis"); chữ dọc chưa hỗ trợ; dò dòng dùng cạnh dài tối đa 960 px nên ảnh rất lớn có thể mất chữ nhỏ.
