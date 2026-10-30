@@ -45,3 +45,19 @@ def test_ten_mục_tach_hai_dong_duoc_ghep():
     _number_toc(page)
     t = _texts(page)
     assert t[2] == "" and t[3] == "①連絡するCommunicating……094"
+
+
+def test_chu_dau_bi_tach_duoc_ghep_va_khong_lap():
+    page = Page(1000, 800, [Block("text", 0, 0, 1000, 800, [
+        _l("Chapter 4", 100, 20, w=110),
+        _l("お悔やみ……109", 114, 60, w=883),
+        _l("予約", 90, 100, w=82, h=22),
+        _l("約Making reservations……110", 147, 102, w=851),
+        _l("お礼を言う", 130, 170, w=110, h=18),          # bản đọc lẻ của chính mục bên dưới
+        _l("♪お礼を言うThanking……082", 135, 180, w=870),
+    ])])
+    _number_toc(page)
+    t = [l.text for b in page.blocks for l in b.lines]
+    assert t[2] == "" and t[3] == "②予約Making reservations……110"
+    assert t[4] == ""                       # dòng lặp của tên mục bị bỏ
+    assert t[5] == "③お礼を言うThanking……082"

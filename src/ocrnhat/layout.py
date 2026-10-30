@@ -57,8 +57,11 @@ _SENT_END = re.compile(r"[。！？!?」』）)]$")
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
 
 
+_CIRC_MARKS = frozenset(chr(0x2460 + i) for i in range(20))   # ①..⑳: ký hiệu số, không tính là chữ
+
+
 def jp_ratio(text: str) -> float:
-    chars = [c for c in text if c.isalnum() or _JP.match(c)]
+    chars = [c for c in text if (c.isalnum() or _JP.match(c)) and c not in _CIRC_MARKS]
     return (sum(1 for c in chars if _JP.match(c)) / len(chars)) if chars else 0.0
 
 
@@ -521,14 +524,20 @@ def _number_toc(page: Page) -> None:
         if not active or n >= len(_CIRCLED) or not _LEADER_END.search(l.text):
             continue
         name = _TOC_NOISE.sub("", l.text.strip())
-        if not _JP.search(_jp_part(name)):
-            # tên nằm ở dòng bên trái cùng hàng
-            partner = next((o for o in lines if o is not l and o.text.strip() and o.x + o.w <= l.x + 4
-                            and abs(o.cy - l.cy) < 0.6 * max(l.h, o.h) and _JP.search(o.text) and not _LEADER_END.search(o.text)), None)
-            if partner is None:
-                continue
-            name = partner.text.strip() + _TOC_NOISE.sub("", l.text.strip())
+        jp = _jp_part(name)
+        partner = next((o for o in lines if o is not l and o.text.strip() and o.cx < l.x
+                        and abs(o.cy - l.cy) < 0.6 * max(l.h, o.h) and _JP.search(o.text) and not _LEADER_END.search(o.text)), None)
+        # tên tách sang dòng bên trái ('連絡する'), hoặc chữ đầu bị tách ('予' + '約Making…')
+        if partner is not None and (not _JP.search(jp) or partner.text.strip().endswith(jp[:1])):
+            name = partner.text.strip() + (name[1:] if _JP.search(jp) else name)
             partner.text = ""
+        elif not _JP.search(jp):
+            continue
+        # dòng chữ Nhật lẻ, đứng sát và là một phần của tên mục: đã được ghép vào tên, bỏ bản gốc
+        for o in lines:
+            if o is not l and o.text.strip() and abs(o.cy - l.cy) < 1.2 * max(l.h, o.h) and o.text.strip() in name \
+                    and _JP.search(o.text) and not _LEADER_END.search(o.text) and not _CHAPTER.search(o.text):
+                o.text = ""
         n += 1
         l.text = _CIRCLED[n - 1] + name
         group.append(l)
