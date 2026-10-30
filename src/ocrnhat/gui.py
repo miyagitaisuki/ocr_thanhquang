@@ -474,16 +474,19 @@ class App(_CatMixin, _Base):
         self.tab_proc = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_rev = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_res = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
+        self.tab_pdf = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.nb.add(self.tab_src, text="  Tài liệu  ")
         self.tab_ai = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.nb.add(self.tab_proc, text="  Tùy chọn  ")
         self.nb.add(self.tab_ai, text="  AI powered  ")
         self.nb.add(self.tab_rev, text="  Kiểm tra  ")
         self.nb.add(self.tab_res, text="  Kết quả  ")
+        self.nb.add(self.tab_pdf, text="  Công cụ PDF  ")
         self._tab_sources()
         self._tab_process()
         self._tab_review()
         self._tab_results()
+        self._tab_pdf()
 
         self._shortcuts()
         threading.Thread(target=self._hardware_worker, daemon=True).start()
@@ -771,6 +774,21 @@ class App(_CatMixin, _Base):
         row["pct"].set("100%" if ok else "")
         self.pm_status.set(msg + "\n" + self._model_status_text())
         row["btn"].config(state="normal" if not ok else "disabled")
+
+    def _tab_pdf(self):
+        """Chỗ giữ chỗ cho các công cụ PDF (cắt, ghép, nén, theo dõi thư mục). Chưa có chức năng; nút đều bị khóa."""
+        groups = (
+            ("Cắt PDF", ("Trích xuất trang", "Tách theo trang", "Tách theo bookmark", "Tách theo dung lượng")),
+            ("Ghép PDF", ("Ghép xen kẽ", "Ghép nhiều file", "Chèn trang lặp lại")),
+            ("Khác", ("Xoay trang", "Nén PDF", "Tự động theo thư mục")),
+        )
+        for title, names in groups:
+            card = self._card(self.tab_pdf, title)
+            row = ttk.Frame(card, style="Card.TFrame")
+            row.pack(fill="x")
+            for name in names:
+                GradientButton(row, text=name, state="disabled").pack(side="left", padx=(0, 8), pady=4)
+            ttk.Label(card, text="Sắp có. Chưa có chức năng.", style="Status.TLabel").pack(anchor="w", pady=(4, 0))
 
     def _tab_review(self):
         rev = self._card(self.tab_rev, "Kiểm tra kết quả")
