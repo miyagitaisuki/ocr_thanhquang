@@ -461,13 +461,61 @@ def _split_tall_rows(edges: list[float], ratio: float = 1.7) -> list[float]:
     return out
 
 
+_ROMAJI_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]{0,3}")
+_KANA_OFFSET = 0.37   # tâm chữ kana nằm cách tâm romaji cùng ô khoảng 0,37 bước cột (bảng dakuten/gojūon)
+
+
+def _cluster(vals: list[float], gap: float, min_size: int = 2) -> list[float]:
+    """Gom các tọa độ gần nhau; trả về tâm từng cụm đủ min_size thành viên (tăng dần).
+    Cụm lẻ là romaji nhiễu của engine, bỏ đi."""
+    groups, cur = [], []
+    for v in sorted(vals):
+        if cur and v - cur[-1] > gap:
+            groups.append(cur); cur = []
+        cur.append(v)
+    if cur: groups.append(cur)
+    return [sum(g) / len(g) for g in groups if len(g) >= min_size]
+
+
+def _axis(vals: list[float], gap: float) -> list[float]:
+    """Các đường lưới trên một trục: mốc là cụm có ≥2 thành viên; khoảng cách đều theo bước trung vị.
+    Cột/hàng bị thiếu (không có romaji nào) vẫn được sinh ra theo bước đều."""
+    anchors = _cluster(vals, gap, min_size=2)
+    if len(anchors) < 2:
+        return anchors
+    step = float(np.median(np.diff(anchors)))
+    if step <= 0:
+        return anchors
+    k_max = max(round((a - anchors[0]) / step) for a in anchors)
+    return [anchors[0] + k * step for k in range(k_max + 1)]
+
+
+def _chart_grid(lines: list[Line]) -> tuple[list[float], list[float]] | None:
+    """Suy lưới của bảng chữ kana không có đường kẻ, từ tâm các romaji (ví dụ 'ga', 'shi'):
+    mỗi cụm cx là một cột, mỗi cụm cy là một hàng; biên ô đặt quanh tâm romaji."""
+    rom = [l for l in lines if _ROMAJI_TOKEN.fullmatch(l.text.strip())]
+    if len(rom) < 12:
+        return None
+    cols = _axis([l.cx for l in rom], gap=40)
+    rows = _axis([l.cy for l in rom], gap=30)
+    if len(cols) < 3 or len(rows) < 3:
+        return None
+    P = float(np.median(np.diff(cols)))
+    Q = float(np.median(np.diff(rows)))
+    xs = [c - _KANA_OFFSET * P - P / 2 for c in cols] + [cols[-1] - _KANA_OFFSET * P + P / 2]
+    ys = [r - Q / 2 for r in rows] + [rows[-1] + Q / 2]
+    xs = [xs[0]] + [xs[i] for i in range(1, len(xs))]
+    return ys, xs
+
+
 def _read_kana_chart(block: Block, gray, ys, xs, img_rgb, kana_reader) -> list[Cell]:
     """Đọc từng ô của bảng chữ kana: tách hàng bị gộp, rồi đọc mỗi ô bằng kana_reader."""
     ys = _split_tall_rows(list(ys))
     cells = [Cell(r, c) for r in range(len(ys) - 1) for c in range(len(xs) - 1)]
+    H, W = img_rgb.shape[:2]
     for cell in cells:
         x0, y0, x1, y1 = _cell_box(cell, ys, xs)
-        crop = img_rgb[int(y0):int(y1), int(x0):int(x1)]
+        crop = img_rgb[max(0, int(y0)):min(H, int(y1)), max(0, int(x0)):min(W, int(x1))]
         cell.text = kana_reader(np.ascontiguousarray(crop)) if crop.size else ""
         cell.conf = 1.0 if cell.text else 0.0
     return cells, ys
@@ -656,9 +704,26 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_r
             if t:
                 items.append((min(l.order for l in inside), t))
                 if t.kana: items.append((min(l.order for l in inside), Para(KANA_NOTE, kind="body")))
+    if kana_reader is not None and img_rgb is not None:
+        # bảng chữ kana không có đường kẻ: suy lưới từ romaji rồi đọc từng ô
+        rest = [l for b in page.blocks if b.kind in _TEXT_KINDS + ("table",) for l in b.lines if id(l) not in taken]
+        g = _chart_grid(rest)
+        if g is not None:
+            ys, xs = g
+            inside = [l for l in rest if xs[0] <= l.cx <= xs[-1] and ys[0] <= l.cy <= ys[-1]]
+            if sum(1 for l in inside if _ROMAJI_TOKEN.fullmatch(l.text.strip())) >= 12:
+                blk = Block("table", xs[0], ys[0], xs[-1] - xs[0], ys[-1] - ys[0], inside)
+                cells, kys = _read_kana_chart(blk, gray, ys, xs, img_rgb, kana_reader)
+                filled = sum(1 for c in cells if c.text) / max(1, len(cells))
+                if filled >= 0.35:   # ít ô có chữ: lưới suy ra là nhiễu từ romaji rời rạc, không phải bảng chữ
+                    taken.update(id(l) for l in inside)
+                    t = Table(len(kys) - 1, len(xs) - 1, cells, kana=True)
+                    o = min(l.order for l in inside)
+                    items.append((o, t)); items.append((o, Para(KANA_NOTE, kind="body")))
     for b in page.blocks:
         if b.kind == "table":
-            t = _table(b, flt, gray, img_rgb, reocr, kana_reader)
+            t = _table(Block("table", b.x, b.y, b.w, b.h, [l for l in b.lines if id(l) not in taken], b.label),
+                       flt, gray, img_rgb, reocr, kana_reader)
             if t:
                 items.append((b.order, t))
                 if getattr(t, "kana", False): items.append((b.order, Para(KANA_NOTE, kind="body")))
