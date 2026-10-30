@@ -1,0 +1,55 @@
+"""Test phân tích HTML của Chandra (không cần model, không cần GPU)."""
+from ocrnhat.engines.chandra import ChandraEngine, parse_chandra_html
+from ocrnhat.engines import resolve
+
+HTML = (
+    '<div data-bbox="100 50 900 120" data-label="Section-Header"><h2>第一章 日本語の基本</h2></div>'
+    '<div data-bbox="100 150 900 300" data-label="Text"><p>これは本文の一段落です。</p><p>次の段落です。</p></div>'
+    '<div data-bbox="100 400 900 800" data-label="Table"><table>'
+    '<tr><th rowspan="2">会社</th><td colspan="2">株式会社</td></tr>'
+    '<tr><td>電話</td><td>番号</td></tr>'
+    '</table></div>'
+    '<div data-bbox="0 0 1000 1000" data-label="Blank-Page"></div>'
+)
+
+
+def test_khoi_van_ban_va_tieu_de_co_toa_do_pixel():
+    page = parse_chandra_html(HTML, 1000, 1000)
+    head, body = page.blocks[0], page.blocks[1]
+    assert head.kind == "text" and head.lines[0].text == "第一章 日本語の基本"
+    assert (head.x, head.y) == (100, 50)
+    assert [l.text for l in body.lines] == ["これは本文の一段落です。", "次の段落です。"]
+    # bbox y 150..300 -> cao 150 px, chia đều cho hai đoạn
+    assert body.lines[1].y == 150 + 75
+
+
+def test_bang_co_rowspan_colspan_va_o_dung_vi_tri():
+    page = parse_chandra_html(HTML, 1000, 1000)
+    table = page.blocks[2]
+    assert table.kind == "table"
+    cells = {l.text: l for l in table.lines}
+    assert set(cells) == {"会社", "株式会社", "電話", "番号"}
+    # bảng có 3 cột (cột 0 do rowspan chiếm), 2 hàng; bbox 800x400 bắt đầu tại (100, 400)
+    cw = 800 / 3
+    assert (cells["会社"].x, cells["会社"].y) == (100, 400)
+    assert cells["会社"].h == 2 * 200          # rowspan=2 kéo dài qua hai hàng
+    assert cells["株式会社"].w == 2 * cw       # colspan=2 chiếm hai cột
+    assert cells["株式会社"].x == 100 + cw
+    assert (cells["電話"].x, cells["電話"].y) == (100 + cw, 600)
+    assert (cells["番号"].x, cells["番号"].y) == (100 + 2 * cw, 600)
+
+
+def test_blank_page_bi_bo_va_bbox_sai_bi_bo():
+    html = '<div data-bbox="abc" data-label="Text"><p>x</p></div><div data-bbox="0 0 1000 1000" data-label="Blank-Page"></div>'
+    assert parse_chandra_html(html, 1000, 1000).blocks == []
+
+
+def test_bbox_theo_ti_le_anh():
+    page = parse_chandra_html(HTML, 2000, 500)     # ảnh 2000x500: x nhân 2, y nhân 0.5
+    assert page.blocks[0].x == 200 and page.blocks[0].y == 25
+
+
+def test_engine_chua_cai_thi_auto_khong_chon_chandra():
+    ok, why = ChandraEngine.is_available()
+    assert ok is False and "pip install" in why      # môi trường test không có chandra-ocr
+    assert resolve("auto")[0] == "ndlocr"

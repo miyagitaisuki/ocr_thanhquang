@@ -25,7 +25,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `engines/base.py` | Giao diện `OcrEngine`. Thuộc tính `version` là khóa cache. |
 | `engines/__init__.py` | Đăng ký engine, `resolve("auto")`, `create()`. |
 | `engines/ndlocr.py` | Bọc NDLOCR-Lite, đọc XML trang và ánh xạ loại khối (表組, ルビ, 柱, ノンブル…). |
-| `engines/chandra.py` | Placeholder, chưa cài, đã tạm dừng. |
+| `engines/chandra.py` | Adapter Chandra 2 (tùy chọn, không trong exe): `parse_chandra_html` (HTML -> Page, có test) + `ChandraEngine` gọi `chandra-ocr` (vLLM hoặc HF). Chưa chạy thật: cần GPU. |
 | `pipeline.py` | `process_file`: OCR song song (ThreadPool, cửa sổ trượt, giữ thứ tự trang), cache, gọi layout, ghi file. |
 | `layout.py` | Lõi dựng văn bản: lọc tiếng Nhật, bỏ furigana, gộp đoạn (ngắt theo khoảng trống dọc bất thường so với khoảng thông thường của khối), nhận tiêu đề (dòng ngắn đứng riêng, kể cả cùng cỡ chữ), dò đường kẻ bảng (OpenCV), ô gộp, nhận dạng lại ô vượt kẻ, sửa số khoanh tròn, ruby. |
 | `docx_out.py` | Xuất Word (font Yu Mincho, Heading, bảng, ruby) và txt. |
@@ -50,7 +50,8 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 ## Trạng thái hiện tại
 - Nhánh làm việc: `claude/adoring-cerf-t2dmxp`.
 - Đã làm: rà soát ruby (`--ruby`), cache, OCR song song, nhận dạng lại ô, đối chiếu YomiToku (script), dò chữ nghi ngờ (thử nghiệm), GUI kiểu PDFsam.
-- Chưa làm: Chandra (đang tạm dừng); GPU chạy thật trong exe (exe CI dùng onnxruntime CPU).
+- Chandra: adapter và bộ phân tích HTML đã có, test bằng HTML mẫu. CHƯA chạy model thật (môi trường không có GPU), chưa biết chất lượng đầu ra.
+- Chưa làm: GPU chạy thật trong exe (exe CI dùng onnxruntime CPU).
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 
 ## Lỗi và giới hạn đã biết
