@@ -123,7 +123,8 @@ class GradientButton(tk.Canvas):
     """
 
     VARIANTS = {"run": ("#34B25C", "#1B5E20", "#FFFFFF"), "accent": ("#5B9BFF", "#1F6FEB", "#FFFFFF"),
-                "danger": ("#F2625C", "#B71C1C", "#FFFFFF")}
+                "danger": ("#F2625C", "#B71C1C", "#FFFFFF"),
+                "run_soft": ("#7FCB92", "#3E9A55", "#FFFFFF")}   # tab không được chọn: xanh nhạt hơn
     HEIGHT = 32
     RADIUS = 8   # bán kính góc bo tròn (px)
     ICON_W, ICON_GAP = 16, 8
@@ -134,7 +135,8 @@ class GradientButton(tk.Canvas):
         super().__init__(master, height=self.HEIGHT, highlightthickness=0, bd=0, bg=self._bg, cursor="hand2")
         self._text, self._command, self._state = text, command, state
         self._variant = ("run" if style.startswith("Run") else "accent" if style.startswith("Accent")
-                         else "danger" if style.startswith("Danger") else "neutral")
+                         else "danger" if style.startswith("Danger") else "run_soft" if style.startswith("Soft")
+                         else "neutral")
         self._icon = icon   # "stop": hình vuông trắng; "search": kính lúp
         self._font = tkfont.nametofont("TkDefaultFont")
         self._fixed_w = width
@@ -145,6 +147,10 @@ class GradientButton(tk.Canvas):
         self.bind("<Leave>", self._on_leave)
         self.bind("<ButtonPress-1>", self._press)
         self.bind("<ButtonRelease-1>", self._release)
+        self._draw()
+
+    def set_variant(self, variant: str):
+        self._variant = variant
         self._draw()
 
     def _apply_width(self):
@@ -243,6 +249,35 @@ class GradientButton(tk.Canvas):
         self._draw()
         if fire and self._command:
             self._command()
+
+
+class GradientNotebook(tk.Frame):
+    """Thanh tab bo tròn, gradient xanh như nút Chạy OCR. Chỉ có add() và select() như ttk.Notebook."""
+
+    def __init__(self, master, **_):
+        super().__init__(master, bg=_parent_bg(master), highlightthickness=0, bd=0)
+        self._bar = tk.Frame(self, bg=self["bg"], highlightthickness=0, bd=0)
+        self._bar.pack(fill="x", pady=(0, 10))
+        self._body = tk.Frame(self, bg=self["bg"], highlightthickness=0, bd=0)
+        self._body.pack(fill="both", expand=True)
+        self._tabs: list[tuple[tk.Misc, GradientButton]] = []
+
+    def add(self, child, text: str = ""):
+        btn = GradientButton(self._bar, text=text.strip(), style="Soft.TButton",
+                             command=lambda c=child: self.select(c))
+        btn.pack(side="left", padx=(0, 8))
+        self._tabs.append((child, btn))
+        if len(self._tabs) == 1:
+            self.select(child)
+
+    def select(self, child):
+        for c, b in self._tabs:
+            b.set_variant("run" if c is child else "run_soft")
+            c.pack_forget()
+        child.pack(in_=self._body, fill="both", expand=True)
+
+    def tabs(self) -> list:
+        return [c for c, _ in self._tabs]
 
 
 class Tip:
@@ -357,7 +392,7 @@ class App(_Base):
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
         canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
 
-        self.nb = ttk.Notebook(page)
+        self.nb = GradientNotebook(page)
         self.nb.pack(fill="both", expand=True)
         self.tab_src = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_proc = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
