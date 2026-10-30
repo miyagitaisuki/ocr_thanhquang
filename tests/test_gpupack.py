@@ -50,3 +50,18 @@ def test_co_du_thu_muc_nhung_thieu_dau_hieu_thi_chua_cai(monkeypatch, tmp_path):
     assert gpupack.installed() is False        # thiếu tệp đánh dấu: cài dở
     (tmp_path / gpupack.MARKER).write_text("ok", encoding="utf-8")
     assert gpupack.installed() is True
+
+
+def test_cai_that_bai_bao_loi_than_thien_va_ghi_log(monkeypatch, tmp_path):
+    monkeypatch.setattr(gpupack, "pack_dir", lambda: tmp_path)
+
+    def hong(): raise ImportError("distlib finder")
+    monkeypatch.setattr(gpupack, "check_pip", hong)
+    try:
+        gpupack.install(progress=lambda m: None)
+    except gpupack.PackError as e:
+        assert str(e) == gpupack.PACK_FAILED_MSG
+    else:
+        raise AssertionError("phải ném PackError")
+    log = (tmp_path / "install.log").read_text(encoding="utf-8")
+    assert "distlib finder" in log and not (tmp_path / gpupack.MARKER).exists()

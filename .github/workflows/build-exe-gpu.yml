@@ -48,6 +48,9 @@ jobs:
           --collect-all onnxruntime --collect-all docx --collect-all PySide6
           --collect-all pip
           run_gui.py
+      - name: Kiểm tra pip đóng gói sẵn (người dùng bấm "Cài tăng tốc GPU")
+        shell: pwsh
+        run: ./dist/ocrnhat-cli-gpu/ocrnhat-cli-gpu.exe --check-gpu-pack
       - name: "Kiểm tra exe GPU (runner không có GPU: phải lùi về CPU và vẫn OCR đúng)"
         shell: pwsh
         run: |
