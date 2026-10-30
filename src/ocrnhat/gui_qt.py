@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from . import gpu, gpupack, pipeline
 from . import ui_logic as L
 from .cli import collect
+from .gui_qt_extra import ModelBox, ResultsBox, build_view_menu, apply_view
 from .gui_qt_pdf import MergeSection, SplitSection, ToolsSection
 
 gpupack.activate()   # trước khi đọc find_spec('chandra')
@@ -34,7 +35,7 @@ class OcrWorker(QThread):
     """Chạy OCR cho từng file ở luồng nền; báo tiến độ qua tín hiệu, không đụng widget từ luồng khác."""
     progress = Signal(int, int, str)     # đã xong, tổng, mô tả
     file_state = Signal(int, str)        # chỉ số file, trạng thái
-    finished_ok = Signal(str, list)      # thông điệp cuối, danh sách đường dẫn .docx
+    finished_ok = Signal(str, list)      # thông điệp cuối, danh sách (đường dẫn gốc, kết quả pipeline)
 
     def __init__(self, files: list[Path], out: Path | None, pages, opts: dict):
         super().__init__()
@@ -42,7 +43,7 @@ class OcrWorker(QThread):
         self.cancel_requested = False
 
     def run(self):
-        outputs, errors = [], []
+        outputs, errors = [], []   # outputs: (đường dẫn gốc, kết quả pipeline)
         for i, f in enumerate(self.files):
             if self.cancel_requested:
                 break
@@ -52,7 +53,7 @@ class OcrWorker(QThread):
                     f, self.out, 200, self.pages if f.suffix.lower() == ".pdf" else None,
                     progress=lambda d, t, m: self.progress.emit(d, t, m),
                     cancel=lambda: self.cancel_requested, **self.opts)
-                outputs.append(r["docx"])
+                outputs.append((f, r))
                 self.file_state.emit(i, "Dừng" if self.cancel_requested else "Xong")
             except Exception as e:   # một file lỗi không làm dừng các file còn lại
                 log.exception("Không xử lý được %s", f)
@@ -64,7 +65,7 @@ class OcrWorker(QThread):
             msg = f"Xong. Đã xử lý {len(outputs)} file."
         if errors:
             msg += f" Có {len(errors)} file lỗi: " + "; ".join(errors[:3]) + f". Chi tiết trong nhật ký: {L.LOG_FILE}"
-        self.finished_ok.emit(msg, [str(p) for p in outputs])
+        self.finished_ok.emit(msg, outputs)
 
 
 class FileList(QListWidget):
@@ -98,7 +99,6 @@ class OcrPage(QWidget):
         self.settings = settings
         self.files: list[Path] = []
         self.worker: OcrWorker | None = None
-        self.last_outputs: list[str] = []
         self._build()
         self._restore()
 
@@ -168,12 +168,18 @@ class OcrPage(QWidget):
             self.kana.addItem(label, key)
         self.cell_reocr = QCheckBox("Đọc lại ô bảng bị lẫn đường kẻ")
         self.use_cache = QCheckBox("Nhớ kết quả đã đọc (chạy lại file cũ sẽ nhanh hơn)")
+        self.review = QCheckBox("Tạo file so sánh để kiểm tra (*_review.html)")
+        self.conf = QLineEdit("0.8")
+        self.conf.setToolTip("Dòng có độ chắc chắn thấp hơn mức này sẽ bị tô đỏ trong file so sánh (mặc định 0,8).")
         for label, widget in (("Phóng to ảnh", self.upscale), ("Chỉ đọc một vùng", self.crop),
                               ("Đọc bảng chữ kana (thử nghiệm)", self.kana)):
             agrid.addWidget(QLabel(label))
             agrid.addWidget(widget)
         agrid.addWidget(self.cell_reocr)
         agrid.addWidget(self.use_cache)
+        agrid.addWidget(self.review)
+        agrid.addWidget(QLabel("Ngưỡng nghi ngờ (file so sánh)"))
+        agrid.addWidget(self.conf)
         self.advanced = adv
         root.addWidget(adv)
 
@@ -190,6 +196,10 @@ class OcrPage(QWidget):
         run.addWidget(self.progress, 1)
         root.addLayout(run)
         root.addWidget(self.status)
+        self.results = ResultsBox()
+        root.addWidget(self.results)
+        self.models = ModelBox(chandra_available="chandra" in ENGINES)
+        root.addWidget(self.models)
 
         self.btn_add.clicked.connect(self.add_files)
         self.btn_dir.clicked.connect(self.add_dir)
@@ -285,12 +295,13 @@ class OcrPage(QWidget):
         Giá trị lấy theo nhãn (như ô nhập của bản Tkinter) để dùng chung quy tắc trong ui_logic."""
         dev_map = L.dev_labels(gpu.ort_cuda_available())
         vals = {
-            "conf": "0.8", "upscale": self.upscale.text(), "crop": self.crop.text(),
+            "conf": self.conf.text(), "upscale": self.upscale.text(), "crop": self.crop.text(),
             "dev": dev_map[self.device.currentData()], "lang": L.LANG_LABELS[self.lang.currentData()],
             "engine": L.ENGINE_LABELS[self.engine.currentData()], "merge": L.MERGE_LABELS[self.merge.currentData()],
             "kana": L.KANA_LABELS[self.kana.currentData()],
             "txt": self.txt.isChecked(), "marker": self.marker.isChecked(), "ruby": self.ruby.isChecked(),
             "cell_reocr": self.cell_reocr.isChecked(), "use_cache": self.use_cache.isChecked(),
+            "review": self.review.isChecked(),
         }
         return L.read_options(lambda name, default: vals.get(name, default), dev_map)
 
@@ -326,6 +337,7 @@ class OcrPage(QWidget):
         self.progress.setValue(0)
         self.btn_run.setEnabled(False)
         self.btn_stop.setEnabled(True)
+        self.models.setEnabled(False)
         out = self.out.text().strip()
         self.worker = OcrWorker(list(self.files), Path(out) if out else None, pages, opts)
         self.worker.progress.connect(self._on_progress)
@@ -343,11 +355,12 @@ class OcrPage(QWidget):
         self.status.setText(f"[{d}/{t}] {m}")
 
     def _on_done(self, msg: str, outputs: list):
-        self.last_outputs = outputs
+        self.results.set_results(outputs)
         self.status.setText(msg)
         self.progress.setValue(100)
         self.btn_run.setEnabled(True)
         self.btn_stop.setEnabled(False)
+        self.models.setEnabled(True)
 
     def busy(self) -> bool:
         return bool(self.worker and self.worker.isRunning())
@@ -390,6 +403,11 @@ class MainWindow(QMainWindow):
         self.resize(1040, 820)
         self.settings = L.load_settings()
 
+        self.menubar_view = build_view_menu(self, QApplication.instance(), self.settings, self._save_view)
+        self.menuBar().addMenu(self.menubar_view)
+        view = self.settings.get("qt_view", {})
+        apply_view(QApplication.instance(), view.get("theme", "sáng"), view.get("font_pt", 10), view.get("alpha", 100), self)
+
         self.nav = QListWidget()
         self.nav.setFixedWidth(180)
         for name in SECTIONS:
@@ -409,6 +427,9 @@ class MainWindow(QMainWindow):
         split.addWidget(self.stack)
         split.setStretchFactor(1, 1)
         self.setCentralWidget(split)
+
+    def _save_view(self):
+        L.save_settings(self.settings)
 
     def _busy_pages(self):
         return [p for p in (self.ocr, self.split, self.merge, self.tools) if p.busy()]

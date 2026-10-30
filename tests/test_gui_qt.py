@@ -95,4 +95,5 @@ def test_worker_xu_ly_tung_file_va_ghi_loi_rieng(window, monkeypatch, tmp_path):
 
     assert (0, "Xong") in states and any(s.startswith("Lỗi") for i, s in states if i == 1)
     msg, outs = done[0]
-    assert "ảnh hỏng" in msg and outs == [str(tmp_path / "out.docx")]
+    assert "ảnh hỏng" in msg
+    assert len(outs) == 1 and outs[0][0] == good and outs[0][1]["docx"] == str(tmp_path / "out.docx")

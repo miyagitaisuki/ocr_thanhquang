@@ -21,7 +21,7 @@ jobs:
           pip install -r requirements.txt pyinstaller
           pip install -e ".[qt]"
       - name: Test giao diện Qt
-        run: pytest -q tests/test_gui_qt.py tests/test_gui_qt_pdf.py tests/test_ui_logic.py
+        run: pytest -q tests/test_gui_qt.py tests/test_gui_qt_pdf.py tests/test_gui_qt_extra.py tests/test_ui_logic.py
       - name: Build exe (giao diện Qt)
         run: >
           pyinstaller --noconfirm --onedir --windowed --name OCR-Nhat-Qt

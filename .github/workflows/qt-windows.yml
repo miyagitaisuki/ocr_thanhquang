@@ -20,6 +20,6 @@ jobs:
           pip install -r requirements.txt
           pip install -e ".[test,qt]"
       - name: Test giao diện Qt và mục Công cụ PDF
-        run: pytest -q tests/test_gui_qt.py tests/test_gui_qt_pdf.py tests/test_ui_logic.py -rs
+        run: pytest -q tests/test_gui_qt.py tests/test_gui_qt_pdf.py tests/test_gui_qt_extra.py tests/test_ui_logic.py -rs
       - name: Tự kiểm cửa sổ Qt (bốn mục)
         run: python run_gui_qt.py --selftest
