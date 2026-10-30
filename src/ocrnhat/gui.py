@@ -93,6 +93,7 @@ class App(_CatMixin, _Base):
         self._doc_cache = None   # (đường dẫn, PdfDocument) cho khung xem trước
         self._closing = False    # đã yêu cầu dừng để đóng cửa sổ; poll() đóng khi luồng nền xong
         self._pdfx_running = False
+        self._pdfx_cancel = threading.Event()   # nút Hủy của Công cụ PDF: dừng sau file hiện tại
         self._bg: set = set()    # tải model / cài gói đang chạy (chặn đóng cửa sổ giữa chừng)
         self._rep_sel = {"main": None, "ins": None}   # file đang chọn trong “Chèn trang lặp lại” (theo đường dẫn)
         self.settings = load_settings()
@@ -499,6 +500,9 @@ class App(_CatMixin, _Base):
         b_clr = GradientButton(bar, text="Bỏ tất cả", command=self._pdfx_clear); b_clr.pack(side="left")
         b_up = GradientButton(bar, text="Lên", command=lambda: self._pdfx_move(-1)); b_up.pack(side="left", padx=(12, 0))
         b_dn = GradientButton(bar, text="Xuống", command=lambda: self._pdfx_move(1)); b_dn.pack(side="left", padx=6)
+        self.pdfx_cancel_btn = GradientButton(bar, text="Hủy", command=self._pdfx_request_cancel, state="disabled", style="Danger.TButton", icon="stop")
+        self.pdfx_cancel_btn.pack(side="left", padx=(12, 0))
+        Tip(self.pdfx_cancel_btn, "Dừng sau file hiện tại (Trích xuất, Tách, Xoay, Nén). File đã xong vẫn được giữ. Ghép, Ghép xen kẽ và Chèn là một lần ghi nên không hủy giữa chừng được.")
         Tip(b_up, "Đổi thứ tự: đưa mục đang chọn lên trước. Thứ tự này dùng khi ghép file.")
         Tip(b_dn, "Đổi thứ tự: đưa mục đang chọn xuống sau.")
         Tip(b_add, "Chọn một hoặc nhiều file PDF. File gốc không bị thay đổi.")
@@ -864,8 +868,16 @@ class App(_CatMixin, _Base):
             msg = f"Lỗi: {e}"
         self.q.put(("pdfx_done", msg))
 
-    def _pdfx_busy(self, busy: bool):
+    def _pdfx_request_cancel(self):
+        self._pdfx_cancel.set()
+        self.pdfx_cancel_btn.config(state="disabled")
+        self.pdfx_status.set("Đang hủy… chờ file hiện tại xong.")
+
+    def _pdfx_busy(self, busy: bool, cancellable: bool = False):
         self._pdfx_running = busy
+        if busy:
+            self._pdfx_cancel.clear()
+        self.pdfx_cancel_btn.config(state="normal" if busy and cancellable else "disabled")
         state = "disabled" if busy else "normal"
         for b in (self.pdfx_btn, self.pdfx_split_btn, self.pdfx_merge_btn, self.pdfx_inter_btn, self.pdfx_rep_btn,
                   self.pdfx_rot_btn, self.pdfx_comp_btn):
@@ -882,20 +894,24 @@ class App(_CatMixin, _Base):
 
     def _pdfx_start(self, task, verb: str):
         """Chạy task(file) cho từng file trong danh sách, ở luồng nền. Hai nút đều khóa cho đến khi xong."""
-        self._pdfx_busy(True)
+        self._pdfx_busy(True, cancellable=True)
         files = [f for f, _ in self.pdfx_items]
         threading.Thread(target=self._pdfx_worker, args=(files, task, verb), daemon=True).start()
 
     def _pdfx_worker(self, files, task, verb):
         done, errors = [], []
+        cancelled = False
         for i, f in enumerate(files, 1):
+            if self._pdfx_cancel.is_set():
+                cancelled = True
+                break
             self.q.put(("pdfx", f"[{i}/{len(files)}] {verb} {f.name}…"))
             try:
                 done += task(f)
             except Exception as e:   # một file lỗi không dừng các file còn lại
                 log.exception("Lỗi PDF %s", f)
                 errors.append(f"{f.name}: {e}")
-        msg = f"Xong: {len(done)} file PDF" + (f", lưu tại {done[-1].parent}" if done else "") + "."
+        msg = ("Đã hủy: " if cancelled else "Xong: ") + f"{len(done)} file PDF" + (f", lưu tại {done[-1].parent}" if done else "") + "."
         if errors:
             msg += " Lỗi: " + "; ".join(errors)
         self.q.put(("pdfx_done", msg))
@@ -1033,6 +1049,7 @@ class App(_CatMixin, _Base):
                                                  "các trang đã đọc vẫn được lưu. Đóng?"):
             return
         self.cancel.set()
+        self._pdfx_cancel.set()
         if self.watch_stop is not None:
             self.watch_stop.set()
         self._closing = True
