@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
@@ -20,7 +20,7 @@ from . import gpu, gpupack, pipeline
 from . import ui_logic as L
 from .cli import collect
 from .gui_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
-from .gui_style import APP_NAME, add_soft_shadows, state_key
+from .gui_style import APP_NAME, add_soft_shadows, show_banner, state_key
 from .gui_pdf import MergeSection, SplitSection, ToolsSection
 
 gpupack.activate()   # trước khi đọc find_spec('chandra')
@@ -394,6 +394,11 @@ class OcrPage(QWidget):
         self.crop_src.currentIndexChanged.connect(lambda _=0: self._load_crop_page())
         self.crop_page.valueChanged.connect(lambda _=0: self._load_crop_page())
         self._sync_lang()
+        # đang OCR thì khóa các khối này (xem _set_running); xem trước vẫn xem được nhưng không đổi vùng cắt
+        self._locked_while_running = [
+            self.btn_add, self.btn_dir, self.btn_del, self.btn_clear, self.btn_out,
+            cfg, opt, self.preview_box,
+        ]
 
     def set_narrow(self, narrow: bool):
         """Cửa sổ hẹp: cột cấu hình xuống dưới danh sách file. Quyết định theo cửa sổ vì bề rộng tối thiểu của trang
@@ -580,21 +585,21 @@ class OcrPage(QWidget):
         if self.worker and self.worker.isRunning():
             return
         if not self.files:
-            QMessageBox.information(self, "OCR", "Chưa chọn file.")
+            self._problem("Chưa chọn file. Thêm file ở danh sách bên trái.", self.btn_add)
             return
         try:
             pages = pipeline.parse_pages(self.pages.text())
         except ValueError:
-            QMessageBox.critical(self, "OCR", "Số trang không hợp lệ. Ví dụ: 1-5,8.")
+            self._problem("Số trang không hợp lệ. Ví dụ: 1-5,8.", self.pages)
             return
         try:
             opts = self.options()
         except ValueError as e:
-            QMessageBox.critical(self, "OCR", str(e))
+            self._problem(str(e))
             return
         why = self._engine_check(opts)
         if why:
-            QMessageBox.warning(self, "OCR", why + "\nHãy tải mô hình ở mục “Mô hình AI” hoặc chọn công cụ khác.")
+            self._problem(why + " Hãy tải mô hình ở mục “Mô hình AI” hoặc chọn công cụ khác.")
             return
         self._save()
         for i in range(len(self.files)):
@@ -625,16 +630,15 @@ class OcrPage(QWidget):
         self.progress.setValue(int(100 * d / max(1, t)))
         self.status.setText(f"[{d}/{t}] {m}")
 
+    def _problem(self, text: str, focus=None):
+        """Lỗi nhập: hiện ngay trong banner, không mở hộp thoại; con trỏ về ô bị lỗi."""
+        show_banner(self.banner, text, focus=focus)
+
     def _on_done(self, msg: str, outputs: list):
         self.results.set_results(outputs)
         self.status.setText(msg)
         failed = "file lỗi" in msg
-        self.banner.setProperty("kind", "error" if failed else "ok")
-        self.banner.style().unpolish(self.banner)
-        self.banner.style().polish(self.banner)
-        self.banner.setText(("⚠ " if failed else "✔ ") + msg)
-        self.banner.setVisible(True)
-        QAccessible.updateAccessibility(QAccessibleEvent(self.banner, QAccessible.Event.Alert))   # báo kết quả cho trình đọc màn hình
+        show_banner(self.banner, msg, error=failed)   # báo kết quả cho trình đọc màn hình (Alert)
         self._out_dir = self._run_out or (outputs[0][0].parent if outputs else None)
         self.btn_open_out.setVisible(bool(outputs) and self._out_dir is not None)
         self.btn_log.setVisible(failed)
@@ -642,6 +646,11 @@ class OcrPage(QWidget):
         self._set_running(False)
 
     def _set_running(self, on: bool):
+        # khi OCR đang chạy: khóa danh sách, cấu hình và xem trước; tooltip giải thích lý do
+        reason = "Đang OCR. Bấm Dừng trước khi đổi." if on else ""
+        for w in self._locked_while_running:
+            w.setEnabled(not on)
+            w.setToolTip(reason)
         self.models.setEnabled(not on)
         self.busy_changed.emit(on)
 

@@ -96,12 +96,11 @@ def test_xoay_trang_that(window, tmp_path):
     assert PdfReader(str(outs[0])).pages[0].get("/Rotate") == 90
 
 
-def test_ghep_can_it_nhat_hai_file(window, tmp_path, monkeypatch):
-    shown = []
-    monkeypatch.setattr(gui_pdf_mod(), "QMessageBox", _Box(shown))
+def test_ghep_can_it_nhat_hai_file(window, tmp_path):
     window.merge.files_box.add_paths([str(_pdf(tmp_path / "a.pdf", 1))])
     window.merge.run_merge()
-    assert shown and "Thêm ít nhất 2" in shown[0]
+    assert window.merge.banner.isVisibleTo(window.merge)   # lỗi hiện trong mục, không mở hộp thoại
+    assert "Thêm ít nhất 2" in window.merge.banner.text()
     assert window.merge.worker is None
 
 
@@ -132,24 +131,5 @@ def test_luu_khoi_phuc_thu_muc_va_danh_sach(store, tmp_path):
 
 # ---------- trợ giúp kiểm tra hộp thoại ----------
 
-def gui_pdf_mod():
-    import ocrnhat.gui_pdf as m
-    return m
 
 
-class _Box:
-    """Thay QMessageBox: ghi lại nội dung thông báo, không hiện hộp thoại."""
-    def __init__(self, shown):
-        self.shown = shown
-
-    def information(self, _parent, _title, text):
-        self.shown.append(text)
-
-    def warning(self, _parent, _title, text):
-        self.shown.append(text)
-
-    def critical(self, _parent, _title, text):
-        self.shown.append(text)
-
-    def question(self, *_a):
-        return None

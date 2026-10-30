@@ -9,12 +9,12 @@ APP_NAME = "OCR-Thanh Quang"
 PALETTES = {
     "sáng": {
         "page": "#F8FAFC", "card": "#FFFFFF", "field": "#FFFFFF", "border": "#E2E8F0", "text": "#1E293B",
-        "muted": "#64748B", "accent": "#047857", "accent_dark": "#065F46", "accent_soft": "#ECFDF5",
+        "muted": "#5B6778", "accent": "#047857", "accent_dark": "#065F46", "accent_soft": "#ECFDF5",
         "accent_hi": "#10B981", "accent_lo": "#059669", "shadow": "#0F172A",
         "nav_text": "#374151", "hover": "#F1F5F9", "pdf_bg": "#FDE8E8", "pdf_fg": "#B3261E", "danger": "#B3261E",
         # nút chính: chữ trắng trên nền đậm (tương phản >= 5,5:1)
         "btn_hi": "#047857", "btn_lo": "#065F46", "btn_fg": "#FFFFFF", "btn_hover_hi": "#065F46", "btn_hover_lo": "#064E3B",
-        "off_bg": "#E2E8F0", "off_fg": "#64748B",
+        "off_bg": "#E2E8F0", "off_fg": "#5B6778",
         "ctl_border": "#8091A7",   # viền ô nhập, checkbox: >= 3:1 với nền
     },
     "tối": {
@@ -50,7 +50,7 @@ QLabel#logo { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 @btn_hi
 QLabel#appTitle { font-weight: bold; font-size: @fs_app@pt; }
 QLabel#hint, QLabel#footTitle { color: @muted@; }
 QLabel#footTitle { font-size: @fs_small@pt; font-weight: 600; }
-QLabel#pageTitle { font-size: @fs_title@pt; font-weight: bold; }
+QLabel#pageTitle, QLabel#pdfTitle { font-size: @fs_title@pt; font-weight: bold; }
 QLabel#dot { color: @accent@; font-size: @fs_app@pt; }
 QWidget#sideFoot { background: @accent_soft@; border-radius: 14px; }
 QListWidget#nav { background: transparent; border: 2px solid transparent; border-radius: 14px; outline: 0; }
@@ -132,6 +132,21 @@ def state_key(text: str) -> str:
     if text.startswith("Lỗi"):
         return "error"
     return {"Chờ": "wait", "Đang xử lý": "run", "Xong": "done", "Dừng": "stop"}.get(text, "wait")
+
+
+def show_banner(label, text: str, error: bool = True, focus=None) -> None:
+    """Thông báo ngay trong giao diện (thay hộp thoại cho lỗi nhập): khung banner, báo cho trình đọc màn hình,
+    và đặt con trỏ vào ô bị lỗi nếu có."""
+    from PySide6.QtGui import QAccessible, QAccessibleEvent
+    label.setObjectName("banner")
+    label.setProperty("kind", "error" if error else "ok")
+    label.style().unpolish(label)
+    label.style().polish(label)
+    label.setText(("⚠ " if error else "✔ ") + text)
+    label.setVisible(True)
+    QAccessible.updateAccessibility(QAccessibleEvent(label, QAccessible.Event.Alert))
+    if focus is not None:
+        focus.setFocus()
 
 
 def add_soft_shadows(root) -> None:
