@@ -143,33 +143,30 @@ class GradientButton(tk.Canvas):
     def _apply_width(self):
         tk.Canvas.configure(self, width=self._fixed_w or self._font.measure(self._text) + 36)
 
-    def _colors(self) -> tuple[str, str, str, str]:
-        """(đỉnh, đáy, chữ, viền) theo biến thể, trạng thái và nền."""
+    def _colors(self) -> tuple[str, str, str]:
+        """(đỉnh, đáy, chữ) theo biến thể, trạng thái và nền."""
         light = _lum(self._bg) > 128
         if self._state == "disabled":
             top, bot, fg = ("#D9DDE3", "#C5CAD2", "#8A919C") if light else ("#3D434C", "#30353C", "#6B7280")
-            return top, bot, fg, bot
+            return top, bot, fg
         if self._variant == "neutral":
             top = _mix(self._bg, "#FFFFFF", 0.75 if light else 0.18)
             bot = _mix(self._bg, "#000000", 0.14 if light else 0.35)
             fg = "#1F2328" if light else "#E6E8EC"
-            border = "#B7BDC7" if light else "#4A515C"
         else:
             top, bot, fg = self.VARIANTS[self._variant]
-            border = _mix(bot, "#000000", 0.25)
         if self._down:
             top, bot = _mix(top, "#000000", 0.15), _mix(bot, "#000000", 0.15)
         elif self._hover:
             top, bot = _mix(top, "#FFFFFF", 0.12), _mix(bot, "#FFFFFF", 0.12)
-        return top, bot, fg, border
+        return top, bot, fg
 
     def _draw(self):
         self.delete("all")
         w, h = max(1, self.winfo_width()), max(1, self.winfo_height())
-        top, bot, fg, border = self._colors()
+        top, bot, fg = self._colors()
         for y in range(h):
             self.create_line(0, y, w, y, fill=_mix(top, bot, y / max(1, h - 1)))
-        self.create_rectangle(0, 0, w - 1, h - 1, outline=border)
         self.create_text(w / 2, h / 2, text=self._text, fill=fg, font=self._font)
 
     def configure(self, cnf=None, **kw):
