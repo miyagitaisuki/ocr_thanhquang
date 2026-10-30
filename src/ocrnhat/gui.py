@@ -14,6 +14,12 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 from . import pipeline
 from .cli import collect
 
+try:  # kéo-thả file: cần tkinterdnd2 (tkdnd); không có thì giao diện vẫn chạy với nút bấm
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    _Base, HAS_DND = TkinterDnD.Tk, True
+except ImportError:
+    DND_FILES, _Base, HAS_DND = None, tk.Tk, False
+
 BG = "#F4F5F7"        # nền cửa sổ
 CARD = "#FFFFFF"      # nền khối tùy chọn
 TEXT = "#1F2328"
@@ -23,7 +29,7 @@ ACCENT_DARK = "#1858BF"
 LINE = "#D8DCE3"
 
 
-class App(tk.Tk):
+class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
     # chandra còn là placeholder (chưa cài đặt) nên không đưa lên giao diện; dòng lệnh vẫn có
     ENGINES = ("auto", "ndlocr")
@@ -74,9 +80,14 @@ class App(tk.Tk):
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-        self.empty = ttk.Label(table, text="Bấm “Thêm file…” hoặc “Thêm thư mục…” để chọn PDF/ảnh",
-                               style="Hint.TLabel", anchor="center")
+        hint = ("Kéo thả file hoặc thư mục vào đây, hoặc bấm “Thêm file…”" if HAS_DND
+                else "Bấm “Thêm file…” hoặc “Thêm thư mục…” để chọn PDF/ảnh")
+        self.empty = ttk.Label(table, text=hint, style="Hint.TLabel", anchor="center")
         self._refresh_list()
+        if HAS_DND:   # kéo file/thư mục từ Explorer vào bất kỳ đâu trong cửa sổ
+            for w in (self, self.tree):
+                w.drop_target_register(DND_FILES)
+                w.dnd_bind("<<Drop>>", self._on_drop)
 
         # --- đầu ra và trang ---
         out = self._card(page, "Đầu ra")
@@ -191,6 +202,12 @@ class App(tk.Tk):
     def add_files(self):
         fs = filedialog.askopenfilenames(filetypes=[("PDF / ảnh", "*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp")])
         self._add(collect(list(fs)))
+
+    def _on_drop(self, event):
+        """Nhận đường dẫn từ kéo-thả. tkdnd gửi danh sách, tên có khoảng trắng nằm trong {}."""
+        paths = self.tk.splitlist(event.data)
+        self._add(collect(list(paths)))
+        return event.action
 
     def add_dir(self):
         d = filedialog.askdirectory()
