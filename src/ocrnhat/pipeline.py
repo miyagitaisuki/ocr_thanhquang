@@ -124,7 +124,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  progress: Callable[[int, int, str], None] | None = None,
                  cancel: Callable[[], bool] | None = None,
                  review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
-                 engine: str | None = None, ruby: bool = False, device: str = "auto",
+                 engine: str | None = None, ruby: bool = False, device: str = "auto", lang: str = "ja",
                  workers: int | None = None, cell_reocr: bool = True,
                  crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
                  suspect: bool = False, suspect_threshold: float = 0.0005,
@@ -139,6 +139,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     total = len(pages) if pages else page_count(path)
     from . import engines
     engine, why = engines.resolve(engine or engines.DEFAULT)
+    if lang != "ja" and engine != "chandra":
+        raise ValueError("Ngôn ngữ khác tiếng Nhật chỉ dùng được với engine chandra.")
     from .gpu import resolve_device
     dev, dev_why = resolve_device(device)
     if progress:
@@ -226,7 +228,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             submit_next()
             for pno, page, img in fut.result():
                 kana_pno[0] = pno
-                items = build_page(page, img, reocr if cell_reocr else None, kana_fn)
+                items = build_page(page, img, reocr if cell_reocr else None, kana_fn, lang=lang)
                 if suspect:
                     suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
                 if review:

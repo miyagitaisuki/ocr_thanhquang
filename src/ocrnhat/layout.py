@@ -112,7 +112,8 @@ def _inside(l: Line, b: Block, m: float = 4) -> bool:
 
 
 class _Filter:
-    def __init__(self, page: Page):
+    def __init__(self, page: Page, lang: str = "ja"):
+        self.lang = lang   # ja: chỉ giữ tiếng Nhật (mặc định); khác: giữ mọi văn bản (chỉ Chandra)
         self.rubies = [b for b in page.blocks if b.kind == "ruby"]
         self.ruby: dict[int, list[tuple[float, float, str]]] = {}
         sizes = sorted(l.size for b in page.blocks if b.kind in ("text", "table") for l in b.lines
@@ -168,6 +169,8 @@ class _Filter:
         t = l.text.strip()
         if not t or self.furigana(l):
             return False
+        if self.lang != "ja":
+            return True
         if table:   # ô bảng giữ nguyên quy tắc cũ: dòng có từ Latin bị loại hẳn
             if _LATIN_WORD.search(t):
                 return False
@@ -242,7 +245,8 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
         return []
     toc = {id(l) for l in ls if _LEADER_END.search(l.text)}   # dòng mục lục: mỗi dòng là một mục riêng
     for l in ls:
-        l.text = _jp_part(l.text)   # chỉ giữ tiếng Nhật trong đoạn văn (xem keep)
+        if flt.lang == "ja":
+            l.text = _jp_part(l.text)   # chỉ giữ tiếng Nhật trong đoạn văn (xem keep)
     H = statistics.median(l.size for l in ls) or 1
     # tiêu đề: khối ngắn, nhãn tiêu đề hoặc chữ lớn, không kết thúc bằng 。
     text_all = "".join(l.text for l in ls)
@@ -707,7 +711,8 @@ KANA_NOTE = ("※ Bảng chữ kana đọc bằng Tesseract: ô để trống l�
              "đối chiếu với trang gốc trước khi dùng.")
 
 
-def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_reader=None) -> list[Para | Table]:
+def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_reader=None,
+               lang: str = "ja") -> list[Para | Table]:
     """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại.
     kana_reader(crop_rgb) -> str: đọc một ô chữ kana (một ký tự hoặc ''). None = không đọc bảng kana."""
     _number_toc(page)
@@ -716,7 +721,7 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_r
     if img_rgb is not None:
         import cv2
         gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY) if img_rgb.ndim == 3 else img_rgb
-    flt = _Filter(page)
+    flt = _Filter(page, lang)
     flt.collect_ruby(page)
     items: list[tuple[int, Para | Table]] = []
     taken: set[int] = set()   # dòng đã thuộc một bảng theo lưới đường kẻ

@@ -4,7 +4,7 @@ Phần mềm Windows (.exe) OCR file PDF scan và ảnh, **chỉ lấy tiếng N
 Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 
 ## Yêu cầu của chủ dự án
-- Chỉ giữ tiếng Nhật (bỏ tiếng Việt/Anh, bỏ furigana).
+- Chỉ giữ tiếng Nhật (bỏ tiếng Việt/Anh, bỏ furigana) — mặc định. Tùy chọn `--lang all` / ô Ngôn ngữ giữ mọi ngôn ngữ, CHỈ khi engine là chandra.
 - Đầu ra là .docx có **khối văn bản liền mạch** (gộp dòng thành đoạn), tiêu đề và bảng thật.
 - Ưu tiên exe gọn, nhanh; chấp nhận tự dựng bảng thay vì dùng engine nặng.
 - Ưu tiên công cụ miễn phí. Ưu tiên giấy phép thoáng (NDLOCR-Lite là CC BY 4.0).

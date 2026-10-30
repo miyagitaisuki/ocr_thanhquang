@@ -72,9 +72,9 @@ def test_cell_reocr_duoc_truyen_xuong_layout(fake_engine, pdf, tmp_path, monkeyp
     seen = []
     real = layout.build_page
 
-    def spy(page, img, reocr=None, kana_reader=None):
+    def spy(page, img, reocr=None, kana_reader=None, lang="ja"):
         seen.append(reocr)
-        return real(page, img, reocr, kana_reader)
+        return real(page, img, reocr, kana_reader, lang=lang)
 
     monkeypatch.setattr(layout, "build_page", spy)
     pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, cell_reocr=cell_reocr)
@@ -102,3 +102,9 @@ def test_batch_gom_trang_va_giu_thu_tu(monkeypatch, tmp_path):
     r = pipeline.process_file(pdf5, tmp_path / "out", 200, None, device="cpu", use_cache=False, engine="chandra")
     assert r["pages"] == 5
     assert seen == [2, 2, 1]
+
+
+def test_ngon_ngu_khac_tieng_nhat_chi_cho_chandra(fake_engine, pdf, tmp_path):
+    import pytest as _pt
+    with _pt.raises(ValueError, match="chandra"):
+        pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, lang="all")
