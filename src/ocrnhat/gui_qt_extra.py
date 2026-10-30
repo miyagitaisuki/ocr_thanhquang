@@ -218,11 +218,11 @@ class ResultsBox(QGroupBox):
             nav.addWidget(w)
         nav.addStretch(1)
         nav.addWidget(self.only_low)
-        self.view = PageView(mode="view", min_size=(380, 420))
+        self.view = PageView(mode="view", min_size=(300, 300))
         self.lines = QListWidget()
-        self.lines.setMinimumWidth(320)
+        self.lines.setMinimumWidth(260)
         self.lines.setToolTip("Bấm một dòng để xem vị trí trên ảnh. Dòng đỏ là độ tin cậy thấp.")
-        preview = QHBoxLayout()
+        preview = QVBoxLayout()   # xếp dọc: ảnh trang trên, danh sách dòng dưới (không chiếm bề ngang)
         preview.addWidget(self.view, 1)
         preview.addWidget(self.lines, 1)
         root = QVBoxLayout(self)
@@ -406,11 +406,11 @@ class ModelBox(QGroupBox):
         self.bar.setRange(0, 100)
         self.bar.setVisible(False)
         self._specs = [
-            ("paddle", "Tải mô hình OCR (PaddleOCR, tiếng Anh/Trung, vài chục MB)",
+            ("paddle", "Tải PaddleOCR (tiếng Anh, Trung)",
              lambda rep: "\n".join(mdl.download_paddle(progress=lambda i, n, name, frac: rep(
                  f"Đang tải {name} (tệp {min(i + 1, n)}/{n})", (i + frac) / max(1, n)))),
              lambda: PaddleEngine.is_available()[0]),
-            ("vi", "Tải mô hình tiếng Việt (VietOCR, khoảng 32 MB)",
+            ("vi", "Tải VietOCR (tiếng Việt)",
              lambda rep: "\n".join(mdl.download_vi(progress=lambda i, n, name, frac: rep(
                  f"Đang tải {name} (tệp {min(i + 1, n)}/{n})", (i + frac) / max(1, n)))),
              lambda: VietnameseEngine.is_available()[0]),
@@ -423,7 +423,7 @@ class ModelBox(QGroupBox):
             root.addWidget(btn)
 
         self.license = QCheckBox("Tôi đồng ý điều khoản sử dụng của mô hình Chandra (OpenRAIL-M)")
-        self.chandra_btn = QPushButton("Tải mô hình Chandra (vài GB, chỉ tải một lần)")
+        self.chandra_btn = QPushButton("Tải Chandra (vài GB, một lần)")
         self.chandra_btn.clicked.connect(self._chandra)
         self.chandra_box = QWidget()
         cb = QVBoxLayout(self.chandra_box)
@@ -434,7 +434,7 @@ class ModelBox(QGroupBox):
         self.chandra_on = chandra_available   # cờ riêng: isVisible() còn phụ thuộc cửa sổ cha đã hiện chưa
         root.addWidget(self.chandra_box)
 
-        self.pack_btn = QPushButton("Cài tăng tốc GPU (vài GB, chỉ dùng cho Chandra)")
+        self.pack_btn = QPushButton("Cài tăng tốc GPU (vài GB)")
         self.pack_btn.clicked.connect(self._pack)
         self.pack_btn.setVisible(not gpupack.installed())
         root.addWidget(self.pack_btn)
@@ -529,8 +529,12 @@ def _dark_palette() -> QPalette:
 
 def apply_view(app, theme: str, font_pt: int, alpha: int, window) -> None:
     """Áp dụng giao diện ngay: màu, cỡ chữ, độ trong suốt cửa sổ."""
+    from .gui_qt_style import stylesheet
+    qss = stylesheet(theme)
     app.setStyle("Fusion")
     app.setPalette(_dark_palette() if theme == "tối" else app.style().standardPalette())
+    if app.styleSheet() != qss:   # đặt lại QSS tốn ~0,5 s (vẽ lại mọi widget): chỉ làm khi đổi giao diện
+        app.setStyleSheet(qss)
     font = QFont(app.font())
     font.setPointSize(font_pt)
     app.setFont(font)
