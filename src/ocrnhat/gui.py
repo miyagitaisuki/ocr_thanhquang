@@ -29,6 +29,34 @@ ACCENT_DARK = "#1858BF"
 LINE = "#D8DCE3"
 
 
+class Tip:
+    """Chú thích khi di chuột vào: hiện sau 0,4 giây, ẩn khi rời chuột."""
+
+    def __init__(self, widget, text: str):
+        self.widget, self.text, self.win, self.job = widget, text, None, None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _schedule(self, _e):
+        self._cancel()
+        self.job = self.widget.after(400, self._show)
+
+    def _cancel(self):
+        if self.job:
+            self.widget.after_cancel(self.job); self.job = None
+
+    def _show(self):
+        x = self.widget.winfo_rootx(); y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.win = tk.Toplevel(self.widget); self.win.wm_overrideredirect(True); self.win.wm_geometry(f"+{x}+{y}")
+        tk.Label(self.win, text=self.text, justify="left", wraplength=320, background="#1F2328", foreground="#FFFFFF",
+                 padx=8, pady=5, font=("TkDefaultFont", 9)).pack()
+
+    def _hide(self, _e):
+        self._cancel()
+        if self.win:
+            self.win.destroy(); self.win = None
+
+
 class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
     # chandra còn là placeholder (chưa cài đặt) nên không đưa lên giao diện; dòng lệnh vẫn có
@@ -63,11 +91,17 @@ class App(_Base):
         src = self._card(page, "Tài liệu nguồn")
         bar = ttk.Frame(src, style="Card.TFrame")
         bar.pack(fill="x", pady=(0, 8))
-        ttk.Button(bar, text="Thêm file…", command=self.add_files).pack(side="left")
-        ttk.Button(bar, text="Thêm thư mục…", command=self.add_dir).pack(side="left", padx=6)
-        ttk.Button(bar, text="Xóa danh sách", command=self.clear).pack(side="left")
+        b_add = ttk.Button(bar, text="Thêm file…", command=self.add_files); b_add.pack(side="left")
+        b_dir = ttk.Button(bar, text="Thêm thư mục…", command=self.add_dir); b_dir.pack(side="left", padx=6)
+        b_clr = ttk.Button(bar, text="Xóa danh sách", command=self.clear); b_clr.pack(side="left")
+        Tip(b_add, "Chọn một hoặc nhiều file PDF hoặc ảnh (PNG, JPG, TIFF...).")
+        Tip(b_dir, "Lấy tất cả PDF và ảnh trong một thư mục.")
+        Tip(b_clr, "Bỏ hết file khỏi danh sách. File gốc trên máy không bị xóa.")
         self.count = tk.StringVar(value="Chưa có file nào")
         ttk.Label(bar, textvariable=self.count, style="Muted.TLabel").pack(side="right")
+        ttk.Label(src, style="Hint.TLabel", wraplength=800, justify="left", text=(
+            "Thêm file: chọn một hoặc nhiều PDF/ảnh. Thêm thư mục: lấy mọi PDF/ảnh trong thư mục. "
+            "Xóa danh sách: bỏ các file khỏi danh sách, không xóa file gốc trên máy.")).pack(anchor="w", pady=(0, 6))
 
         table = ttk.Frame(src, style="Card.TFrame")
         table.pack(fill="both", expand=True)
@@ -92,18 +126,24 @@ class App(_Base):
         # --- đầu ra và trang ---
         out = self._card(page, "Đầu ra")
         self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", str(Path.home() / "ocr_output")), width=52))
-        ttk.Button(out, text="Chọn…", command=self.pick_out).grid(row=0, column=2, padx=(8, 0), pady=4)
+        b_out = ttk.Button(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, padx=(8, 0), pady=4)
+        Tip(b_out, "Chọn thư mục để lưu file kết quả (.docx và .txt).")
+        ttk.Label(out, text="Nơi lưu file Word (.docx) và văn bản (.txt) kết quả.", style="Hint.TLabel").grid(row=3, column=0, columnspan=3, sticky="w", pady=(0, 2))
         self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=24))
         ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         checks = ttk.Frame(out, style="Card.TFrame")
         checks.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        self._check(checks, "marker", True, "Ghi số trang gốc 【原本 p.N】").pack(anchor="w", pady=2)
-        self._check(checks, "txt", True, "Ghi kèm file .txt").pack(anchor="w", pady=2)
-        self._check(checks, "ruby", False, "Giữ furigana thành ruby của Word").pack(anchor="w", pady=2)
+        cb_m = self._check(checks, "marker", True, "Ghi số trang gốc 【原本 p.N】"); cb_m.pack(anchor="w", pady=2)
+        cb_t = self._check(checks, "txt", True, "Ghi kèm file .txt"); cb_t.pack(anchor="w", pady=2)
+        cb_r = self._check(checks, "ruby", False, "Giữ furigana thành ruby của Word"); cb_r.pack(anchor="w", pady=2)
+        Tip(cb_m, "Mỗi trang trong Word có dòng 【原本 p.N】 để biết trang gốc trong sách.")
+        Tip(cb_t, "Thêm file .txt thuần để dán vào công cụ khác.")
+        Tip(cb_r, "Chữ nhỏ (furigana) hiện phía trên chữ Hán bằng ruby của Word. Mặc định bỏ furigana.")
         out.columnconfigure(1, weight=1)
 
         # --- xử lý OCR ---
         proc = self._card(page, "Xử lý OCR")
+        ttk.Label(proc, text="auto: tự chọn engine phù hợp. ndlocr: engine OCR chính.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
         self._row(proc, 0, "Engine", ttk.Combobox(proc, textvariable=self._var("engine", "auto"), values=list(self.ENGINES), state="readonly", width=14))
         self._row(proc, 1, "Thiết bị", ttk.Combobox(proc, textvariable=self._var("dev", self.DEV_LABELS["auto"]), values=list(self.DEV_LABELS.values()), state="readonly", width=24))
         ttk.Label(proc, text="GPU chỉ dùng được với NVIDIA và onnxruntime-gpu + CUDA; không có thì tự lùi về CPU.",
@@ -116,8 +156,11 @@ class App(_Base):
 
         # --- rà soát ---
         rev = self._card(page, "Rà soát")
-        self._check(rev, "review", False, "Xuất file rà soát *_review.html (ảnh trang cạnh chữ, tô đỏ chỗ nghi ngờ)").grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
+        cb_v = self._check(rev, "review", False, "Xuất file rà soát *_review.html (ảnh trang cạnh chữ, tô đỏ chỗ nghi ngờ)")
+        cb_v.grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
+        Tip(cb_v, "Mở file .html bằng trình duyệt để so ảnh trang với chữ đã nhận dạng. Dòng nghi ngờ được tô đỏ.")
         self._row(rev, 1, "Ngưỡng tin cậy", ttk.Entry(rev, textvariable=self._var("conf", "0.8"), width=8))
+        ttk.Label(rev, text="Dòng có độ tin cậy dưới ngưỡng này bị tô đỏ. Mặc định 0.8; cao hơn thì đánh dấu nhiều dòng hơn.", style="Hint.TLabel", wraplength=520, justify="left").grid(row=1, column=2, sticky="w", padx=(8, 0))
         rev.columnconfigure(1, weight=1)
 
         # --- hành động ---
@@ -127,6 +170,11 @@ class App(_Base):
         self.btn.pack(side="left")
         self.stop = ttk.Button(bar2, text="Dừng", command=self.cancel.set, state="disabled")
         self.stop.pack(side="left", padx=8)
+        Tip(self.btn, "Bắt đầu OCR cho mọi file trong danh sách.")
+        Tip(self.stop, "Dừng sau trang đang xử lý. Các trang đã xong vẫn được lưu.")
+        ttk.Label(page, style="Hint.TLabel", wraplength=860, justify="left", text=(
+            "Chạy OCR: xử lý mọi file trong danh sách theo các tùy chọn ở trên. "
+            "Dừng: dừng sau trang đang làm; các trang đã xong vẫn được lưu.")).pack(fill="x", pady=(6, 0))
         self.pb = ttk.Progressbar(page, maximum=100, style="Accent.Horizontal.TProgressbar")
         self.pb.pack(fill="x", pady=(14, 4))
         self.status = tk.StringVar(value="Sẵn sàng.")
