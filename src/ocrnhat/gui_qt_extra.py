@@ -178,8 +178,11 @@ class PageView(QWidget):
                 low = conf < self.thr
                 if not low and i != self.selected:
                     continue
-                color = QColor("#D00000") if low else QColor("#1F6FEB")
-                p.setPen(QPen(color, 3 if i == self.selected else 2))
+                color = QColor("#FF5A4D") if low else QColor("#4C8DFF")   # sáng đủ nổi trên ảnh trang; dòng nghi ngờ thêm nét đứt
+                pen = QPen(color, 3 if i == self.selected else 2)
+                if low:
+                    pen.setStyle(Qt.PenStyle.DashLine)
+                p.setPen(pen)
                 p.drawRect(QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc))
         if self.mode == "crop":
             rects = list(self.crops)
@@ -420,9 +423,10 @@ class ResultsBox(QGroupBox):
             low = conf < thr
             if self.only_low.isChecked() and not low:
                 continue
-            item = QListWidgetItem(f"{conf:.2f}  {text}")
+            item = QListWidgetItem(f"{'⚠ ' if low else '   '}{conf:.2f}  {text}")   # dấu ⚠: không chỉ dựa vào màu
             if low:
-                item.setForeground(QColor("#D00000"))
+                dark = self.lines.palette().base().color().lightness() < 128
+                item.setForeground(QColor("#FF8A80" if dark else "#B3261E"))
             self.lines.addItem(item)
             self._row_to_line.append(i)
         if not self._line_data:
@@ -605,7 +609,7 @@ def _dark_palette() -> QPalette:
 def apply_view(app, theme: str, font_pt: int, alpha: int, window) -> None:
     """Áp dụng giao diện ngay: màu, cỡ chữ, độ trong suốt cửa sổ."""
     from .gui_qt_style import stylesheet
-    qss = stylesheet(theme)
+    qss = stylesheet(theme, font_pt)
     app.setStyle("Fusion")
     app.setPalette(_dark_palette() if theme == "tối" else app.style().standardPalette())
     if app.styleSheet() != qss:   # đặt lại QSS tốn ~0,5 s (vẽ lại mọi widget): chỉ làm khi đổi giao diện
