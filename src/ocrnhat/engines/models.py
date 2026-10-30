@@ -79,16 +79,27 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def download_paddle(progress=None, dest: Path | None = None) -> list[str]:
-    """Tải model PaddleOCR còn thiếu, kiểm SHA-256. progress(i, n, tên, tỉ lệ_tệp) với i là chỉ số tệp (từ 0).
+# VietOCR: 4 file đã xuất sẵn (assets/vi-ocr/ trong repo, Apache-2.0). Cần thêm file detector của PaddleOCR.
+VI_BASE = "https://raw.githubusercontent.com/miyagitaisuki/ocr_thanhquang/main/assets/vi-ocr/"
+VI_FILES = {
+    DET: PADDLE_FILES[DET],
+    VI_CNN: (VI_BASE + VI_CNN, "e1df17f69d77ad8f7bf41c0041ecede0ce32ca13c0fbbe936e238db0e64fcc5a"),
+    VI_ENC: (VI_BASE + VI_ENC, "b082f20a7edec5aec8ae750274346df30724932a74cbf71d3920fbf1d5bf4d20"),
+    VI_DEC: (VI_BASE + VI_DEC, "da549f352e4ec88642db935cc3316ef32a6dfbfe7472c32c161f4900b1d9f279"),
+    VI_VOCAB: (VI_BASE + VI_VOCAB, "f6a3f5998d0460b2dac9dd63e5c1289bee26eea8265dc966d1ebf532a7d8d8f5"),
+}
+
+
+def download_files(files: dict, progress=None, dest: Path | None = None) -> list[str]:
+    """Tải các file còn thiếu, kiểm SHA-256. progress(i, n, tên, tỉ lệ_tệp) với i là chỉ số tệp (từ 0).
 
     Tệp đã có và đúng SHA-256 thì bỏ qua. Ném RuntimeError nếu sai SHA-256 hoặc lỗi mạng.
     """
     out = dest or target_dir()
     out.mkdir(parents=True, exist_ok=True)
-    names = list(PADDLE_FILES)
+    names = list(files)
     for i, name in enumerate(names):
-        url, want = PADDLE_FILES[name]
+        url, want = files[name]
         dst = out / name
         if dst.is_file() and sha256(dst) == want:
             if progress:
@@ -113,3 +124,11 @@ def download_paddle(progress=None, dest: Path | None = None) -> list[str]:
         if progress:
             progress(i + 1, len(names), name, 1.0)
     return names
+
+
+def download_paddle(progress=None, dest: Path | None = None) -> list[str]:
+    return download_files(PADDLE_FILES, progress, dest)
+
+
+def download_vi(progress=None, dest: Path | None = None) -> list[str]:
+    return download_files(VI_FILES, progress, dest)
