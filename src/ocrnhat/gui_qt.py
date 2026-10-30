@@ -9,10 +9,11 @@ import importlib.util
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
     QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -28,6 +29,8 @@ gpupack.activate()   # trước khi đọc find_spec('chandra')
 log = logging.getLogger("ocrnhat.gui")
 
 SECTIONS = ("OCR", "Tách PDF", "Ghép PDF", "Công cụ khác")
+SECTIONS_SHORT = ("OCR", "Tách", "Ghép", "Khác")   # thanh bên thu gọn khi cửa sổ hẹp
+NARROW_WINDOW = 980    # dưới mức này (px): thanh bên chỉ còn nhãn ngắn và cột cấu hình xuống dưới danh sách file
 ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("paddle", "ocr_vi")
 FILE_FILTER = "PDF / ảnh (*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
 
@@ -94,6 +97,14 @@ class FileList(QListWidget):
         e.acceptProposedAction()
 
 
+def labeled(text: str, widget) -> QLabel:
+    """Nhãn gắn với ô nhập (buddy): đọc đúng tên trên trình đọc màn hình, bấm nhãn thì focus ô."""
+    label = QLabel(text)
+    label.setBuddy(widget)
+    widget.setAccessibleName(text)
+    return label
+
+
 def crops_text(rects) -> str:
     """Danh sách vùng -> chuỗi ô nhập: 'x0,y0,x1,y1;x0,y0,x1,y1'."""
     return ";".join(",".join(str(v) for v in r) for r in rects)
@@ -148,8 +159,9 @@ class OcrPage(QWidget):
     # ---------- bố cục ----------
 
     def _build(self):
-        root = QHBoxLayout(self)
+        root = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)   # đổi chiều khi cửa sổ hẹp (MainWindow.resizeEvent)
         root.setSpacing(16)
+        self.root_layout = root
 
         # cột trái: danh sách file, xem trước vùng chọn, kết quả
         left = QVBoxLayout()
@@ -165,7 +177,7 @@ class OcrPage(QWidget):
             bar.addWidget(b)
         bar.addStretch(1)
         fb.addLayout(bar)
-        drop = QLabel("Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file”")
+        drop = QLabel("Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file” (Ctrl+O)")
         drop.setObjectName("dropzone")
         drop.setAlignment(Qt.AlignmentFlag.AlignCenter)
         drop.setMinimumHeight(44)
@@ -173,7 +185,9 @@ class OcrPage(QWidget):
         self.listing = FileList()
         self.listing.setObjectName("files")
         self.listing.setMinimumHeight(150)
+        self.listing.setAccessibleName("Danh sách file cần OCR")
         fb.addWidget(self.listing)
+        self.drop = drop
         left.addWidget(self.files_box)
 
         self.preview_box = QGroupBox("Xem trước vùng chọn")
@@ -183,6 +197,10 @@ class OcrPage(QWidget):
         self.page_badge.setObjectName("badge")
         self.btn_prev = QPushButton("◀")
         self.btn_next = QPushButton("▶")
+        self.btn_prev.setAccessibleName("Trang trước")
+        self.btn_next.setAccessibleName("Trang sau")
+        self.btn_prev.setToolTip("Trang trước")
+        self.btn_next.setToolTip("Trang sau")
         self.btn_crop_clear = QPushButton("Bỏ vùng chọn")
         head.addWidget(self.page_badge)
         head.addStretch(1)
@@ -227,9 +245,9 @@ class OcrPage(QWidget):
         out_row.addWidget(self.out, 1)
         out_row.addWidget(self.btn_out)
         for label, widget in (("Công cụ OCR", self.engine), ("Ngôn ngữ", self.lang), ("Phần cứng", self.device)):
-            cg.addWidget(QLabel(label))
+            cg.addWidget(labeled(label, widget))
             cg.addWidget(widget)
-        cg.addWidget(QLabel("Thư mục lưu"))
+        cg.addWidget(labeled("Thư mục lưu", self.out))
         cg.addLayout(out_row)
         right.addWidget(cfg)
 
@@ -245,9 +263,9 @@ class OcrPage(QWidget):
             self.merge.addItem(label, key)
         self.pages = QLineEdit()
         self.pages.setPlaceholderText("ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)")
-        og.addWidget(QLabel("Cách ghép trang"))
+        og.addWidget(labeled("Cách ghép trang", self.merge))
         og.addWidget(self.merge)
-        og.addWidget(QLabel("Trang"))
+        og.addWidget(labeled("Trang", self.pages))
         og.addWidget(self.pages)
 
         # chi tiết kỹ thuật: thu gọn, ẩn hẳn khi bỏ chọn
@@ -275,12 +293,12 @@ class OcrPage(QWidget):
         self.conf.setToolTip("Dòng có độ chắc chắn thấp hơn mức này sẽ bị tô đỏ trong file so sánh (mặc định 0,8).")
         for label, widget in (("Độ phân giải (DPI)", self.dpi), ("Phóng to ảnh", self.upscale), ("Vùng đọc (x0,y0,x1,y1; nhiều vùng cách bằng ;)", self.crop),
                               ("Đọc bảng chữ kana (thử nghiệm)", self.kana)):
-            agrid.addWidget(QLabel(label))
+            agrid.addWidget(labeled(label, widget))
             agrid.addWidget(widget)
         agrid.addWidget(self.cell_reocr)
         agrid.addWidget(self.use_cache)
         agrid.addWidget(self.review)
-        agrid.addWidget(QLabel("Ngưỡng nghi ngờ (file so sánh)"))
+        agrid.addWidget(labeled("Ngưỡng nghi ngờ (file so sánh)", self.conf))
         agrid.addWidget(self.conf)
         og.addWidget(adv)
         self.advanced = adv
@@ -293,13 +311,22 @@ class OcrPage(QWidget):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setTextVisible(False)
+        self.progress.setAccessibleName("Tiến trình OCR")
         self.status = QLabel("Sẵn sàng.")
         self.status.setWordWrap(True)
+        self.banner = QLabel("")   # thông báo lỗi/kết quả cuối, hiện sau khi chạy xong
+        self.banner.setObjectName("banner")
+        self.banner.setWordWrap(True)
+        self.banner.setVisible(False)
+        self.btn_log = QPushButton("Mở thư mục nhật ký")
+        self.btn_log.setVisible(False)
         self.btn_stop = QPushButton("Dừng")
         self.btn_stop.setObjectName("dangerBtn")
         self.btn_stop.setEnabled(False)
         rb.addWidget(self.progress)
         rb.addWidget(self.status)
+        rb.addWidget(self.banner)
+        rb.addWidget(self.btn_log)
         rb.addWidget(self.btn_stop)
         right.addWidget(run_box)
 
@@ -308,8 +335,11 @@ class OcrPage(QWidget):
         right.addStretch(1)
         right_col = QWidget()
         right_col.setLayout(right)
-        right_col.setFixedWidth(360)   # cột cấu hình cố định như hình mẫu; cột trái co giãn
+        right_col.setMinimumWidth(300)   # co giãn 300–420 px; cửa sổ hẹp thì xuống dưới (MainWindow.resizeEvent)
+        right_col.setMaximumWidth(420)
+        self.right_col = right_col
         root.addWidget(right_col)
+        self.btn_log.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(L.LOG_FILE.parent))))
 
         self.btn_add.clicked.connect(self.add_files)
         self.btn_dir.clicked.connect(self.add_dir)
@@ -329,6 +359,14 @@ class OcrPage(QWidget):
         self.crop_src.currentIndexChanged.connect(lambda _=0: self._load_crop_page())
         self.crop_page.valueChanged.connect(lambda _=0: self._load_crop_page())
         self._sync_lang()
+
+    def set_narrow(self, narrow: bool):
+        """Cửa sổ hẹp: cột cấu hình xuống dưới danh sách file. Quyết định theo cửa sổ vì bề rộng tối thiểu của trang
+        (khi xếp ngang) lớn hơn vùng nhìn nên không đo được từ chính trang."""
+        wanted = QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
+        if self.root_layout.direction() != wanted:
+            self.root_layout.setDirection(wanted)
+            self.right_col.setMaximumWidth(16777215 if narrow else 420)
 
     # ---------- ngôn ngữ theo công cụ ----------
 
@@ -399,6 +437,7 @@ class OcrPage(QWidget):
     def _refresh_count(self):
         n = len(self.files)
         self.files_box.setTitle(f"Danh sách File ({n})")
+        self.drop.setVisible(n == 0)
         if hasattr(self, "crop_src"):
             self._refresh_crop_files()
 
@@ -521,6 +560,8 @@ class OcrPage(QWidget):
         for i in range(len(self.files)):
             self._set_file_state(i, "Chờ")
         self.progress.setValue(0)
+        self.banner.setVisible(False)
+        self.btn_log.setVisible(False)
         self._set_running(True)
         out = self.out.text().strip()
         self.worker = OcrWorker(list(self.files), Path(out) if out else None, pages, opts)
@@ -541,6 +582,13 @@ class OcrPage(QWidget):
     def _on_done(self, msg: str, outputs: list):
         self.results.set_results(outputs)
         self.status.setText(msg)
+        failed = "file lỗi" in msg
+        self.banner.setProperty("kind", "error" if failed else "ok")
+        self.banner.style().unpolish(self.banner)
+        self.banner.style().polish(self.banner)
+        self.banner.setText(("⚠ " if failed else "✔ ") + msg)
+        self.banner.setVisible(True)
+        self.btn_log.setVisible(failed)
         self.progress.setValue(100)
         self._set_running(False)
 
@@ -602,6 +650,7 @@ class MainWindow(QMainWindow):
         side = QWidget()
         side.setObjectName("sidebar")
         side.setFixedWidth(228)
+        self.side = side
         sl = QVBoxLayout(side)
         sl.setContentsMargins(16, 18, 16, 16)
         brand = QHBoxLayout()
@@ -614,6 +663,7 @@ class MainWindow(QMainWindow):
         app_name.setObjectName("appTitle")
         sub = QLabel("Nhận dạng tiếng Nhật")
         sub.setObjectName("hint")
+        self.brand_texts = (app_name, sub)
         names.addWidget(app_name)
         names.addWidget(sub)
         brand.addWidget(logo)
@@ -623,8 +673,10 @@ class MainWindow(QMainWindow):
 
         self.nav = QListWidget()
         self.nav.setObjectName("nav")
+        self.nav.setAccessibleName("Chọn mục (Ctrl+1 đến Ctrl+4)")
         for name in SECTIONS:
             item = QListWidgetItem(name)
+            item.setToolTip(name)
             item.setSizeHint(QSize(0, 46))   # mỗi mục cao 46 px: đủ đệm như hình mẫu
             self.nav.addItem(item)
         sl.addWidget(self.nav, 1)
@@ -644,12 +696,15 @@ class MainWindow(QMainWindow):
         fl.addWidget(foot_title)
         fl.addLayout(state_row)
         sl.addWidget(foot)
+        self.side_foot = foot
 
         # nội dung: tiêu đề trang, nút Bắt đầu xử lý (chỉ ở mục OCR), các mục
         self.page_title = QLabel(SECTION_TITLES[0])
         self.page_title.setObjectName("pageTitle")
         self.run_btn = QPushButton("▶  Bắt đầu xử lý")
         self.run_btn.setObjectName("runBtn")
+        self.run_btn.setToolTip("Bắt đầu xử lý (Ctrl+R hoặc F5)")
+        self.run_btn.setAccessibleName("Bắt đầu xử lý")
         head = QHBoxLayout()
         head.addWidget(self.page_title)
         self.file_badge = QLabel("")
@@ -684,6 +739,9 @@ class MainWindow(QMainWindow):
         hl.addWidget(side)
         hl.addWidget(content, 1)
         self.setCentralWidget(central)
+        self.setMinimumSize(760, 560)
+        self._compact = False
+        self._setup_shortcuts()
         add_soft_shadows(central)   # bóng mềm cho các thẻ sau khi đã dựng xong
 
         self.run_btn.clicked.connect(self.ocr.start)
@@ -693,6 +751,49 @@ class MainWindow(QMainWindow):
         self._status_timer = QTimer(self)
         self._status_timer.timeout.connect(self._refresh_sys_status)
         self._status_timer.start(500)
+
+    def _setup_shortcuts(self):
+        def add(keys, slot):
+            for k in ((keys,) if isinstance(keys, str) else keys):
+                QShortcut(QKeySequence(k), self, activated=slot)
+        add("Ctrl+O", self._add_files_here)
+        add(("Ctrl+R", "F5"), self._run_here)
+        add("Esc", self._stop_here)
+        for i in range(len(SECTIONS)):
+            add(f"Ctrl+{i + 1}", lambda i=i: self.nav.setCurrentRow(i))
+        QShortcut(QKeySequence("Delete"), self.ocr, activated=self.ocr.remove_selected).setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+
+    def _add_files_here(self):
+        page = self.stack.currentWidget().widget()
+        btn = getattr(page, "btn_add", None)
+        if btn is not None and btn.isEnabled():
+            btn.click()
+
+    def _run_here(self):
+        if self.stack.currentIndex() == 0 and self.run_btn.isEnabled():
+            self.run_btn.click()
+
+    def _stop_here(self):
+        if self.ocr.busy() and self.stack.currentIndex() == 0:
+            if QMessageBox.question(self, "Dừng OCR", "Dừng sau trang hiện tại? Các trang đã đọc vẫn được lưu.") == QMessageBox.StandardButton.Yes:
+                self.ocr.request_stop()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        compact = self.width() < NARROW_WINDOW
+        self.ocr.set_narrow(compact)
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.side.setFixedWidth(96 if compact else 228)
+        self.nav.setStyleSheet("QListWidget#nav::item { padding: 12px 2px; margin: 2px 2px; border-left: none; }" if compact else "")
+        align = Qt.AlignmentFlag.AlignCenter if compact else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        self.side_foot.setVisible(not compact)
+        for w in self.brand_texts:
+            w.setVisible(not compact)
+        for i in range(self.nav.count()):
+            self.nav.item(i).setText(SECTIONS_SHORT[i] if compact else SECTIONS[i])
+            self.nav.item(i).setTextAlignment(align)
 
     def _show_section(self, row: int):
         self.stack.setCurrentIndex(row)

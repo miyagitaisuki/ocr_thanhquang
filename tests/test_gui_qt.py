@@ -97,3 +97,32 @@ def test_worker_xu_ly_tung_file_va_ghi_loi_rieng(window, monkeypatch, tmp_path):
     msg, outs = done[0]
     assert "ảnh hỏng" in msg
     assert len(outs) == 1 and outs[0][0] == good and outs[0][1]["docx"] == str(tmp_path / "out.docx")
+
+
+def test_responsive_cua_so_hep(window):
+    from PySide6.QtWidgets import QBoxLayout
+    window.show()
+    window.resize(1180, 800)
+    app.processEvents()
+    app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
+    assert window.side.width() == 228
+    assert window.ocr.root_layout.direction() == QBoxLayout.Direction.LeftToRight
+    window.resize(800, 700)
+    app.processEvents()
+    app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
+    assert window.side.width() < 120 and window.nav.item(1).text() == "Tách"
+    assert window.ocr.root_layout.direction() == QBoxLayout.Direction.TopToBottom
+    window.resize(1180, 800)
+    app.processEvents()
+    app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
+    assert window.nav.item(1).text() == "Tách PDF"
+
+
+def test_phim_tat_va_ten_truy_cap(window):
+    window.show()
+    window.nav.setCurrentRow(0)
+    assert window.run_btn.accessibleName()
+    assert window.ocr.engine.accessibleName() == "Công cụ OCR"
+    from PySide6.QtGui import QShortcut
+    keys = {s.key().toString() for s in window.findChildren(QShortcut)}
+    assert {"Ctrl+O", "Ctrl+R", "F5", "Esc", "Ctrl+2"} <= keys

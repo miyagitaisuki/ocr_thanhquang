@@ -289,6 +289,7 @@ class PdfSection(QGroupBox):
 
     def make_run(self, text: str, slot) -> QPushButton:
         btn = QPushButton(text)
+        btn.setObjectName("runBtn")   # nút chính dùng cùng kiểu với mục OCR
         btn.clicked.connect(slot)
         self.run_buttons.append(btn)
         return btn
