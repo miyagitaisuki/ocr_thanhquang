@@ -289,4 +289,5 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
             "kana_review": str(kana_review) if kana_review else None,
             "review": str(review_path) if review_path else None, "low_conf": n_low,
             "suspect": str(suspect_path) if suspect_path else None, "suspect_lines": len(suspect_rows),
-            "page_lines": page_lines, "crop": crop, "upscale": upscale, "conf_threshold": conf_threshold}
+            "page_lines": page_lines, "crop": crop, "upscale": upscale, "conf_threshold": conf_threshold,
+            "dpi": dpi}

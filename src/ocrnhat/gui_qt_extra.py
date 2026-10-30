@@ -33,7 +33,7 @@ SCAN_DPI = 200   # phải khớp pipeline.iter_pages: vùng cắt tính theo pix
 
 
 @functools.lru_cache(maxsize=8)
-def _source_bytes(src: str, pno: int) -> tuple[bytes, int, int] | None:
+def _source_bytes(src: str, pno: int, dpi: int) -> tuple[bytes, int, int] | None:
     """Trang nguồn ở đúng hệ tọa độ của pipeline (PDF render ở SCAN_DPI, ảnh giữ nguyên). Có cache nhỏ."""
     try:
         if src.lower().endswith(".pdf"):
@@ -41,7 +41,7 @@ def _source_bytes(src: str, pno: int) -> tuple[bytes, int, int] | None:
             doc = pdfium.PdfDocument(src)
             if pno > len(doc):
                 return None
-            pil = doc[pno - 1].render(scale=SCAN_DPI / 72).to_pil().convert("RGB")
+            pil = doc[pno - 1].render(scale=dpi / 72).to_pil().convert("RGB")
         else:
             from PIL import Image
             pil = Image.open(src).convert("RGB")
@@ -51,8 +51,8 @@ def _source_bytes(src: str, pno: int) -> tuple[bytes, int, int] | None:
         return None
 
 
-def source_image(src: Path, pno: int) -> tuple[QImage, int, int] | None:
-    got = _source_bytes(str(src), pno)
+def source_image(src: Path, pno: int, dpi: int = SCAN_DPI) -> tuple[QImage, int, int] | None:
+    got = _source_bytes(str(src), pno, dpi)
     if got is None:
         return None
     data, w, h = got
@@ -64,6 +64,36 @@ def to_source(x: float, y: float, crop, upscale: float) -> tuple[float, float]:
     ox, oy = (crop[0], crop[1]) if crop else (0, 0)
     up = upscale or 1.0
     return ox + x / up, oy + y / up
+
+
+CORNERS = ("tl", "tr", "bl", "br")
+
+
+def corner_at(rect: tuple[int, int, int, int], pt: tuple[float, float], tol: float) -> str | None:
+    """Tay nắm góc nào nằm trong bán kính tol (đơn vị trang nguồn) quanh điểm pt; None nếu không có."""
+    x0, y0, x1, y1 = rect
+    corners = {"tl": (x0, y0), "tr": (x1, y0), "bl": (x0, y1), "br": (x1, y1)}
+    best, hit = None, None
+    for name, (cx, cy) in corners.items():
+        d = max(abs(pt[0] - cx), abs(pt[1] - cy))
+        if d <= tol and (best is None or d < best):
+            best, hit = d, name
+    return hit
+
+
+def resize_rect(rect: tuple[int, int, int, int], corner: str, pt: tuple[float, float],
+                full_w: int, full_h: int) -> tuple[int, int, int, int]:
+    """Kéo một góc tới pt; cạnh đối diện giữ nguyên. Kết quả kẹp trong trang; quá nhỏ thì giữ khung cũ."""
+    x0, y0, x1, y1 = rect
+    if "l" in corner:
+        x0 = pt[0]
+    else:
+        x1 = pt[0]
+    if "t" in corner:
+        y0 = pt[1]
+    else:
+        y1 = pt[1]
+    return drag_rect((x0, y0), (x1, y1), full_w, full_h) or rect
 
 
 def drag_rect(p0: tuple[float, float], p1: tuple[float, float], full_w: int, full_h: int) -> tuple[int, int, int, int] | None:
@@ -90,6 +120,7 @@ class PageView(QWidget):
         self.selected = -1
         self.crop: tuple[int, int, int, int] | None = None
         self._drag: tuple[tuple[float, float], tuple[float, float]] | None = None
+        self._corner: str | None = None   # góc đang kéo để đổi kích thước vùng chọn
         self.setMinimumSize(*min_size)
         self.label = ""   # chữ nhãn vẽ trên vùng chọn (chế độ crop), ví dụ "Vùng chọn OCR 01 (…)"
 
@@ -157,6 +188,11 @@ class PageView(QWidget):
             box = QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc)
             p.setBrush(QBrush(QColor(242, 160, 61, 40)))
             p.drawRect(box)
+            p.setPen(QPen(QColor("#FFFFFF"), 1))
+            p.setBrush(QBrush(QColor("#F2A03D")))
+            for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):   # bốn tay nắm góc
+                hx, hy = ox + cx * sc, oy + cy * sc
+                p.drawEllipse(QRectF(hx - 5, hy - 5, 10, 10))
             p.setPen(QPen(QColor("#F2A03D"), 1))
             p.setBrush(QBrush(QColor("#F2A03D")))
             chip = f"Vùng chọn OCR 01 ({x0}, {y0}, {x1}, {y1})"
@@ -171,7 +207,12 @@ class PageView(QWidget):
             return
         pt = self._to_page(e.position())
         if self.mode == "crop":
-            self._drag = (pt, pt)
+            _ox, _oy, sc = self._layout()
+            corner = corner_at(self.crop, pt, 8 / sc) if self.crop else None   # tay nắm: 8 px trên màn hình
+            if corner:
+                self._corner = corner
+            else:
+                self._drag = (pt, pt)
             self.update()
         else:
             hit = -1
@@ -186,11 +227,19 @@ class PageView(QWidget):
             self.lineClicked.emit(hit)
 
     def mouseMoveEvent(self, e):
-        if self.mode == "crop" and self._drag is not None:
+        if self.mode == "crop" and self._corner and self.crop:
+            self.crop = resize_rect(self.crop, self._corner, self._to_page(e.position()), *self.full)
+            self.cropChanged.emit(*self.crop)
+            self.update()
+        elif self.mode == "crop" and self._drag is not None:
             self._drag = (self._drag[0], self._to_page(e.position()))
             self.update()
 
     def mouseReleaseEvent(self, e):
+        if self.mode == "crop" and self._corner:
+            self._corner = None
+            self.update()
+            return
         if self.mode == "crop" and self._drag is not None:
             rect = drag_rect(self._drag[0], self._to_page(e.position()), *self.full)
             self._drag = None
@@ -323,7 +372,7 @@ class ResultsBox(QGroupBox):
             self.page_info.setText("")
             return
         src, r = item
-        got = source_image(src, pno)
+        got = source_image(src, pno, r.get("dpi", SCAN_DPI))
         if got is None:
             self.view.set_image(None)
         else:

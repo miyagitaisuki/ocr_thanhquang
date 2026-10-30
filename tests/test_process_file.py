@@ -115,6 +115,7 @@ def test_ket_qua_co_toa_do_dong_de_ra_soat(fake_engine, pdf, tmp_path):
     r = pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False,
                               crop=(10, 20, 500, 600), upscale=2.0, conf_threshold=0.7)
     assert r["crop"] == (10, 20, 500, 600) and r["upscale"] == 2.0 and r["conf_threshold"] == 0.7
+    assert r["dpi"] == 200
     (page_no, lines), = r["page_lines"]
     assert page_no == 1
     x, y, x1, y1, conf, text = lines[0]

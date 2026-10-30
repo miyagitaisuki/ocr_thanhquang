@@ -130,3 +130,32 @@ def test_ket_qua_co_trong_ocr_va_tuy_chon_kiem_tra(store):
     opts = w.ocr.options()
     assert opts["conf_threshold"] == 0.6 and opts["review"] is True
     w.close()
+
+
+def test_tay_nam_goc_nhan_dien_va_doi_kich_thuoc():
+    from ocrnhat.gui_qt_extra import corner_at, resize_rect
+    rect = (100, 100, 300, 200)
+    assert corner_at(rect, (101, 99), tol=4) == "tl"
+    assert corner_at(rect, (299, 201), tol=4) == "br"
+    assert corner_at(rect, (200, 150), tol=4) is None          # giữa khung không phải tay nắm
+    # kéo góc br tới (400, 250): góc tl giữ nguyên
+    assert resize_rect(rect, "br", (400, 250), 1000, 1000) == (100, 100, 400, 250)
+    # kéo góc tl vượt qua góc br: khung được lật lại, không bị âm
+    assert resize_rect(rect, "tl", (350, 250), 1000, 1000) == (300, 200, 350, 250)
+    # kéo ra ngoài trang: kẹp trong trang
+    assert resize_rect(rect, "tr", (2000, 50), 1000, 1000) == (100, 50, 1000, 200)
+
+
+def test_anh_trang_theo_dpi_dang_chon(tmp_path):
+    src = _pdf(tmp_path / "a.pdf", 1)
+    w150, w300 = source_image(src, 1, 150)[1], source_image(src, 1, 300)[1]
+    assert abs(w300 - 2 * w150) <= 2          # gấp đôi DPI thì gấp đôi pixel (sai số làm tròn của pdfium)
+
+
+def test_doi_dpi_nhan_vung_cat_de_giu_dung_phan_trang(store):
+    w = gui_qt.MainWindow()
+    w.ocr.crop.setText("100,100,200,200")
+    w.ocr.dpi.setCurrentIndex(w.ocr.dpi.findData(300))   # 200 -> 300 dpi: nhân 1,5
+    assert w.ocr.crop.text() == "150,150,300,300"
+    assert w.ocr.options()["dpi"] == 300
+    w.close()

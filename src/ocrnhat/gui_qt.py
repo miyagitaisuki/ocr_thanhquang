@@ -50,10 +50,12 @@ class OcrWorker(QThread):
                 break
             self.file_state.emit(i, "Đang xử lý")
             try:
+                opts = dict(self.opts)
+                dpi = opts.pop("dpi", 200)   # DPI là tham số vị trí của process_file, không đi qua **opts
                 r = pipeline.process_file(
-                    f, self.out, 200, self.pages if f.suffix.lower() == ".pdf" else None,
+                    f, self.out, dpi, self.pages if f.suffix.lower() == ".pdf" else None,
                     progress=lambda d, t, m: self.progress.emit(d, t, m),
-                    cancel=lambda: self.cancel_requested, **self.opts)
+                    cancel=lambda: self.cancel_requested, **opts)
                 outputs.append((f, r))
                 self.file_state.emit(i, "Dừng" if self.cancel_requested else "Xong")
             except Exception as e:   # một file lỗi không làm dừng các file còn lại
@@ -251,6 +253,11 @@ class OcrPage(QWidget):
         agrid = QVBoxLayout(adv_body)
         QVBoxLayout(adv).addWidget(adv_body)
         self.upscale = QLineEdit("1")
+        self.dpi = QComboBox()
+        for value in (150, 200, 300):
+            self.dpi.addItem(f"{value} dpi", value)
+        self.dpi.setCurrentIndex(self.dpi.findData(SCAN_DPI))
+        self._dpi_prev = SCAN_DPI
         self.crop = QLineEdit()
         self.crop.setPlaceholderText("trái, trên, phải, dưới (pixel) · để trống = cả trang")
         self.kana = QComboBox()
@@ -261,7 +268,7 @@ class OcrPage(QWidget):
         self.review = QCheckBox("Tạo file so sánh để kiểm tra (*_review.html)")
         self.conf = QLineEdit("0.8")
         self.conf.setToolTip("Dòng có độ chắc chắn thấp hơn mức này sẽ bị tô đỏ trong file so sánh (mặc định 0,8).")
-        for label, widget in (("Phóng to ảnh", self.upscale), ("Chỉ đọc một vùng (tự điền khi kéo chuột)", self.crop),
+        for label, widget in (("Độ phân giải (DPI)", self.dpi), ("Phóng to ảnh", self.upscale), ("Chỉ đọc một vùng (tự điền khi kéo chuột)", self.crop),
                               ("Đọc bảng chữ kana (thử nghiệm)", self.kana)):
             agrid.addWidget(QLabel(label))
             agrid.addWidget(widget)
@@ -311,6 +318,7 @@ class OcrPage(QWidget):
         self.btn_prev.clicked.connect(lambda: self.crop_page.setValue(self.crop_page.value() - 1))
         self.btn_next.clicked.connect(lambda: self.crop_page.setValue(self.crop_page.value() + 1))
         self.btn_crop_clear.clicked.connect(lambda: self.crop.setText(""))
+        self.dpi.currentIndexChanged.connect(self._on_dpi_changed)
         self.crop_view.cropChanged.connect(lambda *r: self.crop.setText(",".join(map(str, r))))
         self.crop.textChanged.connect(self._sync_crop_view)
         self.crop_src.currentIndexChanged.connect(lambda _=0: self._load_crop_page())
@@ -420,12 +428,27 @@ class OcrPage(QWidget):
         self.crop_page.setMaximum(max(1, n))
         self.crop_page.blockSignals(False)
         self.page_badge.setText(f"Trang {self.crop_page.value()} / {max(1, n)}")
-        got = source_image(Path(path), self.crop_page.value())
+        dpi_now = self.dpi.currentData()
+        got = source_image(Path(path), self.crop_page.value(), dpi_now)
         self.crop_view.set_image(got[0], got[1], got[2]) if got else self.crop_view.set_image(None)
-        if got:   # thông tin ảnh theo đúng hệ tọa độ của pipeline (200 dpi với PDF, ảnh gốc với ảnh)
-            dpi = f"{SCAN_DPI} dpi" if path.lower().endswith(".pdf") else "ảnh gốc"
+        if got:   # thông tin ảnh theo đúng hệ tọa độ của pipeline (DPI đang chọn với PDF, ảnh gốc với ảnh)
+            dpi = f"{dpi_now} dpi" if path.lower().endswith(".pdf") else "ảnh gốc"
             self.image_info.setText(f"{Path(path).name}  ·  {dpi}  ·  {got[1]} × {got[2]} px")
         self._sync_crop_view()
+
+    def _on_dpi_changed(self, _i: int = 0):
+        """Đổi DPI thì tọa độ pixel đổi theo; nhân vùng cắt với tỉ lệ để giữ đúng phần trang đã chọn."""
+        new = self.dpi.currentData()
+        old = self._dpi_prev
+        self._dpi_prev = new
+        try:
+            rect = pipeline.parse_crop(self.crop.text())
+        except ValueError:
+            rect = None
+        if rect and old:
+            k = new / old
+            self.crop.setText(",".join(str(round(v * k)) for v in rect))
+        self._load_crop_page()
 
     def _sync_crop_view(self):
         try:
@@ -453,6 +476,7 @@ class OcrPage(QWidget):
         dev_map = L.dev_labels(gpu.ort_cuda_available())
         vals = {
             "conf": self.conf.text(), "upscale": self.upscale.text(), "crop": self.crop.text(),
+            "dpi": str(self.dpi.currentData()),
             "dev": dev_map[self.device.currentData()], "lang": L.LANG_LABELS[self.lang.currentData()],
             "engine": L.ENGINE_LABELS[self.engine.currentData()], "merge": L.MERGE_LABELS[self.merge.currentData()],
             "kana": L.KANA_LABELS[self.kana.currentData()],
@@ -527,7 +551,7 @@ class OcrPage(QWidget):
 
     _SAVED = ("txt", "marker", "ruby", "cell_reocr", "use_cache", "upscale", "crop", "pages", "out")
 
-    _COMBOS = ("engine", "device", "merge", "kana", "lang")   # lưu theo khóa, không theo nhãn
+    _COMBOS = ("engine", "device", "merge", "kana", "lang", "dpi")   # lưu theo khóa, không theo nhãn
 
     def _restore(self):
         saved = self.settings.get("qt_ocr", {})
