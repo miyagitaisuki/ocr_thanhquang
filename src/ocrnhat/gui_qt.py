@@ -9,7 +9,7 @@ import importlib.util
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton, QSplitter,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from . import gpu, gpupack, pipeline
 from . import ui_logic as L
 from .cli import collect
+from .gui_qt_pdf import MergeSection, SplitSection, ToolsSection
 
 gpupack.activate()   # trước khi đọc find_spec('chandra')
 
@@ -382,21 +383,6 @@ class OcrPage(QWidget):
         L.save_settings(self.settings)
 
 
-class PlaceholderPage(QWidget):
-    """Chỗ giữ cho các mục PDF, sẽ làm ở bước 3."""
-
-    def __init__(self, title: str):
-        super().__init__()
-        root = QVBoxLayout(self)
-        label = QLabel(f"{title}\n\nMục này sẽ được chuyển sang giao diện mới ở bước 3. "
-                       "Hiện dùng giao diện Tkinter (gui.py) cho các công cụ PDF.")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setWordWrap(True)
-        root.addStretch(1)
-        root.addWidget(label)
-        root.addStretch(1)
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -410,9 +396,11 @@ class MainWindow(QMainWindow):
             self.nav.addItem(QListWidgetItem(name))
         self.stack = QStackedWidget()
         self.ocr = OcrPage(self.settings)
-        self.stack.addWidget(self.ocr)
-        for name in SECTIONS[1:]:
-            self.stack.addWidget(PlaceholderPage(name))
+        self.split = SplitSection("Tách PDF", self.settings, "split")
+        self.merge = MergeSection("Ghép PDF", self.settings, "merge")
+        self.tools = ToolsSection("Công cụ khác", self.settings, "tools")
+        for page in (self.ocr, self.split, self.merge, self.tools):
+            self.stack.addWidget(page)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
 
@@ -422,16 +410,29 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 1)
         self.setCentralWidget(split)
 
+    def _busy_pages(self):
+        return [p for p in (self.ocr, self.split, self.merge, self.tools) if p.busy()]
+
     def closeEvent(self, event):
-        if self.ocr.busy():
+        if self._busy_pages():
             answer = QMessageBox.question(self, "Đang xử lý",
-                                          "Đang OCR. Đóng bây giờ sẽ dừng sau trang hiện tại; các trang đã đọc vẫn được lưu. Đóng?")
+                                          "Đang có việc chạy nền. Đóng bây giờ sẽ dừng sau file/trang hiện tại; "
+                                          "các file đã xong vẫn được giữ. Đóng?")
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-            self.ocr.request_stop()
-            self.ocr.worker.wait(30000)
+            for page in self._busy_pages():
+                page.stop_running()
+                if isinstance(page, ToolsSection) and page.watcher is not None:
+                    page.watcher.stop_event.set()
+                    page.watcher.wait(10000)
+                    page.watcher = None
+                if page.worker is not None:
+                    page.worker.wait(30000)
         self.ocr._save()
+        self.split._save()
+        self.merge._save()
+        self.tools._save()
         event.accept()
 
 

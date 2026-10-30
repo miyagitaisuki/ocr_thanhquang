@@ -56,3 +56,25 @@ def test_engine_problem_bao_thieu_model_va_ngon_ngu_sai():
 def test_engine_problem_ndlocr_khong_can_model():
     opts = L.read_options(_get({"engine": L.ENGINE_LABELS["ndlocr"]}))
     assert L.engine_problem(opts, {}.get) is None
+
+
+def test_split_value_theo_kieu_tach():
+    assert L.split_value("pages", "3") == 3
+    assert L.split_value("pages", "") == 1
+    assert L.split_value("size", "2.5") == 2.5
+    assert L.split_value("bookmark", "abc") is None
+    with pytest.raises(ValueError, match="phải là số"):
+        L.split_value("size", "abc")
+
+
+def test_image_quality_gioi_han_1_den_95():
+    assert L.image_quality(False, "abc") is None   # tắt nén ảnh thì không kiểm tra
+    assert L.image_quality(True, "75") == 75
+    for bad in ("0", "96", "x"):
+        with pytest.raises(ValueError, match="từ 1 đến 95"):
+            L.image_quality(True, bad)
+
+
+def test_name_or_dung_mac_dinh_khi_trong():
+    assert L.name_or("  ", "ghep") == "ghep"
+    assert L.name_or(" tong ", "ghep") == "tong"

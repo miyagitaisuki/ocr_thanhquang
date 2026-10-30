@@ -106,3 +106,37 @@ def engine_problem(opts: dict, cls_for: Callable[[str], Any]) -> str | None:
         return None
     ok, why = cls.is_available()
     return None if ok else f"Chưa dùng được {ENGINE_LABELS[key]} vì {why}"
+
+
+# ---------- Công cụ PDF ----------
+
+SPLIT_LABELS = {"pages": "Theo số trang", "bookmark": "Theo bookmark cấp 1", "size": "Theo dung lượng tối đa"}
+ROTATE_ANGLES = (90, 180, 270)
+
+
+def split_value(mode: str, raw: str) -> float | int | None:
+    """Giá trị cho Tách PDF: số trang (theo trang), MB (theo dung lượng), không dùng (bookmark)."""
+    if mode == "bookmark":
+        return None
+    try:
+        return int(raw.strip() or "1") if mode == "pages" else float(raw.strip())
+    except ValueError:
+        raise ValueError("Số trang hoặc dung lượng (MB) phải là số.") from None
+
+
+def image_quality(enabled: bool, raw: str) -> int | None:
+    """Chất lượng ảnh khi nén (1–95). Tắt nén lại ảnh thì trả None."""
+    if not enabled:
+        return None
+    try:
+        q = int(raw.strip())
+    except ValueError:
+        q = 0
+    if not 1 <= q <= 95:
+        raise ValueError("Chất lượng ảnh phải là số từ 1 đến 95.")
+    return q
+
+
+def name_or(raw: str, default: str) -> str:
+    """Tên file kết quả: để trống thì dùng tên mặc định."""
+    return raw.strip() or default
