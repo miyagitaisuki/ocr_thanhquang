@@ -72,9 +72,17 @@ def test_engine_chua_cai_thi_auto_khong_chon_chandra(monkeypatch):
 
 
 def test_khong_co_cuda_thi_chandra_khong_san_sang(monkeypatch):
-    # máy có NVIDIA nhưng torch bản CPU: không được chọn Chandra (chạy CPU quá chậm)
-    import torch
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    # máy có NVIDIA nhưng torch bản CPU: không được chọn Chandra (chạy CPU quá chậm).
+    # Giả lập chandra và torch để test không cần gói thật (CI không cài torch).
+    import importlib.util
+    import sys
+    import types
+    real_find = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a: object() if name == "chandra" else real_find(name, *a))
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
     ok, why = ChandraEngine.is_available()
     assert ok is False and "CUDA" in why
     assert resolve("auto")[0] == "ndlocr"
@@ -88,12 +96,16 @@ def test_auto_khong_chon_chandra_khi_khong_co_nvidia(monkeypatch):
 
 
 def test_model_downloaded_false_khi_chua_co_cache(monkeypatch):
-    import huggingface_hub
+    import sys
+    import types
     from ocrnhat.engines import chandra as ch
 
     def fake(**kw):
         raise FileNotFoundError("không có trong cache")
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake)
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.snapshot_download = fake
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setattr(ch, "model_repo", lambda: "datalab-to/chandra-ocr-2")
     assert ch.model_downloaded() is False
 
 
