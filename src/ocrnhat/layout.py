@@ -23,6 +23,17 @@ def _kana_core(text: str) -> str:
         return ""
     return _NOISE.sub("", text)
 _LATIN_WORD = re.compile(r"[A-Za-zÀ-ỹ]{3,}")
+# dòng mục lục: chuỗi dấu chấm dẫn và số trang ở cuối ('……012', '確認する 064')
+_LEADER_END = re.compile(r"(?:[.…‥･・]{2,}\s*\d*|\s+\d{2,4})\s*$")
+_LATIN_RUN = re.compile(r"[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ .,'’()\-]*")
+
+
+def _jp_part(text: str) -> str:
+    """Phần tiếng Nhật của một dòng: bỏ đoạn Latin, dấu chấm dẫn và số trang cuối dòng.
+    'Basics of inputting…………012' -> '' ; '日本語入力の基本Basics of inputting…012' -> '日本語入力の基本'."""
+    t = _LEADER_END.sub("", text.strip())
+    t = _LATIN_RUN.sub("", t)
+    return t.strip()
 _SENT_END = re.compile(r"[。！？!?」』）)]$")
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
 
@@ -43,6 +54,7 @@ class Para:
     size: float = 0
     conf: float = 1.0
     ruby: list = field(default_factory=list)   # [(bắt đầu, kết thúc, cách đọc)] theo chỉ số ký tự của text
+    toc: bool = False                          # dòng mục lục (có dấu chấm dẫn): không nối với đoạn khác
 
 
 @dataclass
@@ -126,12 +138,17 @@ class _Filter:
 
     def keep(self, l: Line, table: bool = False) -> bool:
         t = l.text.strip()
-        if not t or self.furigana(l) or _LATIN_WORD.search(t):
+        if not t or self.furigana(l):
             return False
-        if _JP.search(t):
-            return jp_ratio(t) >= 0.6
-        return (table and l.conf >= 0.7 and (not self.ref or l.size >= 0.85 * self.ref)
-                and bool(re.fullmatch(r"[\d０-９.,・\-～~:：/／()（）%％]+", t)))
+        if table:   # ô bảng giữ nguyên quy tắc cũ: dòng có từ Latin bị loại hẳn
+            if _LATIN_WORD.search(t):
+                return False
+            if _JP.search(t):
+                return jp_ratio(t) >= 0.6
+            return (l.conf >= 0.7 and (not self.ref or l.size >= 0.85 * self.ref)
+                    and bool(re.fullmatch(r"[\d０-９.,・\-～~:：/／()（）%％]+", t)))
+        jp = _jp_part(t)   # đoạn văn: giữ phần tiếng Nhật của dòng hỗn hợp, bỏ phần Latin
+        return bool(_JP.search(jp)) and jp_ratio(jp) >= 0.6
 
 
 # ---------- đoạn văn ----------
@@ -178,7 +195,7 @@ def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Pa
     for o, it in items:
         if out and isinstance(it, Para) and isinstance(out[-1][1], Para):
             a: Para = out[-1][1]
-            if (a.kind == "body" and it.kind == "body" and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
+            if (a.kind == "body" and it.kind == "body" and not a.toc and not it.toc and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
                     and abs(it.x - a.x) < 1.2 * a.size and -0.5 * a.size < it.y - a.y1 < 1.6 * a.size):
                 a.ruby += [(s + len(a.text), e + len(a.text), r) for s, e, r in it.ruby]; a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
                 continue
@@ -190,6 +207,9 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
     ls = sorted((l for l in block.lines if flt.keep(l)), key=lambda l: l.order)
     if not ls:
         return []
+    toc = {id(l) for l in ls if _LEADER_END.search(l.text)}   # dòng mục lục: mỗi dòng là một mục riêng
+    for l in ls:
+        l.text = _jp_part(l.text)   # chỉ giữ tiếng Nhật trong đoạn văn (xem keep)
     H = statistics.median(l.size for l in ls) or 1
     # tiêu đề: khối ngắn, nhãn tiêu đề hoặc chữ lớn, không kết thúc bằng 。
     text_all = "".join(l.text for l in ls)
@@ -201,8 +221,8 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
     left = min(l.x for l in ls); right = max(l.x1 for l in ls)
     paras: list[list[Line]] = []
     for l in ls:
-        new = not paras
-        if paras:
+        new = not paras or id(l) in toc
+        if paras and not new:
             p = paras[-1][-1]
             if not l.vertical and not p.vertical:
                 if l.x - left > 0.6 * H: new = True
@@ -210,7 +230,12 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
                 elif _BULLET.match(l.text): new = True
         if new: paras.append([l])
         else: paras[-1].append(l)
-    return [_mk(g, "body", flt) for g in paras]
+    out = []
+    for g in paras:
+        para = _mk(g, "body", flt)
+        para.toc = any(id(l) in toc for l in g)
+        out.append(para)
+    return out
 
 
 # ---------- bảng ----------
