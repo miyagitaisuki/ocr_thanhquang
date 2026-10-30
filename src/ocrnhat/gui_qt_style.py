@@ -54,6 +54,7 @@ QPushButton#runBtn:disabled { background: #9CA3AF; }
 QPushButton#dangerBtn { color: @danger@; }
 QListWidget#files { background: @field@; border: 1px solid @border@; border-radius: 10px; }
 QListWidget#files::item { border-bottom: 1px solid @border@; }
+QLabel#dropzone { border: 1px dashed @border@; border-radius: 10px; color: @muted@; padding: 8px; }
 QLabel#pdfIcon { background: @pdf_bg@; color: @pdf_fg@; border-radius: 8px; font-weight: bold; font-size: 11px; }
 QLabel#badge { background: @accent_soft@; color: @accent@; border-radius: 8px; padding: 3px 9px; font-weight: 600; }
 QLabel#pill { border-radius: 10px; padding: 3px 10px; font-weight: 600; }

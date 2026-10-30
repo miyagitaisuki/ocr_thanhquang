@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from . import gpu, gpupack, pipeline
 from . import ui_logic as L
 from .cli import collect
-from .gui_qt_extra import ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
+from .gui_qt_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
 from .gui_qt_style import APP_NAME, state_key
 from .gui_qt_pdf import MergeSection, SplitSection, ToolsSection
 
@@ -158,6 +158,11 @@ class OcrPage(QWidget):
             bar.addWidget(b)
         bar.addStretch(1)
         fb.addLayout(bar)
+        drop = QLabel("Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file”")
+        drop.setObjectName("dropzone")
+        drop.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        drop.setMinimumHeight(44)
+        fb.addWidget(drop)
         self.listing = FileList()
         self.listing.setObjectName("files")
         self.listing.setMinimumHeight(150)
@@ -179,6 +184,9 @@ class OcrPage(QWidget):
         pv.addLayout(head)
         self.crop_view = PageView(mode="crop", min_size=(300, 260))
         pv.addWidget(self.crop_view, 1)
+        self.image_info = QLabel("")
+        self.image_info.setObjectName("hint")
+        pv.addWidget(self.image_info)
         hint = QLabel("Kéo chuột trên ảnh để chọn vùng áp dụng OCR (mọi trang, mọi file trong danh sách).")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
@@ -400,6 +408,7 @@ class OcrPage(QWidget):
         path = self.crop_src.currentData()
         if not path:
             self.page_badge.setText("Chưa có file")
+            self.image_info.setText("")
             self.crop_view.set_image(None)
             self._sync_crop_view()
             return
@@ -413,6 +422,9 @@ class OcrPage(QWidget):
         self.page_badge.setText(f"Trang {self.crop_page.value()} / {max(1, n)}")
         got = source_image(Path(path), self.crop_page.value())
         self.crop_view.set_image(got[0], got[1], got[2]) if got else self.crop_view.set_image(None)
+        if got:   # thông tin ảnh theo đúng hệ tọa độ của pipeline (200 dpi với PDF, ảnh gốc với ảnh)
+            dpi = f"{SCAN_DPI} dpi" if path.lower().endswith(".pdf") else "ảnh gốc"
+            self.image_info.setText(f"{Path(path).name}  ·  {dpi}  ·  {got[1]} × {got[2]} px")
         self._sync_crop_view()
 
     def _sync_crop_view(self):
@@ -611,6 +623,10 @@ class MainWindow(QMainWindow):
         self.run_btn.setObjectName("runBtn")
         head = QHBoxLayout()
         head.addWidget(self.page_title)
+        self.file_badge = QLabel("")
+        self.file_badge.setObjectName("badge")
+        self.file_badge.setVisible(False)   # hiện khi có file (xem _refresh_sys_status)
+        head.addWidget(self.file_badge)
         head.addStretch(1)
         head.addWidget(self.run_btn)
         self.stack = QStackedWidget()
@@ -656,6 +672,9 @@ class MainWindow(QMainWindow):
     def _refresh_sys_status(self):
         busy = bool(self._busy_pages())
         self.sys_status.setText("Đang xử lý…" if busy else "Sẵn sàng hoạt động")
+        n = len(self.ocr.files)
+        self.file_badge.setText(f"{n} tệp" if n else "")
+        self.file_badge.setVisible(self.stack.currentIndex() == 0 and n > 0)
 
     def _save_view(self):
         L.save_settings(self.settings)

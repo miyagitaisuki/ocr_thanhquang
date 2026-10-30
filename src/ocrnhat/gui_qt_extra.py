@@ -91,7 +91,7 @@ class PageView(QWidget):
         self.crop: tuple[int, int, int, int] | None = None
         self._drag: tuple[tuple[float, float], tuple[float, float]] | None = None
         self.setMinimumSize(*min_size)
-        self.setStyleSheet("background: #808080;")
+        self.label = ""   # chữ nhãn vẽ trên vùng chọn (chế độ crop), ví dụ "Vùng chọn OCR 01 (…)"
 
     def set_image(self, img: QImage | None, w: int = 0, h: int = 0):
         self.image, self.full = img, (w, h)
@@ -122,9 +122,16 @@ class PageView(QWidget):
         return (pos.x() - ox) / sc, (pos.y() - oy) / sc
 
     def paintEvent(self, _e):
-        from PySide6.QtGui import QPainter, QPen, QColor
+        from PySide6.QtGui import QPainter, QPen, QColor, QBrush
         from PySide6.QtCore import QRectF
         p = QPainter(self)
+        if self.mode == "crop":   # nền lưới tối như khung xem trước của thiết kế
+            p.fillRect(self.rect(), QColor("#2B313B"))
+            p.setPen(QPen(QColor("#3A4250"), 1))
+            for gx in range(0, self.width(), 24):
+                p.drawLine(gx, 0, gx, self.height())
+            for gy in range(0, self.height(), 24):
+                p.drawLine(0, gy, self.width(), gy)
         if self.image is None:
             p.setPen(QColor("#EEEEEE"))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Chưa có ảnh trang để xem.")
@@ -147,7 +154,16 @@ class PageView(QWidget):
         if rect and self.mode == "crop":
             x0, y0, x1, y1 = rect
             p.setPen(QPen(QColor("#F2A03D"), 3))
-            p.drawRect(QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc))
+            box = QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc)
+            p.setBrush(QBrush(QColor(242, 160, 61, 40)))
+            p.drawRect(box)
+            p.setPen(QPen(QColor("#F2A03D"), 1))
+            p.setBrush(QBrush(QColor("#F2A03D")))
+            chip = f"Vùng chọn OCR 01 ({x0}, {y0}, {x1}, {y1})"
+            fm = p.fontMetrics()
+            p.drawRect(QRectF(box.x(), box.y() - 20, fm.horizontalAdvance(chip) + 14, 18))
+            p.setPen(QPen(QColor("#FFFFFF")))
+            p.drawText(QRectF(box.x() + 7, box.y() - 20, 2000, 18), Qt.AlignmentFlag.AlignVCenter, chip)
         p.end()
 
     def mousePressEvent(self, e):
