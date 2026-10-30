@@ -84,6 +84,11 @@ def _pick_font() -> str | None:
     return None
 
 
+def _sc(widget, px: int) -> int:
+    """Đổi kích thước thiết kế (px ở 96 DPI) sang pixel thật theo DPI màn hình (Tk scaling)."""
+    return max(1, round(px * widget.tk.call("tk", "scaling") / (96 / 72)))
+
+
 def _hex(c: str) -> tuple:
     return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
 
@@ -133,14 +138,14 @@ class GradientButton(tk.Canvas):
     def __init__(self, master, text: str = "", command=None, state: str = "normal", style: str = "",
                  width: int | None = None, icon: str | None = None, **_):
         self._bg = _parent_bg(master)
-        super().__init__(master, height=self.HEIGHT, highlightthickness=0, bd=0, bg=self._bg, cursor="hand2")
+        super().__init__(master, height=_sc(master, self.HEIGHT), highlightthickness=0, bd=0, bg=self._bg, cursor="hand2")
         self._text, self._command, self._state = text, command, state
         self._variant = ("run" if style.startswith("Run") else "accent" if style.startswith("Accent")
                          else "danger" if style.startswith("Danger") else "run_soft" if style.startswith("Soft")
                          else "neutral")
         self._icon = icon   # "stop": hình vuông trắng; "search": kính lúp
         self._font = tkfont.nametofont("TkDefaultFont")
-        self._fixed_w = width
+        self._fixed_w = _sc(master, width) if width else None
         self._hover = self._down = False
         self._apply_width()
         self.bind("<Configure>", lambda e: self._draw())
@@ -182,7 +187,7 @@ class GradientButton(tk.Canvas):
         self.delete("all")
         w, h = max(1, self.winfo_width()), max(1, self.winfo_height())
         top, bot, fg = self._colors()
-        r = min(self.RADIUS, h // 2, w // 2)
+        r = min(_sc(self, self.RADIUS), h // 2, w // 2)
         for y in range(h):
             yc = y + 0.5   # bo góc: thu hẹp mỗi dòng theo cung tròn ở đầu và cuối nút
             if yc < r:
@@ -435,8 +440,9 @@ class App(_CatMixin, _Base):
     def __init__(self):
         super().__init__()
         self.title("OCR-Nhat · nhiều ngôn ngữ")
-        self.geometry("960x820")
-        self.minsize(860, 600)
+        self.geometry(f"{_sc(self, 960)}x{_sc(self, 820)}")
+        self.minsize(_sc(self, 860), _sc(self, 600))
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.files: list[Path] = []
         self.statuses: list[str] = []
         self.results: list[tuple[Path, dict]] = []
@@ -477,11 +483,13 @@ class App(_CatMixin, _Base):
 
         self.nb = GradientNotebook(page)
         self.nb.pack(fill="both", expand=True)
+        self.tab_basic = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_src = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_proc = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_rev = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_res = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_pdf = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
+        self.nb.add(self.tab_basic, text="  Cơ bản  ")
         self.nb.add(self.tab_src, text="  Tài liệu  ")
         self.tab_ai = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.nb.add(self.tab_proc, text="  Tùy chọn  ")
@@ -490,6 +498,7 @@ class App(_CatMixin, _Base):
         self.nb.add(self.tab_res, text="  Kết quả  ")
         self.nb.add(self.tab_pdf, text="  Công cụ PDF  ")
         self._tab_sources()
+        self._tab_basic()
         self._tab_process()
         self._tab_review()
         self._tab_results()
@@ -565,7 +574,7 @@ class App(_CatMixin, _Base):
         self.pb.pack(fill="x", pady=(0, 4))
         self._cat_init(top, before=self.pb)
         self.status = tk.StringVar(value="Sẵn sàng.")
-        ttk.Label(top, textvariable=self.status, style="Status.TLabel", wraplength=880, justify="left").pack(fill="x")
+        ttk.Label(top, textvariable=self.status, style="Status.TLabel", wraplength=_sc(self, 880), justify="left").pack(fill="x")
 
     def _shortcuts(self):
         self.bind("<Control-o>", lambda e: self.add_files())
@@ -618,7 +627,7 @@ class App(_CatMixin, _Base):
         Tip(b_out, "Chọn thư mục lưu kết quả. Để trống thì lưu cạnh file gốc.")
         self.out_hint = tk.StringVar()
         self._var("out", "").trace_add("write", lambda *_: self._update_out_hint())
-        ttk.Label(out, textvariable=self.out_hint, style="Hint.TLabel", wraplength=900, justify="left").grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Label(out, textvariable=self.out_hint, style="Hint.TLabel", wraplength=_sc(self, 900), justify="left").grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=INPUT_W))
         ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         cb_mg = ttk.Combobox(out, textvariable=self._var("merge", self.MERGE_LABELS[True]), values=list(self.MERGE_LABELS.values()),
@@ -635,6 +644,29 @@ class App(_CatMixin, _Base):
         Tip(cb_t, "Tạo thêm file .txt thuần (dán được vào phần mềm khác).")
         Tip(cb_r, "Chữ phiên âm nhỏ (furigana) hiện phía trên chữ Hán. Mặc định: bỏ.")
         out.columnconfigure(1, weight=1)
+
+    def _tab_basic(self):
+        """Màn hình đơn giản: thêm file, chọn ngôn ngữ, thư mục lưu, bấm Chạy. Dùng chung biến với các tab khác."""
+        card = self._card(self.tab_basic, "Bắt đầu nhanh")
+        bar = ttk.Frame(card, style="Card.TFrame")
+        bar.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        GradientButton(bar, text="Thêm file…", command=self.add_files).pack(side="left")
+        GradientButton(bar, text="Thêm thư mục…", command=self.add_dir).pack(side="left", padx=6)
+        self.basic_count = tk.StringVar()
+        ttk.Label(bar, textvariable=self.basic_count, style="Muted.TLabel").pack(side="left", padx=12)
+        basic_langs = [self.LANG_LABELS[k] for k in ("ja", "en", "zh", "vi")]
+        self._row(card, 1, "Ngôn ngữ", ttk.Combobox(card, textvariable=self._var("lang", self.LANG_LABELS["ja"]),
+                                                    values=basic_langs, state="readonly", width=INPUT_W))
+        ttk.Label(card, text="Tiếng Nhật dùng NDLOCR. Công cụ khác và chỉnh sâu ở tab Tùy chọn.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        self._row(card, 2, "Thư mục lưu", ttk.Entry(card, textvariable=self._var("out", ""), width=INPUT_W))
+        GradientButton(card, text="Chọn…", command=self.pick_out).grid(row=2, column=2, sticky="w", padx=(8, 0), pady=4)
+        ttk.Label(card, text="Để trống: lưu cạnh file gốc.", style="Hint.TLabel").grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        run = ttk.Frame(card, style="Card.TFrame")
+        run.grid(row=4, column=0, columnspan=3, sticky="w", pady=(14, 0))
+        GradientButton(run, text="▶  Chạy OCR", style="Run.TButton", command=self.start, width=HEADER_BTN_W).pack(side="left")
+        ttk.Label(run, text="Tiến trình và nhật ký hiện ở đầu cửa sổ.", style="Hint.TLabel").pack(side="left", padx=12)
+        card.columnconfigure(1, weight=1)
+        self._refresh_list()
 
     def _tab_process(self):
         # mẫu tài liệu: đặt sẵn tùy chọn theo loại tài liệu
@@ -1198,7 +1230,7 @@ class App(_CatMixin, _Base):
         sp.bind("<Return>", lambda e: self._preview_refresh())
         body = ttk.Frame(prev, style="Card.TFrame")
         body.pack(fill="both", expand=True)
-        self.prev_img = tk.Canvas(body, width=420, height=360, background=self.pal["FIELD"], highlightthickness=0)
+        self.prev_img = tk.Canvas(body, width=_sc(self, 420), height=_sc(self, 360), background=self.pal["FIELD"], highlightthickness=0)
         self.prev_img.pack(side="left")
         self.prev_text = tk.Text(body, width=50, height=18, wrap="char", background=self.pal["FIELD"],
                                  foreground=self.pal["TEXT"], relief="flat", padx=8, pady=6)
@@ -1224,7 +1256,7 @@ class App(_CatMixin, _Base):
         s.configure("Card.TLabel", background=pal["CARD"], foreground=pal["TEXT"])
         s.configure("Card.TCheckbutton", background=pal["CARD"], foreground=pal["TEXT"])
         s.configure("Muted.TLabel", background=pal["CARD"], foreground=pal["MUTED"])
-        s.configure("Hint.TLabel", background=pal["CARD"], foreground=pal["MUTED"], wraplength=380)   # gợi ý cột phải tự xuống dòng
+        s.configure("Hint.TLabel", background=pal["CARD"], foreground=pal["MUTED"], wraplength=_sc(self, 380))   # gợi ý cột phải tự xuống dòng
         s.configure("Status.TLabel", background=pal["BG"], foreground=pal["TEXT"])
         s.configure("TNotebook", background=pal["BG"], borderwidth=0)
         s.configure("TNotebook.Tab", padding=(14, 6), background=pal["HEAD"], foreground=pal["TEXT"])
@@ -1245,6 +1277,11 @@ class App(_CatMixin, _Base):
         s.configure("Treeview.Heading", background=pal["HEAD"], foreground=pal["TEXT"], relief="flat", padding=(8, 4))
         s.map("Treeview", background=[("selected", pal["SEL"])], foreground=[("selected", pal["TEXT"])])
         s.configure("Accent.Horizontal.TProgressbar", background=pal["ACCENT"], troughcolor=pal["TROUGH"], bordercolor=pal["BG"])
+        # danh sách thả xuống của ô chọn: ttk không đổi được màu, phải đặt qua option database (theo nền tối/sáng)
+        self.option_add("*TCombobox*Listbox.background", pal["FIELD"])
+        self.option_add("*TCombobox*Listbox.foreground", pal["TEXT"])
+        self.option_add("*TCombobox*Listbox.selectBackground", pal["SEL"])
+        self.option_add("*TCombobox*Listbox.selectForeground", pal["TEXT"])
 
     def _card(self, parent, title: str) -> ttk.Frame:
         """Khối tùy chọn: nền thẻ, viền mảnh, tiêu đề đậm ở đầu."""
@@ -1255,14 +1292,27 @@ class App(_CatMixin, _Base):
         ttk.Label(box, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
         body = ttk.Frame(box, style="Card.TFrame")   # phần thân dùng grid, tách khỏi tiêu đề dùng pack
         body.pack(fill="both", expand=True)
-        body.columnconfigure(1, minsize=INPUT_PX)   # cột ô nhập không bị co về 0 khi nhãn gợi ý dài
+        body.columnconfigure(1, minsize=_sc(body, INPUT_PX))   # cột ô nhập không bị co về 0 khi nhãn gợi ý dài
         return body
 
     def _var(self, name: str, default):
-        """Biến Tk theo tên, tạo một lần."""
+        """Biến Tk theo tên, tạo một lần. Giá trị đã lưu lần trước (settings.json, mục vars) được khôi phục."""
         if name not in self._vars:
-            self._vars[name] = tk.StringVar(value=default) if isinstance(default, str) else tk.BooleanVar(value=default)
+            saved = self.settings.get("vars", {}).get(name, default)
+            if isinstance(default, str):
+                self._vars[name] = tk.StringVar(value=saved if isinstance(saved, str) else default)
+            else:
+                self._vars[name] = tk.BooleanVar(value=saved if isinstance(saved, bool) else default)
         return self._vars[name]
+
+    def _save_vars(self):
+        """Ghi mọi ô tùy chọn vào settings.json. Gọi khi đóng cửa sổ và khi bắt đầu OCR."""
+        self.settings["vars"] = {k: v.get() for k, v in self._vars.items()}
+        save_settings(self.settings)
+
+    def _on_close(self):
+        self._save_vars()
+        self.destroy()
 
     def _row(self, parent, row: int, label: str, widget):
         """Hàng nhãn + ô nhập. Bố cục dùng grid nên mọi khối cùng một cột nhãn."""
@@ -1307,6 +1357,8 @@ class App(_CatMixin, _Base):
     def _refresh_list(self):
         n = len(self.files)
         self.count.set(f"{n} file" if n else "Chưa có file nào")
+        if hasattr(self, "basic_count"):   # tab Cơ bản có thể chưa dựng khi danh sách được làm mới lần đầu
+            self.basic_count.set(f"{n} file đã chọn" if n else "Chưa chọn file nào")
         if n:
             self.empty.place_forget()
         else:
@@ -1420,20 +1472,22 @@ class App(_CatMixin, _Base):
             crop = pipeline.parse_crop(self._var("crop", "").get())
         except ValueError as e:
             raise ValueError("Vùng cắt sai. Nhập theo thứ tự: trái, trên, phải, dưới (pixel).") from None
-        dev = next(k for k, v in self.DEV_LABELS.items() if v == self._var("dev", "").get())
-        lang = next(k for k, v in self.LANG_LABELS.items() if v == self._var("lang", self.LANG_LABELS["ja"]).get())
+        dev = next((k for k, v in self.DEV_LABELS.items() if v == self._var("dev", "").get()), "auto")
+        lang = next((k for k, v in self.LANG_LABELS.items() if v == self._var("lang", self.LANG_LABELS["ja"]).get()), "ja")
         return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(), lang=lang,
                     device=dev, ruby=self._var("ruby", False).get(),
                     review=self._var("review", False).get(), conf_threshold=conf,
                     engine=self._engine_key(), crop=crop, upscale=upscale,
                     merge_pages=self._var("merge", self.MERGE_LABELS[True]).get() == self.MERGE_LABELS[True],
                     cell_reocr=self._var("cell_reocr", True).get(), use_cache=self._var("use_cache", True).get(),
-                    kana_reader=next(k for k, v in self.KANA_LABELS.items() if v == self._var("kana", "").get()))
+                    kana_reader=next((k for k, v in self.KANA_LABELS.items() if v == self._var("kana", "").get()), ""))
 
     def _engine_problem(self, opts: dict) -> str | None:
         """Lý do công cụ đã chọn chưa dùng được (thiếu model), None nếu chạy được."""
         from .engines import paddle, viet
         key, lang = opts["engine"], opts["lang"]
+        if lang not in self.ENGINE_LANGS.get(key, ()):   # ô Ngôn ngữ ở tab Cơ bản dùng chung biến với tab Tùy chọn
+            return f"{self.ENGINE_LABELS[key]} không đọc được {self.LANG_LABELS[lang]}. Hãy chọn công cụ hoặc ngôn ngữ khác."
         if key == "auto":   # auto chỉ kiểm các công cụ cần model; tiếng Nhật và mọi ngôn ngữ để engine tự chọn
             key = {"en": "paddle", "zh": "paddle", "vi": "ocr_vi"}.get(lang)
         cls = {"paddle": paddle.PaddleEngine, "ocr_vi": viet.VietnameseEngine}.get(key)
@@ -1460,6 +1514,7 @@ class App(_CatMixin, _Base):
             self.nb.select(self.tab_ai)
             messagebox.showwarning("OCR", why + "\nTab Mô hình AI đã mở để tải mô hình, hoặc chọn công cụ khác.")
             return
+        self._save_vars()
         self.statuses = ["Chờ"] * len(self.files)
         self._redraw()
         self.results = []
@@ -1545,11 +1600,11 @@ class App(_CatMixin, _Base):
         from .engines.chandra import download_model
         try:
             download_model(progress=lambda d, t: self.q.put(("dl_prog", (d, t))))
-            msg = "Đã tải xong mô hình Chandra."
+            ok, msg = True, "Đã tải xong mô hình Chandra."
         except Exception as e:
             log.exception("Lỗi tải mô hình Chandra")
-            msg = f"Tải mô hình thất bại: {e}"
-        self.q.put(("dl", msg))
+            ok, msg = False, f"Tải mô hình thất bại: {e}"
+        self.q.put(("dl", (ok, msg)))
 
     # ---------- kết quả và xem trước ----------
 
@@ -1630,9 +1685,10 @@ class App(_CatMixin, _Base):
             log.exception("Không vẽ được bản xem trước %s", f)
             return
         from PIL import ImageTk
-        img.thumbnail((420, 360))
+        pw, ph = _sc(self, 420), _sc(self, 360)
+        img.thumbnail((pw, ph))
         self._photo = ImageTk.PhotoImage(img)
-        self.prev_img.create_image(210, 180, image=self._photo)
+        self.prev_img.create_image(pw // 2, ph // 2, image=self._photo)
 
     # ---------- nhận tin từ luồng nền ----------
 
@@ -1662,7 +1718,8 @@ class App(_CatMixin, _Base):
                     self.dl_pb["value"] = 100 * d / max(1, t)
                     self.dl_status.set(f"Đang tải mô hình Chandra: {d * 100 // max(1, t)}% ({d // 2**20} / {t // 2**20} MB)")
                 elif k == "dl":
-                    self.dl_status.set(v); self.dl_pb["value"] = 100 if "xong" in v else 0
+                    ok, text = v
+                    self.dl_status.set(text); self.dl_pb["value"] = 100 if ok else 0
                     self.dl_btn.config(state="normal")
                 elif k == "model_prog":
                     self._on_model_progress(*v)
