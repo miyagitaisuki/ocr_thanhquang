@@ -7,7 +7,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
-import math
 import os
 import queue
 import subprocess
@@ -19,6 +18,7 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from . import gpu, gpupack, pdf_extract as pe, pdf_ops, pipeline, textview
 from .cli import collect
+from .widgets import GradientButton, GradientNotebook, Spinner, Tip, _CatMixin, _sc
 
 gpupack.activate()   # trước khi App.ENGINES đọc find_spec('chandra')
 
@@ -84,340 +84,6 @@ def _pick_font() -> str | None:
     return None
 
 
-def _sc(widget, px: int) -> int:
-    """Đổi kích thước thiết kế (px ở 96 DPI) sang pixel thật theo DPI màn hình (Tk scaling)."""
-    return max(1, round(px * widget.tk.call("tk", "scaling") / (96 / 72)))
-
-
-def _hex(c: str) -> tuple:
-    return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
-
-
-def _mix(a: str, b: str, t: float) -> str:
-    """Trộn màu a về phía b (t = 0..1)."""
-    return "#%02X%02X%02X" % tuple(round(x + (y - x) * t) for x, y in zip(_hex(a), _hex(b)))
-
-
-def _lum(c: str) -> float:
-    r, g, b = _hex(c)
-    return 0.299 * r + 0.587 * g + 0.114 * b
-
-
-def _parent_bg(widget) -> str:
-    """Màu nền của khung chứa gần nhất, để nút khớp nền (ttk không cho đọc trực tiếp)."""
-    style = ttk.Style()
-    w = widget
-    while w is not None:
-        cls = w.winfo_class()
-        if cls in ("TFrame", "TLabelframe"):
-            bg = style.lookup(str(w.cget("style")) or cls, "background")
-        elif cls in ("Frame", "Canvas", "Tk", "Toplevel"):
-            bg = w.cget("background")
-        else:
-            bg = ""
-        if bg:
-            return bg
-        w = w.master
-    return "#F4F5F7"
-
-
-class GradientButton(tk.Canvas):
-    """Nút chức năng có gradient dọc (ttk không hỗ trợ gradient). API giống ttk.Button: text, command, state, style.
-
-    style "Run.TButton" -> xanh lá (Chạy OCR), "Accent.TButton" -> xanh dương, còn lại trung tính theo nền.
-    width (px) đặt chiều rộng cố định; không đặt thì theo độ dài chữ.
-    """
-
-    VARIANTS = {"run": ("#34B25C", "#1B5E20", "#FFFFFF"), "accent": ("#5B9BFF", "#1F6FEB", "#FFFFFF"),
-                "danger": ("#F2625C", "#B71C1C", "#FFFFFF"),
-                "run_soft": ("#7FCB92", "#3E9A55", "#FFFFFF")}   # tab không được chọn: xanh nhạt hơn
-    HEIGHT = 32
-    RADIUS = 8   # bán kính góc bo tròn (px)
-    ICON_W, ICON_GAP = 16, 8
-
-    def __init__(self, master, text: str = "", command=None, state: str = "normal", style: str = "",
-                 width: int | None = None, icon: str | None = None, **_):
-        self._bg = _parent_bg(master)
-        super().__init__(master, height=_sc(master, self.HEIGHT), highlightthickness=0, bd=0, bg=self._bg, cursor="hand2")
-        self._text, self._command, self._state = text, command, state
-        self._variant = ("run" if style.startswith("Run") else "accent" if style.startswith("Accent")
-                         else "danger" if style.startswith("Danger") else "run_soft" if style.startswith("Soft")
-                         else "neutral")
-        self._icon = icon   # "stop": hình vuông trắng; "search": kính lúp
-        self._font = tkfont.nametofont("TkDefaultFont")
-        self._fixed_w = _sc(master, width) if width else None
-        self._hover = self._down = False
-        self._apply_width()
-        self.bind("<Configure>", lambda e: self._draw())
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<ButtonPress-1>", self._press)
-        self.bind("<ButtonRelease-1>", self._release)
-        self._draw()
-
-    def set_variant(self, variant: str):
-        self._variant = variant
-        self._draw()
-
-    def _apply_width(self):
-        extra = (self.ICON_W + self.ICON_GAP) if self._icon else 0
-        tk.Canvas.configure(self, width=self._fixed_w or self._font.measure(self._text) + 36 + extra)
-
-    def _colors(self) -> tuple[str, str, str]:
-        """(đỉnh, đáy, chữ) theo biến thể, trạng thái và nền."""
-        light = _lum(self._bg) > 128
-        if self._state == "disabled" and self._variant == "danger":   # Dừng: đỏ nhạt, vẫn nhận ra là nút dừng
-            return "#E8776F", "#C2453F", "#FFFFFF"
-        if self._state == "disabled":
-            top, bot, fg = ("#D9DDE3", "#C5CAD2", "#8A919C") if light else ("#3D434C", "#30353C", "#6B7280")
-            return top, bot, fg
-        if self._variant == "neutral":
-            top = _mix(self._bg, "#FFFFFF", 0.75 if light else 0.18)
-            bot = _mix(self._bg, "#000000", 0.14 if light else 0.35)
-            fg = "#1F2328" if light else "#E6E8EC"
-        else:
-            top, bot, fg = self.VARIANTS[self._variant]
-        if self._down:
-            top, bot = _mix(top, "#000000", 0.15), _mix(bot, "#000000", 0.15)
-        elif self._hover:
-            top, bot = _mix(top, "#FFFFFF", 0.12), _mix(bot, "#FFFFFF", 0.12)
-        return top, bot, fg
-
-    def _draw(self):
-        self.delete("all")
-        w, h = max(1, self.winfo_width()), max(1, self.winfo_height())
-        top, bot, fg = self._colors()
-        r = min(_sc(self, self.RADIUS), h // 2, w // 2)
-        for y in range(h):
-            yc = y + 0.5   # bo góc: thu hẹp mỗi dòng theo cung tròn ở đầu và cuối nút
-            if yc < r:
-                inset = r - math.sqrt(max(0.0, r * r - (r - yc) ** 2))
-            elif yc > h - r:
-                inset = r - math.sqrt(max(0.0, r * r - (yc - (h - r)) ** 2))
-            else:
-                inset = 0
-            self.create_line(inset, y, w - inset, y, fill=_mix(top, bot, y / max(1, h - 1)))
-        icon_w = (self.ICON_W + self.ICON_GAP) if self._icon else 0
-        x0 = (w - icon_w - self._font.measure(self._text)) / 2
-        if self._icon:
-            self._draw_icon(x0, h / 2, fg)
-        self.create_text(x0 + icon_w, h / 2, text=self._text, fill=fg, font=self._font, anchor="w")
-
-    def _draw_icon(self, x: float, cy: float, color: str):
-        if self._icon == "stop":
-            self.create_rectangle(x + 2, cy - 6, x + 13, cy + 5, fill=color, outline="")
-        elif self._icon == "search":
-            self.create_oval(x + 1, cy - 8, x + 11, cy + 2, outline=color, width=2)
-            self.create_line(x + 9, cy + 1, x + 14, cy + 6, fill=color, width=3, capstyle="round")
-
-    def configure(self, cnf=None, **kw):
-        kw = dict(cnf or {}, **kw)
-        if "text" in kw:
-            self._text = kw.pop("text")
-            if self._fixed_w is None:
-                self._apply_width()
-        if "state" in kw:
-            self._state = kw.pop("state")
-        if "command" in kw:
-            self._command = kw.pop("command")
-        if kw:
-            tk.Canvas.configure(self, **kw)
-        self._draw()
-
-    config = configure
-
-    def cget(self, key):
-        if key == "text":
-            return self._text
-        if key == "state":
-            return self._state
-        return tk.Canvas.cget(self, key)
-
-    def _on_enter(self, _e):
-        if self._state != "disabled":
-            self._hover = True
-            self._draw()
-
-    def _on_leave(self, _e):
-        self._hover = self._down = False
-        self._draw()
-
-    def _press(self, _e):
-        if self._state != "disabled":
-            self._down = True
-            self._draw()
-
-    def _release(self, _e):
-        if self._state == "disabled":
-            return
-        fire = self._down and self._hover
-        self._down = False
-        self._draw()
-        if fire and self._command:
-            self._command()
-
-
-class GradientNotebook(tk.Frame):
-    """Thanh tab bo tròn, gradient xanh như nút Chạy OCR. Chỉ có add() và select() như ttk.Notebook."""
-
-    def __init__(self, master, **_):
-        super().__init__(master, bg=_parent_bg(master), highlightthickness=0, bd=0)
-        self._bar = tk.Frame(self, bg=self["bg"], highlightthickness=0, bd=0)
-        self._bar.pack(fill="x", pady=(0, 10))
-        self._body = tk.Frame(self, bg=self["bg"], highlightthickness=0, bd=0)
-        self._body.pack(fill="both", expand=True)
-        self._tabs: list[tuple[tk.Misc, GradientButton]] = []
-
-    def add(self, child, text: str = ""):
-        btn = GradientButton(self._bar, text=text.strip(), style="Soft.TButton",
-                             command=lambda c=child: self.select(c))
-        btn.pack(side="left", padx=(0, 8))
-        self._tabs.append((child, btn))
-        if len(self._tabs) == 1:
-            self.select(child)
-
-    def select(self, child):
-        for c, b in self._tabs:
-            b.set_variant("run" if c is child else "run_soft")
-            c.pack_forget()
-        child.pack(in_=self._body, fill="both", expand=True)
-
-    def tabs(self) -> list:
-        return [c for c, _ in self._tabs]
-
-
-CAT_ORANGE = "#F2A03D"
-
-
-class _CatMixin:
-    """Mèo chạy trên đường ray dưới thanh tiến trình. Vẽ bằng Canvas, không cần file ảnh.
-
-    Vị trí theo tiến trình OCR; chân đổi khung mỗi 130 ms khi đang chạy; về đích thì đứng cạnh cờ.
-    """
-
-    def _cat_init(self, parent, before):
-        """Vùng mèo nằm ngay trên thanh tiến trình; chân mèo chạm mép trên thanh."""
-        self.cat = tk.Canvas(parent, height=34, highlightthickness=0, bd=0, bg=_parent_bg(parent))
-        self.cat.pack(fill="x", pady=(10, 0), before=before)
-        self._cat_pos, self._cat_frame, self._cat_running, self._cat_job = 0.0, 0, False, None
-        self._cat_finished = False
-        self.cat.bind("<Configure>", lambda e: self._cat_draw())
-        self.after(50, self._cat_draw)
-
-    def _cat_start(self):
-        self._cat_pos, self._cat_finished = 0.0, False
-        self._cat_running = True
-        self._cat_loop()
-
-    def _cat_loop(self):
-        if not self._cat_running:
-            return
-        self._cat_frame ^= 1
-        self._cat_draw()
-        self._cat_job = self.after(130, self._cat_loop)
-
-    def _cat_move(self, frac: float):
-        self._cat_pos = max(0.0, min(1.0, frac))
-        self._cat_draw()
-
-    def _cat_stop(self):
-        """Hết việc: mèo về đích nếu không bị dừng giữa chừng."""
-        self._cat_running = False
-        if self._cat_job is not None:
-            self.after_cancel(self._cat_job)
-            self._cat_job = None
-        self._cat_finished = not self.cancel.is_set()
-        if self._cat_finished:
-            self._cat_pos = 1.0
-        self._cat_frame = 0
-        self._cat_draw()
-
-    def _cat_draw(self):
-        c = self.cat
-        c.delete("all")
-        w = max(1, c.winfo_width())
-        ground = max(10, c.winfo_height() - 1)   # mép trên thanh tiến trình
-        # cờ về đích
-        if self._cat_finished:
-            c.create_line(w - 10, ground, w - 10, 4, fill=self.pal["MUTED"], width=2)
-            c.create_polygon(w - 10, 4, w - 1, 8, w - 10, 12, fill="#2E7D32", outline="")
-        x0 = 4 + (w - 64) * self._cat_pos
-        bob = 0 if self._cat_finished or not self._cat_running else (1 if self._cat_frame else 0)
-        y = ground - bob
-        o = CAT_ORANGE
-        # đuôi, thân, đầu, tai, mắt
-        c.create_line(x0 + 9, y - 6, x0 + 2, y - 12, x0 + 1, y - 19, smooth=True, width=3, fill=o)
-        c.create_oval(x0 + 8, y - 17, x0 + 37, y - 6, fill=o, outline="")
-        c.create_oval(x0 + 30, y - 24, x0 + 46, y - 9, fill=o, outline="")
-        c.create_polygon(x0 + 32, y - 22, x0 + 33, y - 30, x0 + 37, y - 23, fill=o, outline="")
-        c.create_polygon(x0 + 39, y - 23, x0 + 42, y - 30, x0 + 44, y - 21, fill=o, outline="")
-        c.create_oval(x0 + 40, y - 17, x0 + 43, y - 14, fill=self.pal["TEXT"], outline="")
-        # chân: hai khung xen kẽ khi chạy, đứng yên khi về đích
-        if self._cat_running and not self._cat_finished:
-            a, b = ((x0 + 33, x0 + 37), (x0 + 13, x0 + 9)) if self._cat_frame == 0 else ((x0 + 33, x0 + 29), (x0 + 13, x0 + 17))
-        else:
-            a, b = ((x0 + 33, x0 + 37), (x0 + 13, x0 + 9))
-        for fx, fy in (a, b):
-            c.create_line(fx, y - 8, fy, ground, width=3, fill=o)
-
-
-class Tip:
-    """Chú thích khi di chuột vào: hiện sau 0,4 giây, ẩn khi rời chuột."""
-
-    def __init__(self, widget, text: str):
-        self.widget, self.text, self.win, self.job = widget, text, None, None
-        widget.bind("<Enter>", self._schedule, add="+")
-        widget.bind("<Leave>", self._hide, add="+")
-
-    def _schedule(self, _e):
-        self._cancel()
-        self.job = self.widget.after(400, self._show)
-
-    def _cancel(self):
-        if self.job:
-            self.widget.after_cancel(self.job); self.job = None
-
-    def _show(self):
-        x = self.widget.winfo_rootx(); y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
-        self.win = tk.Toplevel(self.widget); self.win.wm_overrideredirect(True); self.win.wm_geometry(f"+{x}+{y}")
-        tk.Label(self.win, text=self.text, justify="left", wraplength=320, background="#1F2328", foreground="#FFFFFF",
-                 padx=8, pady=5, font=("TkDefaultFont", 9)).pack()
-
-    def _hide(self, _e):
-        self._cancel()
-        if self.win:
-            self.win.destroy(); self.win = None
-
-
-class Spinner(tk.Canvas):
-    """Vòng tròn xoay báo đang làm việc. start()/stop(); stop() dừng xoay, còn hiện hay ẩn do người gọi quyết."""
-
-    def __init__(self, master, size: int = 20, **kw):
-        style = ttk.Style()
-        bg = style.lookup("Card.TFrame", "background") or None
-        fg = style.lookup("Accent.Horizontal.TProgressbar", "background") or "#2e7d32"
-        super().__init__(master, width=size, height=size, highlightthickness=0, bd=0, bg=bg, **kw)
-        pad = 3
-        self._arc = self.create_arc(pad, pad, size - pad, size - pad, start=0, extent=270,
-                                    style="arc", width=3, outline=fg)
-        self._angle = 0
-        self._job = None
-
-    def start(self):
-        if self._job is None:
-            self._tick()
-
-    def _tick(self):
-        self._angle = (self._angle - 30) % 360
-        self.itemconfigure(self._arc, start=self._angle)
-        self._job = self.after(60, self._tick)
-
-    def stop(self):
-        if self._job is not None:
-            self.after_cancel(self._job)
-            self._job = None
-
-
 class App(_CatMixin, _Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
     KANA_LABELS = {"": "Tắt", "template": "Mẫu chữ IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
@@ -453,6 +119,7 @@ class App(_CatMixin, _Base):
         self._vars: dict = {}
         self._t0 = 0.0
         self._photo = None
+        self._doc_cache = None   # (đường dẫn, PdfDocument) cho khung xem trước
         self.settings = load_settings()
         self.theme = self.settings.get("theme", "sáng")
         self.font_size = int(self.settings.get("font_size", 10))
@@ -814,6 +481,31 @@ class App(_CatMixin, _Base):
         self.pm_status.set(msg + "\n" + self._model_status_text())
         row["btn"].config(state="normal" if not ok else "disabled")
 
+    PDF_PAGES = (("extract", "Trích xuất trang"), ("split", "Tách file"), ("merge", "Ghép file"),
+                 ("inter", "Ghép xen kẽ"), ("rep", "Chèn trang lặp lại"), ("rot", "Xoay trang"),
+                 ("comp", "Nén PDF"), ("auto", "Tự động theo thư mục"))
+
+    def _pdf_host(self):
+        """Danh sách thao tác bên trái, một thẻ thao tác bên phải. Thẻ "Tệp PDF" ở trên dùng chung cho mọi thao tác."""
+        body = ttk.Frame(self.tab_pdf, style="Page.TFrame")
+        body.pack(fill="both", expand=True)
+        nav = ttk.Frame(body, style="Page.TFrame")
+        nav.pack(side="left", fill="y", padx=(0, 12))
+        self.pdf_right = ttk.Frame(body, style="Page.TFrame")
+        self.pdf_right.pack(side="left", fill="both", expand=True)
+        self.pdf_pages, self.pdf_navbtn = {}, {}
+        for key, label in self.PDF_PAGES:
+            self.pdf_pages[key] = ttk.Frame(self.pdf_right, style="Page.TFrame")
+            self.pdf_navbtn[key] = GradientButton(nav, text=label, width=200, command=lambda k=key: self._pdf_show(k))
+            self.pdf_navbtn[key].pack(fill="x", pady=2)
+        self._pdf_show("extract")
+
+    def _pdf_show(self, key: str):
+        for k, page in self.pdf_pages.items():
+            page.pack_forget()
+            self.pdf_navbtn[k].set_variant("run" if k == key else "run_soft")
+        self.pdf_pages[key].pack(fill="both", expand=True)
+
     def _tab_pdf(self):
         self._tab_extract()
         self._tab_tools()
@@ -843,7 +535,8 @@ class App(_CatMixin, _Base):
         self.pdfx_tree.pack(side="left", fill="both", expand=True)
         self.pdfx_tree.bind("<Delete>", lambda e: self._pdfx_remove())
 
-        cfg = self._card(self.tab_pdf, "Cài đặt trích xuất")
+        self._pdf_host()
+        cfg = self._card(self.pdf_pages["extract"], "Cài đặt trích xuất")
         self._row(cfg, 0, "Trang cần lấy", ttk.Entry(cfg, textvariable=self._var("pdfx_pages", ""), width=INPUT_W))
         ttk.Label(cfg, text="ví dụ 2 hoặc 5-23 hoặc 2,5-7,12- (12- là đến trang cuối)", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
         cb_sep = self._check(cfg, "pdfx_separate", False, "Một file riêng cho mỗi nhóm trang")
@@ -869,7 +562,7 @@ class App(_CatMixin, _Base):
         ttk.Label(run, textvariable=self.pdfx_status, style="Status.TLabel", wraplength=640, justify="left").pack(side="left", padx=12)
         cfg.columnconfigure(1, weight=1)
 
-        split = self._card(self.tab_pdf, "Tách PDF")
+        split = self._card(self.pdf_pages["split"], "Tách PDF")
         self._row(split, 0, "Kiểu tách", ttk.Combobox(split, textvariable=self._var("pdfx_split", self.SPLIT_LABELS["pages"]),
                                                        values=list(self.SPLIT_LABELS.values()), state="readonly", width=INPUT_W))
         Tip(split.grid_slaves(row=0, column=1)[0], "Theo trang: mỗi file một số trang cố định. Theo bookmark: mỗi mục cấp 1 là một file. Theo dung lượng: gộp trang liên tiếp, mỗi file không quá giới hạn.")
@@ -880,14 +573,14 @@ class App(_CatMixin, _Base):
         self.pdfx_split_btn.grid(row=3, column=0, sticky="w", pady=(10, 0))
         split.columnconfigure(1, weight=1)
 
-        merge = self._card(self.tab_pdf, "Ghép nhiều file")
+        merge = self._card(self.pdf_pages["merge"], "Ghép nhiều file")
         self._row(merge, 0, "Tên file kết quả", ttk.Entry(merge, textvariable=self._var("pdfx_merge_name", "ghep"), width=INPUT_W))
         ttk.Label(merge, text="Ghép theo đúng thứ tự trong danh sách trên, lưu vào thư mục lưu.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
         self.pdfx_merge_btn = GradientButton(merge, text="▶  Ghép file", style="Run.TButton", command=self._pdfx_merge_run, width=HEADER_BTN_W)
         self.pdfx_merge_btn.grid(row=1, column=0, sticky="w", pady=(10, 0))
         merge.columnconfigure(1, weight=1)
 
-        inter = self._card(self.tab_pdf, "Ghép xen kẽ")
+        inter = self._card(self.pdf_pages["inter"], "Ghép xen kẽ")
         self._row(inter, 0, "Tên file kết quả", ttk.Entry(inter, textvariable=self._var("pdfx_inter_name", "xen_ke"), width=INPUT_W))
         cb_rev = self._check(inter, "pdfx_reverse", False, "Đảo thứ tự file thứ hai (scan mặt sau theo chiều ngược)")
         cb_rev.grid(row=1, column=0, columnspan=3, sticky="w", pady=2)
@@ -897,7 +590,7 @@ class App(_CatMixin, _Base):
         self.pdfx_inter_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
         inter.columnconfigure(1, weight=1)
 
-        rep_card = self._card(self.tab_pdf, "Chèn trang lặp lại")
+        rep_card = self._card(self.pdf_pages["rep"], "Chèn trang lặp lại")
         self.rep_main = ttk.Combobox(rep_card, state="readonly", width=INPUT_W)
         self._row(rep_card, 0, "File chính", self.rep_main)
         self.rep_ins = ttk.Combobox(rep_card, state="readonly", width=INPUT_W)
@@ -979,7 +672,7 @@ class App(_CatMixin, _Base):
 
     def _tab_tools(self):
         """Xoay trang, nén và tự động xử lý thư mục. Dùng danh sách file của thẻ "Tệp PDF"."""
-        rot = self._card(self.tab_pdf, "Xoay trang")
+        rot = self._card(self.pdf_pages["rot"], "Xoay trang")
         self._row(rot, 0, "Góc xoay", ttk.Combobox(rot, textvariable=self._var("pdfx_angle", "90"), values=["90", "180", "270"],
                                                     state="readonly", width=INPUT_W))
         ttk.Label(rot, text="Theo chiều kim đồng hồ.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
@@ -989,7 +682,7 @@ class App(_CatMixin, _Base):
         self.pdfx_rot_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
         rot.columnconfigure(1, weight=1)
 
-        comp = self._card(self.tab_pdf, "Nén PDF")
+        comp = self._card(self.pdf_pages["comp"], "Nén PDF")
         cb_img = self._check(comp, "pdfx_img", True, "Nén lại ảnh (JPEG)")
         cb_img.grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
         Tip(cb_img, "Tắt: chỉ gộp đối tượng trùng và nén nội dung trang, không đổi ảnh. Bật: ảnh được ghi lại ở chất lượng bên dưới.")
@@ -999,7 +692,7 @@ class App(_CatMixin, _Base):
         self.pdfx_comp_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
         comp.columnconfigure(1, weight=1)
 
-        auto = self._card(self.tab_pdf, "Tự động theo thư mục")
+        auto = self._card(self.pdf_pages["auto"], "Tự động theo thư mục")
         self._row(auto, 0, "Thư mục theo dõi", ttk.Entry(auto, textvariable=self._var("pdfx_watch", ""), width=INPUT_W))
         b_w = GradientButton(auto, text="Chọn…", command=self._pdfx_pick_watch); b_w.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
         self._row(auto, 1, "Việc cần làm", ttk.Combobox(auto, textvariable=self._var("pdfx_watch_op", "Xoay trang (theo ô trên)"),
@@ -1226,8 +919,12 @@ class App(_CatMixin, _Base):
         ttk.Label(ctl, text="Trang:", style="Card.TLabel").pack(side="left")
         self.prev_page = tk.StringVar(value="1")
         sp = ttk.Spinbox(ctl, from_=1, to=9999, width=8, textvariable=self.prev_page, command=self._preview_refresh)
+        GradientButton(ctl, text="◀", command=lambda: self._preview_step(-1), width=48).pack(side="left")
         sp.pack(side="left", padx=6)
+        GradientButton(ctl, text="▶", command=lambda: self._preview_step(1), width=48).pack(side="left")
         sp.bind("<Return>", lambda e: self._preview_refresh())
+        self.prev_info = tk.StringVar(value="")
+        ttk.Label(ctl, textvariable=self.prev_info, style="Card.TLabel").pack(side="left", padx=8)
         body = ttk.Frame(prev, style="Card.TFrame")
         body.pack(fill="both", expand=True)
         self.prev_img = tk.Canvas(body, width=_sc(self, 420), height=_sc(self, 360), background=self.pal["FIELD"], highlightthickness=0)
@@ -1669,17 +1366,34 @@ class App(_CatMixin, _Base):
             self.prev_text.insert("1.0", text)
         self.prev_text.configure(state="disabled")
 
+    def _preview_step(self, d: int):
+        try:
+            n = int(self.prev_page.get()) + d
+        except ValueError:
+            n = 1
+        self.prev_page.set(str(max(1, n)))
+        self._preview_refresh()
+
+    def _pdf_doc(self, f: Path):
+        """Mở PDF cho khung xem trước một lần; đổi file thì thay bản cũ. Tránh mở lại file mỗi lần đổi trang."""
+        if self._doc_cache is None or self._doc_cache[0] != f:
+            import pypdfium2 as pdfium
+            self._doc_cache = (f, pdfium.PdfDocument(str(f)))
+        return self._doc_cache[1]
+
     def _draw_page(self, f: Path, pno: int):
         """Vẽ ảnh trang nguồn (PDF hoặc ảnh) vừa khung xem trước."""
         try:
             if f.suffix.lower() == ".pdf":
-                import pypdfium2 as pdfium
-                doc = pdfium.PdfDocument(str(f))
+                doc = self._pdf_doc(f)
+                self.prev_info.set(f"/ {len(doc)} trang")
                 if pno > len(doc):
+                    self.prev_info.set(f"/ {len(doc)} trang (vượt quá số trang)")
                     return
                 img = doc[pno - 1].render(scale=1.0).to_pil()
             else:
                 from PIL import Image
+                self.prev_info.set("1 ảnh")
                 img = Image.open(f).convert("RGB")
         except Exception:
             log.exception("Không vẽ được bản xem trước %s", f)
