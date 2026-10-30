@@ -57,11 +57,11 @@ _SENT_END = re.compile(r"[。！？!?」』）)]$")
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
 
 
-_CIRC_MARKS = frozenset(chr(0x2460 + i) for i in range(20))   # ①..⑳: ký hiệu số, không tính là chữ
+_CIRC_MARKS = frozenset(chr(0x2460 + i) for i in range(20))   # ①..⑳: ký hiệu số của mục
 
 
 def jp_ratio(text: str) -> float:
-    chars = [c for c in text if (c.isalnum() or _JP.match(c)) and c not in _CIRC_MARKS]
+    chars = [c for c in text if c.isalnum() or _JP.match(c)]
     return (sum(1 for c in chars if _JP.match(c)) / len(chars)) if chars else 0.0
 
 
@@ -171,6 +171,9 @@ class _Filter:
             return (l.conf >= 0.7 and (not self.ref or l.size >= 0.85 * self.ref)
                     and bool(re.fullmatch(r"[\d０-９.,・\-～~:：/／()（）%％]+", t)))
         jp = _jp_part(t)   # đoạn văn: giữ phần tiếng Nhật của dòng hỗn hợp, bỏ phần Latin
+        if jp[:1] in _CIRC_MARKS:   # mục đánh số ①..: cần ít nhất hai chữ Nhật sau số, tránh dòng ký hiệu lẻ
+            body = jp[1:]
+            return len(_JP.findall(body)) >= 2 and jp_ratio(body) >= 0.6
         return bool(_JP.search(jp)) and jp_ratio(jp) >= 0.6
 
 

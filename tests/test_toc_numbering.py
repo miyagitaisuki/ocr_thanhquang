@@ -61,3 +61,10 @@ def test_chu_dau_bi_tach_duoc_ghep_va_khong_lap():
     assert t[2] == "" and t[3] == "②予約Making reservations……110"
     assert t[4] == ""                       # dòng lặp của tên mục bị bỏ
     assert t[5] == "③お礼を言うThanking……082"
+
+
+def test_dong_ky_hieu_le_khong_duoc_giu():
+    from ocrnhat.layout import _Filter
+    flt = _Filter(Page(1000, 800, []))
+    assert not flt.keep(_l("①,②,③, , ,代),", 100, 20))       # ký hiệu ví dụ trong sách, không phải nội dung
+    assert flt.keep(_l("⑦予約Making reservations……110", 100, 20))
