@@ -5,6 +5,7 @@ bảng file có cột, nút chính nổi bật, tiến trình và trạng thái 
 """
 from __future__ import annotations
 
+import importlib.util
 import queue
 import threading
 import tkinter as tk
@@ -60,7 +61,8 @@ class Tip:
 class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
     KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
-    ENGINES = ("auto", "ndlocr", "chandra")
+    # chandra chỉ hiện khi bản này có đóng gói Chandra (exe GPU hoặc máy đã cài ocrnhat[chandra])
+    ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ())
 
     def __init__(self):
         super().__init__()
