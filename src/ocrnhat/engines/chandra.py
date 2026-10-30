@@ -139,7 +139,7 @@ class ChandraEngine(OcrEngine):
         from chandra.model.schema import BatchInputItem
 
         img = Image.fromarray(img_rgb.astype(np.uint8))
-        out = self.manager.generate([BatchInputItem(image=img)])[0]
+        out = self.manager.generate([BatchInputItem(image=img, prompt_type="ocr_layout")])[0]
         if out.error:
             raise RuntimeError(f"Chandra lỗi khi xử lý {name}")
         return parse_chandra_html(out.raw, img.width, img.height)

@@ -49,7 +49,10 @@ def test_bbox_theo_ti_le_anh():
     assert page.blocks[0].x == 200 and page.blocks[0].y == 25
 
 
-def test_engine_chua_cai_thi_auto_khong_chon_chandra():
+def test_engine_chua_cai_thi_auto_khong_chon_chandra(monkeypatch):
+    import importlib.util
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: None if name == "chandra" else real(name, *a))
     ok, why = ChandraEngine.is_available()
-    assert ok is False and "pip install" in why      # môi trường test không có chandra-ocr
+    assert ok is False and "pip install" in why
     assert resolve("auto")[0] == "ndlocr"
