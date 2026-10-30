@@ -7,7 +7,7 @@ dynamic = ["dependencies"]
 
 [project.optional-dependencies]
 test = ["pytest"]
-# giao diện PySide6 (bước 2, thử nghiệm: run_gui_qt.py); LGPL. Chưa đóng gói vào exe
+# giao diện chính (run_gui.py, đóng gói vào exe); PySide6 theo LGPL-3.0
 qt = ["PySide6-Essentials>=6.7"]
 # dò chữ nghi ngờ (--suspect), thử nghiệm; không đóng gói vào exe
 suspect = ["torch", "transformers", "fugashi", "unidic-lite"]

@@ -1,4 +1,4 @@
-"""Phần còn thiếu của bản Qt so với Tkinter (bước 4): kết quả và xem trước, mô hình AI, menu Hiển thị.
+"""Kết quả và xem trước, mô hình AI, menu Hiển thị của giao diện chính.
 
 - ResultsBox: bảng kết quả, mở file Word/thư mục/file so sánh, Tìm nhanh, xem trước ảnh trang và chữ.
 - ModelBox: tải PaddleOCR/VietOCR, Chandra (có tick điều khoản), cài gói GPU; chạy nền, có tiến trình.
@@ -22,8 +22,8 @@ from . import ui_logic as L
 
 log = logging.getLogger("ocrnhat.gui")
 
-ALPHA_LEVELS = (100, 95, 90, 85, 80)
-FONT_SIZES = {"Nhỏ": 9, "Vừa": 10, "Lớn": 12}
+ALPHA_LEVELS = (100, 95, 90)   # dưới 90% chữ mờ, khó đọc: không cho chọn
+FONT_SIZES = {"Nhỏ": 9, "Vừa": 10, "Lớn": 12, "Rất lớn": 14}
 THEMES = ("sáng", "tối")
 
 
@@ -290,6 +290,7 @@ class ResultsBox(QGroupBox):
         bar.addStretch(1)
         self.page = QSpinBox()
         self.page.setRange(1, 9999)
+        self.page.setAccessibleName("Số trang xem trước")
         self.btn_prev = QPushButton("◀")
         self.btn_next = QPushButton("▶")
         self.page_info = QLabel("")
@@ -608,7 +609,7 @@ def _dark_palette() -> QPalette:
 
 def apply_view(app, theme: str, font_pt: int, alpha: int, window) -> None:
     """Áp dụng giao diện ngay: màu, cỡ chữ, độ trong suốt cửa sổ."""
-    from .gui_qt_style import stylesheet
+    from .gui_style import stylesheet
     qss = stylesheet(theme, font_pt)
     app.setStyle("Fusion")
     app.setPalette(_dark_palette() if theme == "tối" else app.style().standardPalette())

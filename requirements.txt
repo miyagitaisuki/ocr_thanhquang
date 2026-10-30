@@ -10,4 +10,3 @@ PyYAML
 lxml
 tqdm
 networkx
-tkinterdnd2

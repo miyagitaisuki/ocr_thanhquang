@@ -12,7 +12,7 @@ try:
 except ImportError:   # thiếu libEGL và thư viện Qt khác trên máy này
     pytest.skip("không nạp được Qt (thiếu thư viện hệ thống)", allow_module_level=True)
 
-from ocrnhat import gui_qt, ui_logic as L  # noqa: E402
+from ocrnhat import gui, ui_logic as L  # noqa: E402
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def settings_store(monkeypatch):
 
 @pytest.fixture
 def window(settings_store):
-    w = gui_qt.MainWindow()
+    w = gui.MainWindow()
     yield w
     w.ocr._save = lambda: None   # đã kiểm tra ở test khác; tránh ghi khi đóng
     w.close()
@@ -63,13 +63,13 @@ def test_tuy_chon_sai_bao_loi(window):
 
 
 def test_luu_va_khoi_phuc_tuy_chon(settings_store, monkeypatch):
-    w1 = gui_qt.MainWindow()
+    w1 = gui.MainWindow()
     w1.ocr.upscale.setText("2")
     w1.ocr.ruby.setChecked(True)
     w1.ocr.engine.setCurrentIndex(w1.ocr.engine.findData("paddle"))
     w1.ocr._save()
     w1.close()
-    w2 = gui_qt.MainWindow()
+    w2 = gui.MainWindow()
     assert w2.ocr.upscale.text() == "2"
     assert w2.ocr.ruby.isChecked() is True
     assert w2.ocr.engine.currentData() == "paddle"
@@ -86,9 +86,9 @@ def test_worker_xu_ly_tung_file_va_ghi_loi_rieng(window, monkeypatch, tmp_path):
             raise RuntimeError("ảnh hỏng")
         return {"docx": str(tmp_path / "out.docx")}
 
-    monkeypatch.setattr(gui_qt.pipeline, "process_file", fake_process)
+    monkeypatch.setattr(gui.pipeline, "process_file", fake_process)
     states, done = [], []
-    worker = gui_qt.OcrWorker([good, bad], None, None, {})
+    worker = gui.OcrWorker([good, bad], None, None, {})
     worker.file_state.connect(lambda i, s: states.append((i, s)))
     worker.finished_ok.connect(lambda msg, outs: done.append((msg, outs)))
     worker.run()   # chạy đồng bộ để test không cần vòng lặp sự kiện
@@ -126,3 +126,26 @@ def test_phim_tat_va_ten_truy_cap(window):
     from PySide6.QtGui import QShortcut
     keys = {s.key().toString() for s in window.findChildren(QShortcut)}
     assert {"Ctrl+O", "Ctrl+R", "F5", "Esc", "Ctrl+2"} <= keys
+
+
+def test_mau_tai_lieu_dat_san_tuy_chon(window):
+    ocr = window.ocr
+    ocr.preset.setCurrentIndex(ocr.preset.findText("Ảnh chụp điện thoại"))
+    assert ocr.upscale.text() == "2" and ocr.cell_reocr.isChecked()
+    ocr.preset.setCurrentIndex(ocr.preset.findText("Chỉ văn bản (không bảng)"))
+    assert ocr.upscale.text() == "1" and not ocr.cell_reocr.isChecked()
+
+
+def test_do_trong_suot_khong_qua_90(window):
+    from ocrnhat.gui_extra import ALPHA_LEVELS
+    assert min(ALPHA_LEVELS) >= 90   # chữ mờ hơn thì khó đọc
+
+
+def test_o_nhap_co_ten_truy_cap(window):
+    from PySide6.QtWidgets import QComboBox, QLineEdit, QSpinBox
+    hidden = {window.ocr.crop_src, window.ocr.crop_page}   # điều khiển ẩn, chỉ giữ để đồng bộ logic
+    # ô con bên trong QSpinBox là phần soạn thảo nội bộ của chính nó, không tính
+    widgets = [w for cls in (QLineEdit, QComboBox, QSpinBox) for w in window.ocr.findChildren(cls)
+               if not isinstance(w.parentWidget(), QSpinBox)]
+    missing = [type(w).__name__ for w in widgets if w not in hidden and not w.accessibleName()]
+    assert missing == []

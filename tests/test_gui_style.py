@@ -1,7 +1,7 @@
 """Tương phản màu của giao diện Qt (WCAG): không cần cửa sổ."""
 import pytest
 
-from ocrnhat.gui_qt_style import PALETTES, PILLS, contrast, stylesheet
+from ocrnhat.gui_style import PALETTES, PILLS, contrast, stylesheet
 
 TEXT_PAIRS = [("text", "page"), ("text", "card"), ("muted", "page"), ("muted", "card"), ("accent_dark", "accent_soft"),
               ("accent", "card"), ("accent", "field"), ("danger", "card"), ("pdf_fg", "pdf_bg"), ("btn_fg", "btn_hi"),
