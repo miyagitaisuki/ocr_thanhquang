@@ -496,8 +496,48 @@ def _table_by_clustering(ls: list[Line]) -> Table | None:
 
 # ---------- trang ----------
 
+_CHAPTER = re.compile(r"Chapter\s*\d")
+_TOC_NOISE = re.compile(r"^[0-9０-９()（）↓♪Bり]+")   # ký hiệu số của mục lục bị đọc thành các ký tự này
+_CIRCLED = [chr(0x2460 + i) for i in range(20)]         # ①..⑳
+
+
+def _number_toc(page: Page) -> None:
+    """Mục lục có ký hiệu số ①②③ đứng riêng (engine đọc sai): đánh số lại theo thứ tự trong từng chương.
+    Mỗi 'Chapter N' đặt lại bộ đếm; chỉ mục có dấu chấm dẫn và chữ Nhật mới được đánh số.
+    Tên mục bị tách sang dòng bên trái cùng hàng (ví dụ '連絡する' và 'Communicating…094') được ghép lại."""
+    lines = sorted((l for b in page.blocks for l in b.lines), key=lambda l: l.cy)
+    n, active, group = 0, False, []
+
+    def flush():   # mục trong một chương đứng theo thứ tự từ trên xuống, dù engine đọc theo thứ tự khác
+        for g, o in zip(group, sorted(g.order for g in group)):
+            g.order = o
+        group.clear()
+
+    for l in lines:
+        if _CHAPTER.search(l.text):
+            flush()
+            n, active = 0, True
+            continue
+        if not active or n >= len(_CIRCLED) or not _LEADER_END.search(l.text):
+            continue
+        name = _TOC_NOISE.sub("", l.text.strip())
+        if not _JP.search(_jp_part(name)):
+            # tên nằm ở dòng bên trái cùng hàng
+            partner = next((o for o in lines if o is not l and o.text.strip() and o.x + o.w <= l.x + 4
+                            and abs(o.cy - l.cy) < 0.6 * max(l.h, o.h) and _JP.search(o.text) and not _LEADER_END.search(o.text)), None)
+            if partner is None:
+                continue
+            name = partner.text.strip() + _TOC_NOISE.sub("", l.text.strip())
+            partner.text = ""
+        n += 1
+        l.text = _CIRCLED[n - 1] + name
+        group.append(l)
+    flush()
+
+
 def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> list[Para | Table]:
     """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại."""
+    _number_toc(page)
     gray = None
     if img_rgb is not None:
         import cv2
