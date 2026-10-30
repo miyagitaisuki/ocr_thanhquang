@@ -35,8 +35,9 @@ jobs:
       - name: Tự kiểm exe Qt (mở cửa sổ, kiểm bốn mục)
         shell: pwsh
         run: |
-          & ./dist/OCR-Nhat-Qt/OCR-Nhat-Qt.exe --selftest
-          if ($LASTEXITCODE -ne 0) { throw "exe Qt tự kiểm thất bại" }
+          # exe --windowed là ứng dụng GUI: "&" không chờ nó xong, nên dùng Start-Process -Wait để lấy mã thoát đúng
+          $p = Start-Process -FilePath ./dist/OCR-Nhat-Qt/OCR-Nhat-Qt.exe -ArgumentList '--selftest' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "exe Qt tự kiểm thất bại (mã $($p.ExitCode))" }
       - name: Kiểm OCR bằng pipeline (CLI của cùng nguồn)
         run: python scripts/smoke_test.py
       - uses: actions/upload-artifact@v4
