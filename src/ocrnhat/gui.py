@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import math
 import os
 import queue
 import subprocess
@@ -43,6 +44,7 @@ PRESETS = {   # mẫu tài liệu: đặt sẵn một số tùy chọn; các ô 
     "Chỉ văn bản (không bảng)": dict(upscale="1", cell_reocr=False),
 }
 INPUT_W = 34   # độ rộng thống nhất của mọi ô nhập và danh sách chọn
+HEADER_BTN_W = 150   # ba nút trên thanh đầu (Chạy OCR, Dừng, Tìm nhanh) có cùng kích thước
 BTN_W = 300    # chiều rộng chung (px) của các nút tải model và cài gói
 INPUT_PX = 330  # độ rộng tối thiểu (px) của cột ô nhập, khớp INPUT_W
 SETTINGS = gpupack.pack_dir().parent / "settings.json"
@@ -123,6 +125,7 @@ class GradientButton(tk.Canvas):
     VARIANTS = {"run": ("#34B25C", "#1B5E20", "#FFFFFF"), "accent": ("#5B9BFF", "#1F6FEB", "#FFFFFF"),
                 "danger": ("#F2625C", "#B71C1C", "#FFFFFF")}
     HEIGHT = 32
+    RADIUS = 8   # bán kính góc bo tròn (px)
     ICON_W, ICON_GAP = 16, 8
 
     def __init__(self, master, text: str = "", command=None, state: str = "normal", style: str = "",
@@ -172,8 +175,16 @@ class GradientButton(tk.Canvas):
         self.delete("all")
         w, h = max(1, self.winfo_width()), max(1, self.winfo_height())
         top, bot, fg = self._colors()
+        r = min(self.RADIUS, h // 2, w // 2)
         for y in range(h):
-            self.create_line(0, y, w, y, fill=_mix(top, bot, y / max(1, h - 1)))
+            yc = y + 0.5   # bo góc: thu hẹp mỗi dòng theo cung tròn ở đầu và cuối nút
+            if yc < r:
+                inset = r - math.sqrt(max(0.0, r * r - (r - yc) ** 2))
+            elif yc > h - r:
+                inset = r - math.sqrt(max(0.0, r * r - (yc - (h - r)) ** 2))
+            else:
+                inset = 0
+            self.create_line(inset, y, w - inset, y, fill=_mix(top, bot, y / max(1, h - 1)))
         icon_w = (self.ICON_W + self.ICON_GAP) if self._icon else 0
         x0 = (w - icon_w - self._font.measure(self._text)) / 2
         if self._icon:
@@ -418,11 +429,11 @@ class App(_Base):
         top.pack(side="top", fill="x")
         btns = ttk.Frame(top, style="Page.TFrame")
         btns.pack(fill="x")
-        self.btn = GradientButton(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start)
+        self.btn = GradientButton(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start, width=HEADER_BTN_W)
         self.btn.pack(side="left")
-        self.stop = GradientButton(btns, text="Dừng", command=self.cancel.set, state="disabled", style="Danger.TButton", icon="stop")
+        self.stop = GradientButton(btns, text="Dừng", command=self.cancel.set, state="disabled", style="Danger.TButton", icon="stop", width=HEADER_BTN_W)
         self.stop.pack(side="left", padx=8)
-        self.find = GradientButton(btns, text="Tìm nhanh", command=self.find_output, icon="search")
+        self.find = GradientButton(btns, text="Tìm nhanh", command=self.find_output, icon="search", width=HEADER_BTN_W)
         self.find.pack(side="left", padx=(0, 8))
         Tip(self.find, "Mở thư mục chứa file kết quả: kết quả đang chọn, không thì kết quả gần nhất, không thì thư mục lưu.")
         self.hw = tk.StringVar(value="Đang dò phần cứng…")
