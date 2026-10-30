@@ -58,3 +58,11 @@ def test_sai_sha_bao_loi_va_khong_de_file(monkeypatch, tmp_path):
         models.download_paddle(dest=tmp_path)
     assert not (tmp_path / "a.onnx").exists()
     assert not (tmp_path / "a.onnx.part").exists()
+
+
+def test_danh_sach_vietocr_du_file_va_sha():
+    assert models.DET in models.VI_FILES                       # engine tiếng Việt cần cả detector
+    for name in (models.VI_CNN, models.VI_ENC, models.VI_DEC, models.VI_VOCAB):
+        url, sha = models.VI_FILES[name]
+        assert url.startswith("https://raw.githubusercontent.com/") and url.endswith("/" + name)
+        assert len(sha) == 64

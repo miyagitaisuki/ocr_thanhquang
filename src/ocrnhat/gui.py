@@ -703,19 +703,26 @@ class App(_CatMixin, _Base):
             ttk.Label(ai, textvariable=self.dl_status, style="Hint.TLabel").pack(anchor="w", pady=(4, 0))
 
     def _model_card(self, parent):
-        """PaddleOCR (tiếng Anh, Trung) tải tự động. VietOCR (tiếng Việt) phải tạo thủ công, xem hướng dẫn."""
+        """Hai bộ mô hình OCR tải trong GUI: PaddleOCR (tiếng Anh, Trung) và VietOCR (tiếng Việt)."""
+        from .engines import models as mdl
         from .engines.paddle import PaddleEngine
-        row = ttk.Frame(parent, style="Card.TFrame")
-        row.pack(fill="x", pady=(0, 6))
-        need = not PaddleEngine.is_available()[0]
-        self.pm_btn = GradientButton(row, text="Tải mô hình OCR (PaddleOCR)", width=BTN_W, command=self.download_paddle,
-                                 state="normal" if need else "disabled")
-        self.pm_btn.pack(side="left")
-        self.pm_spin = Spinner(row, size=20)
-        self.pm_pb = ttk.Progressbar(row, maximum=100, length=200, style="Accent.Horizontal.TProgressbar")
-        self.pm_pb.pack(side="left", padx=10)
-        self.pm_pct = tk.StringVar(value="")
-        ttk.Label(row, textvariable=self.pm_pct, width=12).pack(side="left")
+        from .engines.viet import VietnameseEngine
+        self._mrows = {}
+        for key, label, fetch, ready in (
+            ("paddle", "Tải mô hình OCR (PaddleOCR)", mdl.download_paddle, lambda: PaddleEngine.is_available()[0]),
+            ("vi", "Tải mô hình tiếng Việt (VietOCR)", mdl.download_vi, lambda: VietnameseEngine.is_available()[0]),
+        ):
+            row = ttk.Frame(parent, style="Card.TFrame")
+            row.pack(fill="x", pady=(0, 6))
+            btn = GradientButton(row, text=label, width=BTN_W, command=lambda k=key: self.download_model(k),
+                                 state="disabled" if ready() else "normal")
+            btn.pack(side="left")
+            spin = Spinner(row, size=20)
+            pb = ttk.Progressbar(row, maximum=100, length=200, style="Accent.Horizontal.TProgressbar")
+            pb.pack(side="left", padx=10)
+            pct = tk.StringVar(value="")
+            ttk.Label(row, textvariable=pct, width=12).pack(side="left")
+            self._mrows[key] = dict(label=label, fetch=fetch, ready=ready, btn=btn, spin=spin, pb=pb, pct=pct)
         self.pm_status = tk.StringVar(value=self._model_status_text())
         ttk.Label(parent, textvariable=self.pm_status, style="Hint.TLabel", wraplength=760, justify="left").pack(anchor="w", pady=(0, 10))
 
@@ -725,41 +732,44 @@ class App(_CatMixin, _Base):
         paddle_ok = PaddleEngine.is_available()[0]
         vi_ok = VietnameseEngine.is_available()[0]
         lines = ["PaddleOCR (tiếng Anh, Trung): " + ("đã có." if paddle_ok else "chưa có — bấm nút để tải (vài chục MB)."),
-                 "VietOCR (tiếng Việt): " + ("đã có." if vi_ok else "chưa có. Phải tạo bằng công cụ dòng lệnh (cần cài torch).")]
+                 "VietOCR (tiếng Việt): " + ("đã có." if vi_ok else "chưa có — bấm nút để tải (khoảng 32 MB).")]
         return "\n".join(lines)
 
-    def download_paddle(self):
-        self.pm_btn.config(state="disabled")
-        self.pm_pb["value"] = 0
-        self.pm_pct.set("0%")
-        self.pm_status.set("Đang tải mô hình PaddleOCR…")
-        self.pm_spin.pack(side="left", padx=(0, 4), before=self.pm_pb)
-        self.pm_spin.start()
-        threading.Thread(target=self._paddle_worker, daemon=True).start()
+    def download_model(self, key: str):
+        row = self._mrows[key]
+        row["btn"].config(state="disabled")
+        row["pb"]["value"] = 0
+        row["pct"].set("0%")
+        self.pm_status.set(f"Đang tải {row['label'].replace('Tải ', '')}…")
+        row["spin"].pack(side="left", padx=(0, 4), before=row["pb"])
+        row["spin"].start()
+        threading.Thread(target=self._model_worker, args=(key,), daemon=True).start()
 
-    def _paddle_worker(self):
-        from .engines import models as mdl
+    def _model_worker(self, key: str):
+        row = self._mrows[key]
         try:
-            mdl.download_paddle(progress=lambda i, n, name, frac: self.q.put(("pm_prog", (i, n, name, frac))))
-            ok, msg = True, "Đã tải xong mô hình PaddleOCR. " + self._model_status_text().split("\n")[1]
+            row["fetch"](progress=lambda i, n, name, frac: self.q.put(("model_prog", (key, i, n, name, frac))))
+            ok, msg = True, f"Đã tải xong: {row['label'].replace('Tải ', '')}."
         except Exception as e:
-            log.exception("Lỗi tải mô hình PaddleOCR")
-            ok, msg = False, f"Tải mô hình PaddleOCR thất bại: {e}"
-        self.q.put(("pm_done", (ok, msg)))
+            log.exception("Lỗi tải mô hình %s", key)
+            ok, msg = False, f"Tải thất bại: {e}"
+        self.q.put(("model_done", (key, ok, msg)))
 
-    def _on_pm_progress(self, i, n, name, frac):
+    def _on_model_progress(self, key, i, n, name, frac):
+        row = self._mrows[key]
         overall = (i + frac) / max(1, n)
-        self.pm_pb["value"] = 100 * overall
-        self.pm_pct.set(f"{round(100 * overall)}%")
+        row["pb"]["value"] = 100 * overall
+        row["pct"].set(f"{round(100 * overall)}%")
         self.pm_status.set(f"Đang tải {name} (tệp {min(i + 1, n)}/{n})…")
 
-    def _on_pm_done(self, ok, msg):
-        self.pm_spin.stop()
-        self.pm_spin.pack_forget()
-        self.pm_pb["value"] = 100 if ok else 0
-        self.pm_pct.set("100%" if ok else "")
-        self.pm_status.set(msg)
-        self.pm_btn.config(state="normal" if not ok else "disabled")
+    def _on_model_done(self, key, ok, msg):
+        row = self._mrows[key]
+        row["spin"].stop()
+        row["spin"].pack_forget()
+        row["pb"]["value"] = 100 if ok else 0
+        row["pct"].set("100%" if ok else "")
+        self.pm_status.set(msg + "\n" + self._model_status_text())
+        row["btn"].config(state="normal" if not ok else "disabled")
 
     def _tab_review(self):
         rev = self._card(self.tab_rev, "Kiểm tra kết quả")
@@ -1242,10 +1252,10 @@ class App(_CatMixin, _Base):
                 elif k == "dl":
                     self.dl_status.set(v); self.dl_pb["value"] = 100 if "xong" in v else 0
                     self.dl_btn.config(state="normal")
-                elif k == "pm_prog":
-                    self._on_pm_progress(*v)
-                elif k == "pm_done":
-                    self._on_pm_done(*v)
+                elif k == "model_prog":
+                    self._on_model_progress(*v)
+                elif k == "model_done":
+                    self._on_model_done(*v)
                 elif k == "pack":
                     self.pack_status.set(v)
                 elif k == "packdone":

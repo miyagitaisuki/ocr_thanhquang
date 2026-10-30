@@ -71,7 +71,7 @@ class VietnameseEngine(OcrEngine):
     @classmethod
     def is_available(cls):
         miss = models.missing(REQUIRED)
-        return (not miss), ("thiếu model: " + ", ".join(miss) + " (chạy scripts/export_vi.py)" if miss else "")
+        return (not miss), ("thiếu model: " + ", ".join(miss) + " (tải trong tab AI powered)" if miss else "")
 
     def __init__(self, device: str = "cpu", **_):
         ok, why = self.is_available()

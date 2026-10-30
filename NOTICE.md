@@ -28,9 +28,9 @@ Dùng mô hình PP-OCRv4 (dò dòng `ch_PP-OCRv4_det_infer`, nhận dạng `ch_P
 
 ## VietOCR (engine `ocr_vi`: tiếng Việt)
 
-Dùng kiến trúc và trọng số `vgg_seq2seq.pth` của **VietOCR** (pbcquoc/vietocr, phiên bản 0.3.13), tải từ vocr.vn; xuất sang ONNX int8 bằng `scripts/export_vi.py`.
-- **Cần xác minh trước khi phân phối:** file LICENSE trong gói ghi Apache-2.0, nhưng metadata ghi MIT. Giấy phép của trọng số chưa được xác minh.
-- Trọng số không đóng vào exe; chỉ sản phẩm xuất ra (ONNX) được tạo cục bộ.
+Dùng kiến trúc và trọng số `vgg_seq2seq.pth` của **VietOCR** (pbcquoc/vietocr, phiên bản 0.3.13), giấy phép **Apache-2.0**, xuất sang ONNX int8 (`assets/vi-ocr/`, bằng `scripts/export_vi.py`).
+- Chủ dự án xác nhận Apache-2.0 cho gói này. Ghi chú: file LICENSE trong gói ghi Apache-2.0, còn metadata ghi MIT.
+- Các file ONNX và từ điển được tải trong GUI (tab AI powered) từ chính repo này, kiểm SHA-256.
 
 ## Thành phần đóng gói trong bộ cài `OCR-Nhat-setup.exe`
 
