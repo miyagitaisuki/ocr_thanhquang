@@ -5,7 +5,7 @@ from .base import OcrEngine
 
 DEFAULT = "auto"      # có GPU rời đủ VRAM và Chandra dùng được -> chandra, ngược lại ndlocr
 FALLBACK = "ndlocr"
-_NAMES = ("ndlocr", "chandra")
+_NAMES = ("ndlocr", "chandra", "ocr_en", "ocr_vi")   # ocr_en/ocr_vi: giữ chỗ, chưa có engine
 
 
 def available() -> list[str]:
@@ -20,6 +20,12 @@ def _cls(name: str):
     if name == "chandra":
         from .chandra import ChandraEngine
         return ChandraEngine
+    if name == "ocr_en":
+        from .placeholder import EnglishPlaceholder
+        return EnglishPlaceholder
+    if name == "ocr_vi":
+        from .placeholder import VietnamesePlaceholder
+        return VietnamesePlaceholder
     raise KeyError(name)
 
 

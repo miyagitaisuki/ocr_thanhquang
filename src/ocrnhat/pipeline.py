@@ -125,6 +125,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  cancel: Callable[[], bool] | None = None,
                  review: bool = False, conf_threshold: float = 0.8, use_cache: bool = True,
                  engine: str | None = None, ruby: bool = False, device: str = "auto", lang: str = "ja",
+                 merge_pages: bool = True,
                  workers: int | None = None, cell_reocr: bool = True,
                  crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
                  suspect: bool = False, suspect_threshold: float = 0.0005,
@@ -242,7 +243,10 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                     progress(done, total, f"{path.name} - trang {pno}")
     docx_path = out_dir / f"{path.stem}.docx"
     if results:
-        write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby)
+        if merge_pages:
+            from .layout import merge_pages as _merge
+            results = _merge(results)
+        write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby, page_break=not merge_pages)
         if write_txt:
             _txt(results, out_dir / f"{path.stem}.txt")
     suspect_path = None
