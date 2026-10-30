@@ -254,6 +254,9 @@ class App(_Base):
         self.btn.pack(side="left")
         self.stop = ttk.Button(btns, text="Dừng", command=self.cancel.set, state="disabled")
         self.stop.pack(side="left", padx=8)
+        self.find = ttk.Button(btns, text="Tìm nhanh", command=self.find_output)
+        self.find.pack(side="left", padx=(0, 8))
+        Tip(self.find, "Mở thư mục chứa file kết quả: kết quả đang chọn, không thì kết quả gần nhất, không thì thư mục lưu.")
         self.hw = tk.StringVar(value="Đang dò phần cứng…")
         ttk.Label(btns, textvariable=self.hw, style="Status.TLabel").pack(side="right")
         Tip(self.btn, "Bắt đầu OCR cho mọi file trong danh sách. Phím tắt: Ctrl+R hoặc F5.")
@@ -309,9 +312,10 @@ class App(_Base):
                 w.dnd_bind("<<Drop>>", self._on_drop)
 
         out = self._card(self.tab_src, "Đầu ra")
-        self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", str(Path.home() / "ocr_output")), width=INPUT_W))
+        self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", ""), width=INPUT_W))
         b_out = ttk.Button(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
-        Tip(b_out, "Chọn thư mục để lưu file kết quả (.docx và .txt).")
+        Tip(b_out, "Chọn thư mục để lưu file kết quả. Để trống = thư mục chứa file gốc.")
+        ttk.Label(out, text="Để trống = cạnh file gốc. Tên file: OCR_tên_không_dấu_trang_đầu_trang_cuối.", style="Hint.TLabel").grid(row=0, column=3, sticky="w", padx=(8, 0))
         self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=INPUT_W))
         ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         cb_mg = ttk.Combobox(out, textvariable=self._var("merge", self.MERGE_LABELS[True]), values=list(self.MERGE_LABELS.values()),
@@ -659,6 +663,26 @@ class App(_Base):
         self.files.clear(); self.statuses.clear()
         self._redraw()
 
+    def find_output(self):
+        """Mở thư mục kết quả: dòng đang chọn -> kết quả gần nhất -> thư mục lưu đã đặt (hoặc cạnh file đầu tiên)."""
+        item = self._selected_result() if self.result_rows else None
+        if item:
+            target = Path(item[1]["docx"]).parent
+        elif self.results:
+            target = Path(self.results[-1][1]["docx"]).parent
+        elif self.files:
+            target = Path(self._var("out", "").get().strip() or self.files[0].parent)
+        else:
+            messagebox.showinfo("Tìm nhanh", "Chưa có file nào trong danh sách.")
+            return
+        if not target.is_dir():
+            messagebox.showinfo("Tìm nhanh", f"Chưa có thư mục kết quả:\n{target}")
+            return
+        try:
+            open_path(target)
+        except OSError as e:
+            messagebox.showerror("Tìm nhanh", f"Không mở được: {e}")
+
     def pick_out(self):
         d = filedialog.askdirectory()
         if d:
@@ -710,7 +734,8 @@ class App(_Base):
         self.results = []
         self._t0 = time.time()
         self.cancel.clear(); self.btn.config(state="disabled"); self.stop.config(state="normal")
-        args = (list(self.files), Path(self._var("out", "").get()), pages, opts)
+        out = self._var("out", "").get().strip()
+        args = (list(self.files), Path(out) if out else None, pages, opts)
         self.worker = threading.Thread(target=self.run_job, args=args, daemon=True); self.worker.start()
 
     def run_job(self, files, out, pages, opts):

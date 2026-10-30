@@ -1,7 +1,9 @@
 """PDF/ảnh -> .docx (và .txt) chỉ gồm tiếng Nhật."""
 from __future__ import annotations
 
+import re
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
@@ -119,7 +121,25 @@ def _suspect_rows(items, threshold: float) -> list[str]:
     return rows
 
 
-def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | None = None,
+def ascii_name(name: str) -> str:
+    """Tên không dấu, chỉ chữ và số ASCII, nối bằng '_'. Tên không còn chữ nào thì là 'file'."""
+    s = unicodedata.normalize("NFKD", name.replace("đ", "d").replace("Đ", "D"))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_") or "file"
+
+
+def output_stem(path: Path, pages: list[int] | None, total: int) -> str:
+    """Tiền tố file kết quả: OCR_<tên không dấu>_<trang đầu>_<trang cuối>."""
+    nums = sorted(pages) if pages else [1, total]
+    return f"OCR_{ascii_name(Path(path).stem)}_{nums[0]}_{nums[-1]}"
+
+
+def default_out_dir(path: Path) -> Path:
+    """Thư mục mặc định của kết quả: thư mục chứa file gốc."""
+    return Path(path).parent
+
+
+def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[int] | None = None,
                  write_txt: bool = True, page_marker: bool = True,
                  progress: Callable[[int, int, str], None] | None = None,
                  cancel: Callable[[], bool] | None = None,
@@ -135,9 +155,11 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     from .layout import Table, build_page
     from concurrent.futures import ThreadPoolExecutor
 
-    path, out_dir = Path(path), Path(out_dir)
+    path = Path(path)
+    out_dir = Path(out_dir) if out_dir else default_out_dir(path)
     out_dir.mkdir(parents=True, exist_ok=True)
     total = len(pages) if pages else page_count(path)
+    stem = output_stem(path, pages, total)
     from . import engines
     engine, why = engines.resolve_for_lang(engine or engines.DEFAULT, lang)
     from .gpu import resolve_device
@@ -239,26 +261,26 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                 done += 1
                 if progress:
                     progress(done, total, f"{path.name} - trang {pno}")
-    docx_path = out_dir / f"{path.stem}.docx"
+    docx_path = out_dir / f"{stem}.docx"
     if results:
         if merge_pages:
             from .layout import merge_pages as _merge
             results = _merge(results)
         write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby, page_break=not merge_pages)
         if write_txt:
-            _txt(results, out_dir / f"{path.stem}.txt")
+            _txt(results, out_dir / f"{stem}.txt")
     suspect_path = None
     if suspect_rows:
-        suspect_path = out_dir / f"{path.stem}_suspect.txt"
+        suspect_path = out_dir / f"{stem}_suspect.txt"
         suspect_path.write_text("\n".join(f"Trang {p} | {row}" for p, row in suspect_rows) + "\n", encoding="utf-8")
     review_path = None
     if review and sections:
         from .review import write_review
-        review_path = out_dir / f"{path.stem}_review.html"
+        review_path = out_dir / f"{stem}_review.html"
         write_review(sections, review_path, path.name)
     kana_review = None
     if kana_log:
-        kana_review = out_dir / f"{path.stem}_kana_review.html"
+        kana_review = out_dir / f"{stem}_kana_review.html"
         _kana.write_review(kana_log, kana_review)
     return {"file": str(path), "pages": done, "tables": n_tables, "docx": str(docx_path),
             "kana_review": str(kana_review) if kana_review else None,
