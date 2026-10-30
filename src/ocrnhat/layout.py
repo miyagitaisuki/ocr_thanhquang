@@ -320,8 +320,17 @@ def _crosses_grid(l: Line, ys: list[float], xs: list[float], m: float = 3) -> bo
     return any(l.x + m < v < l.x1 - m for v in xs[1:-1]) or any(l.y + m < v < l.y1 - m for v in ys[1:-1])
 
 
+def _has_ink(img_rgb: np.ndarray, x0: float, y0: float, x1: float, y1: float) -> bool:
+    """Ô có đủ nét đậm để là chữ (bỏ qua ô trắng hoặc chỉ có nền)."""
+    crop = img_rgb[int(y0) + 3:int(y1) - 3, int(x0) + 3:int(x1) - 3]
+    if crop.size == 0:
+        return False
+    g = crop.mean(axis=2) if crop.ndim == 3 else crop
+    return float((g < np.median(g) - 40).mean()) > 0.01
+
+
 def _reocr_cells(ls: list[Line], ys, xs, cells, img_rgb, reocr, flt: _Filter) -> list[Line]:
-    """Nhận dạng lại các ô có dòng vượt qua đường kẻ, từ ảnh cắt của riêng ô đó (ô hàng/cột gộp được cắt cả vùng)."""
+    """Nhận dạng lại ô có dòng vượt đường kẻ hoặc ô trống có nét chữ, từ ảnh cắt của riêng ô đó (ô gộp được cắt cả vùng)."""
     dirty = set()
     for l in ls:
         if not _crosses_grid(l, ys, xs): continue
@@ -329,19 +338,27 @@ def _reocr_cells(ls: list[Line], ys, xs, cells, img_rgb, reocr, flt: _Filter) ->
             x0, y0, x1, y1 = _cell_box(cell, ys, xs)
             if l.x < x1 and l.x1 > x0 and l.y < y1 and l.y1 > y0:
                 dirty.add((cell.r, cell.c))
-    if not dirty or img_rgb is None:
+    if img_rgb is None:
+        return ls
+    # ô không có dòng nào nhưng có nét chữ: engine đã bỏ sót (bảng dày, chữ nhỏ), nhận dạng lại
+    for cell in cells:
+        if (cell.r, cell.c) in dirty: continue
+        x0, y0, x1, y1 = _cell_box(cell, ys, xs)
+        if not any(x0 <= l.cx < x1 and y0 <= l.cy < y1 for l in ls) and _has_ink(img_rgb, x0, y0, x1, y1):
+            dirty.add((cell.r, cell.c))
+    if not dirty:
         return ls
     out = list(ls)
     for cell in cells:
         if (cell.r, cell.c) not in dirty: continue
         x0, y0, x1, y1 = _cell_box(cell, ys, xs)
         ix0, iy0, ix1, iy1 = int(x0) + 3, int(y0) + 3, int(x1) - 3, int(y1) - 3
-        if ix1 - ix0 < 20 or iy1 - iy0 < 20: continue
+        if ix1 - ix0 < 100 or iy1 - iy0 < 20: continue   # ô hẹp (cỡ 50 px) là mảnh cột khác: engine bịa chữ
         crop = img_rgb[iy0:iy1, ix0:ix1]
         new = []
         for b in reocr(np.ascontiguousarray(crop)).blocks:
             for nl in b.lines:
-                if not flt.keep(nl, table=True): continue
+                if nl.conf < 0.1 or not flt.keep(nl, table=True): continue   # conf 0 là chữ engine bịa
                 nl.x += ix0; nl.y += iy0
                 new.append(nl)
         if not new: continue           # engine không đọc được gì: giữ kết quả cũ
