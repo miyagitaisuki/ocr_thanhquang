@@ -42,6 +42,7 @@ PRESETS = {   # mẫu tài liệu: đặt sẵn một số tùy chọn; các ô 
     "Chỉ văn bản (không bảng)": dict(upscale="1", cell_reocr=False),
 }
 INPUT_W = 34   # độ rộng thống nhất của mọi ô nhập và danh sách chọn
+INPUT_PX = 330  # độ rộng tối thiểu (px) của cột ô nhập, khớp INPUT_W
 SETTINGS = gpupack.pack_dir().parent / "settings.json"
 LOG_FILE = gpupack.pack_dir().parent / "logs" / "app.log"
 log = logging.getLogger("ocrnhat.gui")
@@ -315,13 +316,13 @@ class App(_Base):
         self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", ""), width=INPUT_W))
         b_out = ttk.Button(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
         Tip(b_out, "Chọn thư mục để lưu file kết quả. Để trống = thư mục chứa file gốc.")
-        ttk.Label(out, text="Để trống = cạnh file gốc. Tên file: OCR_tên_không_dấu_trang_đầu_trang_cuối.", style="Hint.TLabel").grid(row=0, column=3, sticky="w", padx=(8, 0))
+        ttk.Label(out, text="Để trống = cạnh file gốc. Tên file: OCR_tên_không_dấu_trang_đầu_trang_cuối.", style="Hint.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=INPUT_W))
         ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         cb_mg = ttk.Combobox(out, textvariable=self._var("merge", self.MERGE_LABELS[True]), values=list(self.MERGE_LABELS.values()),
                              state="readonly", width=INPUT_W)
         self._row(out, 2, "Gộp trang", cb_mg)
-        ttk.Label(out, text="Gộp: nối các đoạn bị cắt giữa trang thành một khối liền mạch, bỏ khoảng trống.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(out, text="Nối đoạn bị cắt giữa các trang; bỏ trang trống.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
         Tip(cb_mg, "Gộp trang: khối văn bản liền mạch, không ngắt trang trong Word. Giữ nguyên trang: mỗi trang một trang Word.")
         checks = ttk.Frame(out, style="Card.TFrame")
         checks.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
@@ -561,6 +562,7 @@ class App(_Base):
         ttk.Label(box, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
         body = ttk.Frame(box, style="Card.TFrame")   # phần thân dùng grid, tách khỏi tiêu đề dùng pack
         body.pack(fill="both", expand=True)
+        body.columnconfigure(1, minsize=INPUT_PX)   # cột ô nhập không bị co về 0 khi nhãn gợi ý dài
         return body
 
     def _var(self, name: str, default):
