@@ -133,3 +133,11 @@ def test_khoang_cach_deu_nhau_khong_tach_doan():
                        ("三行目の文章もまだ続いています", 212), ("四行目の文章もまだ続いています", 268)])
     paras = [i for i in build_page(page) if isinstance(i, Para)]
     assert len(paras) == 1 and paras[0].kind == "body"
+
+
+def test_tu_vung_ngan_dung_rieng_khong_phai_tieu_de():
+    # mục từ vựng hai, ba chữ đứng riêng trong ô chú thích không được coi là tiêu đề
+    page = _para_page([("本文の一行目はここまでです", 100), ("本文の二行目もここまでです", 156),
+                       ("混入", 292), ("手配", 372)])
+    paras = [i for i in build_page(page) if isinstance(i, Para)]
+    assert all(p.kind == "body" for p in paras)

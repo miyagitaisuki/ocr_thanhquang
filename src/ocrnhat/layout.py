@@ -280,7 +280,7 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
         if len(g) != 1 or id(g[0]) in toc or g[0].vertical or _BULLET.match(g[0].text):
             return False
         t = g[0].text
-        if len(t) > 30 or t.endswith(("。", "、")) or re.search(r"[をにはがでとのへもや]$", t):
+        if not 5 <= len(t) <= 30 or t.endswith(("。", "、")) or re.search(r"[をにはがでとのへもや]$", t):
             return False
         i = pos[id(g[0])]
         above = i == 0 or wide(ls[i - 1], g[0])
