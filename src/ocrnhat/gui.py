@@ -161,6 +161,20 @@ class App(_Base):
         cb_k.grid(row=6, column=0, columnspan=3, sticky="w", pady=2)
         Tip(cb_k, "Lưu kết quả từng trang trong thư mục đầu ra (.cache). Tắt nếu muốn OCR lại từ đầu.")
         self._row(proc, 7, "Đọc bảng kana", ttk.Combobox(proc, textvariable=self._var("kana", self.KANA_LABELS[""]), values=list(self.KANA_LABELS.values()), state="readonly", width=34))
+        if "chandra" in self.ENGINES:
+            from .engines.chandra import model_downloaded
+            dl = ttk.Frame(proc)
+            dl.grid(row=8, column=0, columnspan=3, sticky="w", pady=(8, 0))
+            cb_l = self._check(dl, "chandra_license", False, "Tôi đã đọc và chấp nhận điều khoản OpenRAIL-M của trọng số Chandra")
+            cb_l.pack(anchor="w")
+            Tip(cb_l, "Trọng số Chandra theo OpenRAIL-M: miễn ngưỡng thương mại khi dùng cá nhân/nghiên cứu. Chi tiết trong NOTICE.md.")
+            row = ttk.Frame(dl)
+            row.pack(anchor="w", pady=(4, 0))
+            self.dl_btn = ttk.Button(row, text="Tải model Chandra", command=self.download_chandra)
+            self.dl_btn.pack(side="left")
+            ready = model_downloaded()
+            self.dl_status = tk.StringVar(value="Đã có model Chandra trên máy." if ready else "Chưa có model Chandra (vài GB, chỉ tải một lần).")
+            ttk.Label(row, textvariable=self.dl_status, style="Hint.TLabel").pack(side="left", padx=(10, 0))
         Tip(proc.grid_slaves(row=7, column=1)[0], "Thử nghiệm. Đọc ô bảng chữ kana (trang 13–16, 19). Mẫu IPAGothic cho kết quả tốt hơn; ô không chắc để trống. Luôn xuất file *_kana_review.html để đối chiếu.")
         proc.columnconfigure(1, weight=1)
 
@@ -353,6 +367,23 @@ class App(_Base):
         except Exception as e:  # hiển thị lỗi thay vì chết im lặng
             self.q.put(("done", f"Lỗi: {e}"))
 
+    def download_chandra(self):
+        if not self._var("chandra_license", False).get():
+            messagebox.showwarning("Chandra", "Hãy tick xác nhận điều khoản OpenRAIL-M trước khi tải model.")
+            return
+        self.dl_btn.config(state="disabled")
+        self.dl_status.set("Đang tải model Chandra từ Hugging Face (vài GB, có thể mất nhiều phút)…")
+        threading.Thread(target=self._download_worker, daemon=True).start()
+
+    def _download_worker(self):
+        from .engines.chandra import download_model
+        try:
+            download_model()
+            msg = "Đã tải xong model Chandra."
+        except Exception as e:
+            msg = f"Tải model lỗi: {e}"
+        self.q.put(("dl", msg))
+
     def poll(self):
         try:
             while True:
@@ -361,6 +392,8 @@ class App(_Base):
                     d, t, m = v; self.pb["value"] = 100 * d / max(1, t); self.status.set(f"[{d}/{t}] {m}")
                 elif k == "status":
                     self.status.set(v)
+                elif k == "dl":
+                    self.dl_status.set(v); self.dl_btn.config(state="normal")
                 else:
                     self.status.set(v); self.btn.config(state="normal"); self.stop.config(state="disabled")
         except queue.Empty:

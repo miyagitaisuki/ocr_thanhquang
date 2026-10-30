@@ -50,7 +50,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 ## Trạng thái hiện tại
 - Nhánh làm việc: `claude/adoring-cerf-t2dmxp`.
 - Đã làm: rà soát ruby (`--ruby`), cache, OCR song song, nhận dạng lại ô, đối chiếu YomiToku (script), dò chữ nghi ngờ (thử nghiệm), GUI kiểu PDFsam.
-- Chandra: đã nối vào `--engine chandra` và GUI; `auto` chọn khi có NVIDIA đủ VRAM, đã cài `ocrnhat[chandra]` và torch có CUDA; AMD/Intel về NDLOCR. Ô Thiết bị = CPU ép Chandra chạy CPU. CHƯA chạy model thật (môi trường không có GPU), chưa biết chất lượng đầu ra.
+- Chandra: GUI có ô xác nhận OpenRAIL-M và nút "Tải model Chandra" (tải trọng số từ Hugging Face vào cache, chạy nền). Đã nối vào `--engine chandra` và GUI; `auto` chọn khi có NVIDIA đủ VRAM, đã cài `ocrnhat[chandra]` và torch có CUDA; AMD/Intel về NDLOCR. Ô Thiết bị = CPU ép Chandra chạy CPU. CHƯA chạy model thật (môi trường không có GPU), chưa biết chất lượng đầu ra.
 - Chưa làm: GPU chạy thật trong exe (exe CI dùng onnxruntime CPU).
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 

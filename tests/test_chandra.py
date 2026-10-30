@@ -85,3 +85,13 @@ def test_auto_khong_chon_chandra_khi_khong_co_nvidia(monkeypatch):
     import shutil
     monkeypatch.setattr(shutil, "which", lambda name: None)
     assert resolve("auto")[0] == "ndlocr"
+
+
+def test_model_downloaded_false_khi_chua_co_cache(monkeypatch):
+    import huggingface_hub
+    from ocrnhat.engines import chandra as ch
+
+    def fake(**kw):
+        raise FileNotFoundError("không có trong cache")
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake)
+    assert ch.model_downloaded() is False

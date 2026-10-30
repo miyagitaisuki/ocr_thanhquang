@@ -199,3 +199,25 @@ class ChandraEngine(OcrEngine):
         if out.error:
             raise RuntimeError(f"Chandra lỗi khi xử lý {name}")
         return parse_chandra_html(out.raw, img.width, img.height)
+
+
+def model_repo() -> str:
+    """Mã repo trọng số trên Hugging Face, lấy từ chandra.settings để khớp với gói đang cài."""
+    from chandra.settings import settings as cfg
+    return cfg.MODEL_CHECKPOINT
+
+
+def model_downloaded() -> bool:
+    """Trọng số đã có trong cache Hugging Face trên máy này chưa (không tải gì)."""
+    from huggingface_hub import snapshot_download
+    try:
+        snapshot_download(repo_id=model_repo(), local_files_only=True)
+        return True
+    except Exception:
+        return False
+
+
+def download_model() -> str:
+    """Tải trọng số Chandra từ Hugging Face vào cache (vài GB, cần Internet). Trả về đường dẫn thư mục."""
+    from huggingface_hub import snapshot_download
+    return snapshot_download(repo_id=model_repo())
