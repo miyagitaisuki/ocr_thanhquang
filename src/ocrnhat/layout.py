@@ -32,6 +32,16 @@ _LATIN_RUN = re.compile(r"[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ .,'’()\-]*")
 _RUNNING_HEADER = re.compile(r"^[0-9０-９]{1,2}(?=(?:すぐに使える|日本語メールの基本|日本語入力の基本|覚えておきたい|より良いメール))")
 
 
+# ký hiệu đầu dòng của sách (■ □ • ・ …): đổi thành danh sách có dấu đầu dòng; ※ là ghi chú nên giữ nguyên
+_BULLET_MARK = re.compile(r"^[■□•▪▫●◆◇・]\s*(?=\S)")
+
+
+def _split_bullet(text: str) -> tuple[str, bool]:
+    """(chữ sau ký hiệu, có phải đầu dòng danh sách không)."""
+    m = _BULLET_MARK.match(text)
+    return (text[m.end():], True) if m else (text, False)
+
+
 def _strip_prefix(text: str) -> str:
     """Bỏ số đầu tiêu đề chạy. Số trong câu ('10月に', '4月1日') và ký hiệu của sách (□, ※) được giữ nguyên."""
     return _RUNNING_HEADER.sub("", text, count=1)
@@ -64,6 +74,7 @@ class Para:
     conf: float = 1.0
     ruby: list = field(default_factory=list)   # [(bắt đầu, kết thúc, cách đọc)] theo chỉ số ký tự của text
     toc: bool = False                          # dòng mục lục (có dấu chấm dẫn): không nối với đoạn khác
+    bullet: bool = False                       # đoạn mở đầu bằng ký hiệu đầu dòng của sách: xuất thành danh sách Word
 
 
 @dataclass
@@ -189,6 +200,7 @@ def _line_ruby(l: Line, anns: list[tuple[float, float, str]], off: int) -> list[
 
 def _mk(ls: list[Line], kind: str = "body", flt: "_Filter | None" = None) -> Para:
     ls[0].text = _strip_prefix(ls[0].text)
+    ls[0].text, bullet = _split_bullet(ls[0].text)
     ruby, off = [], 0
     for l in ls:
         if flt is not None and id(l) in flt.ruby:
@@ -196,7 +208,7 @@ def _mk(ls: list[Line], kind: str = "body", flt: "_Filter | None" = None) -> Par
         off += len(l.text)
     return Para("".join(l.text for l in ls), kind, min(l.x for l in ls), min(l.y for l in ls),
                 max(l.x1 for l in ls), max(l.y1 for l in ls), statistics.median(l.size for l in ls),
-                min(l.conf for l in ls), ruby)
+                min(l.conf for l in ls), ruby, bullet=bullet)
 
 
 def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Para | Table"]]:
@@ -205,7 +217,7 @@ def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Pa
     for o, it in items:
         if out and isinstance(it, Para) and isinstance(out[-1][1], Para):
             a: Para = out[-1][1]
-            if (a.kind == "body" and it.kind == "body" and not a.toc and not it.toc and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
+            if (a.kind == "body" and it.kind == "body" and not a.toc and not it.toc and not it.bullet and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
                     and abs(it.x - a.x) < 1.2 * a.size and -0.5 * a.size < it.y - a.y1 < 1.6 * a.size):
                 a.ruby += [(s + len(a.text), e + len(a.text), r) for s, e, r in it.ruby]; a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
                 continue

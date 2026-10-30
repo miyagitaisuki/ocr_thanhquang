@@ -56,3 +56,20 @@ def test_so_dung_dau_dong_van_bi_bo_trong_doan():
         _line("本文です。", 100, 60, 2),
     ])])
     assert [i.text for i in build_page(page)][0].startswith("すぐに使える例文集")
+
+
+def test_ky_hieu_dau_dong_thanh_danh_sach():
+    from ocrnhat.layout import _split_bullet
+    assert _split_bullet("■「講演」と入力するとき") == ("「講演」と入力するとき", True)
+    assert _split_bullet("□記憶違い") == ("記憶違い", True)
+    assert _split_bullet("※名前がわからない相手") == ("※名前がわからない相手", False)   # ghi chú: không phải danh sách
+    assert _split_bullet("本文") == ("本文", False)
+
+
+def test_doan_danh_sach_duoc_gan_co_va_khong_bi_gop():
+    page = Page(1000, 600, [Block("text", 100, 20, 800, 200, [
+        _line("■記憶違い", 100, 20, 1),
+        _line("本文です。", 100, 60, 2),
+    ])])
+    items = build_page(page)
+    assert items[0].bullet is True and items[0].text == "記憶違い本文です。"   # dòng sau là phần tiếp của mục
