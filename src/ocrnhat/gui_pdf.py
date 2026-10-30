@@ -15,12 +15,13 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QProgressBar, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import pdf_extract as pe
 from . import pdf_ops
 from . import ui_logic as L
+from .gui_style import show_banner
 
 log = logging.getLogger("ocrnhat.gui")
 PDF_FILTER = "PDF (*.pdf)"
@@ -126,9 +127,9 @@ class PdfFileList(QListWidget):
 class PdfFilesBox(QGroupBox):
     """Danh sách PDF dùng chung cho một mục: thêm, bỏ, sắp xếp. Gọi on_change khi danh sách đổi."""
 
-    def __init__(self, on_change):
+    def __init__(self, on_change, on_error=None):
         super().__init__("Tệp PDF")
-        self.on_change = on_change
+        self.on_change, self.on_error = on_change, on_error
         self.list = PdfFileList()
         self.count = QLabel("Chưa có file nào")
         self.btn_add = QPushButton("Thêm file…")
@@ -181,8 +182,8 @@ class PdfFilesBox(QGroupBox):
             item.setData(_PAGES_ROLE, n)
             self.list.addItem(item)
         self._refresh()
-        if errors:
-            QMessageBox.warning(self, "Không mở được PDF", "\n".join(errors))
+        if errors and self.on_error:
+            self.on_error("Không mở được PDF: " + "; ".join(errors))
 
     def remove_selected(self):
         for item in self.list.selectedItems():
@@ -255,7 +256,7 @@ class PdfSection(QGroupBox):
         self.settings, self.key = settings, settings_key
         self.worker: QThread | None = None
         self.fields: dict[str, object] = {}   # ô nhập theo tên, để lưu và khôi phục
-        self.files_box = PdfFilesBox(self.on_files_changed)
+        self.files_box = PdfFilesBox(self.on_files_changed, self._problem)
         self.output = PdfOutputBox(with_bookmarks=True)
         self.tabs = QTabWidget()
         self.run_buttons: list[QPushButton] = []
@@ -264,12 +265,16 @@ class PdfSection(QGroupBox):
         self.status = QLabel("Thêm file PDF, chọn thao tác rồi bấm Thực hiện.")
         self.status.setWordWrap(True)
         self.title_label = QLabel(title)
-        self.title_label.setStyleSheet("font-weight: bold; font-size: 15px;")
+        self.title_label.setObjectName("pdfTitle")
+        self.banner = QLabel("")   # lỗi nhập hiện ngay trong mục (thay hộp thoại)
+        self.banner.setWordWrap(True)
+        self.banner.setVisible(False)
         root = QVBoxLayout(self)
         root.addWidget(self.title_label)
         root.addWidget(self.files_box, 1)
         root.addWidget(self.output)
         root.addWidget(self.tabs)
+        root.addWidget(self.banner)
         root.addWidget(self.progress)
         root.addWidget(self.status)
         self.build_tabs()
@@ -297,6 +302,10 @@ class PdfSection(QGroupBox):
     def busy(self) -> bool:
         return bool(self.worker and self.worker.isRunning())
 
+    def _problem(self, text: str, focus=None):
+        """Lỗi nhập của thao tác: hiện trong banner của mục, đặt con trỏ vào ô bị lỗi nếu có."""
+        show_banner(self.banner, text, focus=focus)
+
     def _set_busy(self, busy: bool):
         for b in self.run_buttons:
             b.setEnabled(not busy)
@@ -309,6 +318,7 @@ class PdfSection(QGroupBox):
         if not jobs:
             return
         self._save()
+        self.banner.setVisible(False)
         self.progress.setValue(0)
         self._set_busy(True)
         self.worker = PdfJobWorker(jobs, done_text)
@@ -388,10 +398,10 @@ class SplitSection(PdfSection):
         files = self.files_box.files()
         spec = self.fields["pages"].text().strip()
         if not files:
-            QMessageBox.information(self, "Trích xuất trang", "Thêm ít nhất một file PDF.")
+            self._problem("Thêm ít nhất một file PDF.")
             return
         if not spec:
-            QMessageBox.information(self, "Trích xuất trang", "Nhập trang cần lấy, ví dụ 2 hoặc 5-23 hoặc 2,5-7,12-.")
+            self._problem("Nhập trang cần lấy, ví dụ 2 hoặc 5-23 hoặc 2,5-7,12-.", self.fields["pages"])
             return
         opts, out = self.output.options(self.separate.isChecked()), self.output.out()
         jobs = [(f"Trích xuất {f.name}", (lambda f=f: pe.extract_pages(f, spec, out, opts))) for f in files]
@@ -400,13 +410,13 @@ class SplitSection(PdfSection):
     def run_split(self):
         files = self.files_box.files()
         if not files:
-            QMessageBox.information(self, "Tách PDF", "Thêm ít nhất một file PDF.")
+            self._problem("Thêm ít nhất một file PDF.")
             return
         try:
             mode = self.split_mode.currentData()
             value = L.split_value(mode, self.fields["split_value"].text())
         except ValueError as e:
-            QMessageBox.information(self, "Tách PDF", str(e))
+            self._problem(str(e))
             return
         opts, out = self.output.options(), self.output.out()
         jobs = [(f"Tách {f.name}", (lambda f=f: pe.split_pdf(f, mode, value, out, opts))) for f in files]
@@ -472,7 +482,7 @@ class MergeSection(PdfSection):
 
     def _need(self, n: int, title: str) -> bool:
         if len(self.files_box.files()) < n:
-            QMessageBox.information(self, title, f"Thêm ít nhất {n} file PDF.")
+            self._problem(f"Thêm ít nhất {n} file PDF.")
             return False
         return True
 
@@ -496,12 +506,12 @@ class MergeSection(PdfSection):
             return
         main, ins = self._combo_path(self.main_cb), self._combo_path(self.ins_cb)
         if main is None or ins is None:
-            QMessageBox.information(self, "Chèn trang lặp lại", "Chọn file chính và file chứa trang chèn.")
+            self._problem("Chọn file chính và file chứa trang chèn.", self.main_cb if main is None else self.ins_cb)
             return
         try:
             page = int(self.fields["insert_page"].text().strip() or "1")
         except ValueError:
-            QMessageBox.information(self, "Chèn trang lặp lại", "Số trang chèn phải là số.")
+            self._problem("Số trang chèn phải là số.", self.fields["insert_page"])
             return
         name = L.name_or(self.fields["rep_name"].text(), "chen_trang")
         before = self.fields["insert_before"].isChecked()
@@ -571,7 +581,7 @@ class ToolsSection(PdfSection):
     def run_rotate(self):
         files = self.files_box.files()
         if not files:
-            QMessageBox.information(self, "Xoay trang", "Thêm ít nhất một file PDF.")
+            self._problem("Thêm ít nhất một file PDF.")
             return
         angle, pages = self.angle.currentData(), self.fields["rot_pages"].text().strip()
         out, opts = self.output.out(), self.output.options()
@@ -584,12 +594,12 @@ class ToolsSection(PdfSection):
     def run_compress(self):
         files = self.files_box.files()
         if not files:
-            QMessageBox.information(self, "Nén PDF", "Thêm ít nhất một file PDF.")
+            self._problem("Thêm ít nhất một file PDF.")
             return
         try:
             quality = self._quality()
         except ValueError as e:
-            QMessageBox.information(self, "Nén PDF", str(e))
+            self._problem(str(e))
             return
         out, opts = self.output.out(), self.output.options()
         jobs = [(f"Nén {f.name}", (lambda f=f: pdf_ops.compress_pdf(f, quality, out, opts))) for f in files]
@@ -606,7 +616,7 @@ class ToolsSection(PdfSection):
             return
         folder = Path(self.watch_folder_edit.text().strip())
         if not folder.is_dir():
-            QMessageBox.information(self, "Tự động theo thư mục", "Chọn một thư mục có sẵn.")
+            self._problem("Chọn một thư mục có sẵn.", self.watch_folder_edit)
             return
         opts = self.output.options()
         try:
@@ -617,7 +627,7 @@ class ToolsSection(PdfSection):
                 quality = self._quality()
                 process = lambda f: pdf_ops.compress_pdf(f, quality, pdf_ops.output_dir(folder), opts)
         except ValueError as e:
-            QMessageBox.information(self, "Tự động theo thư mục", str(e))
+            self._problem(str(e))
             return
         self._save()
         self.watcher = WatchWorker(folder, process)

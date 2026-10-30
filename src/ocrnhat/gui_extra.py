@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from . import gpupack
 from . import ui_logic as L
+from .gui_style import PALETTES
 
 log = logging.getLogger("ocrnhat.gui")
 
@@ -427,7 +428,7 @@ class ResultsBox(QGroupBox):
             item = QListWidgetItem(f"{'⚠ ' if low else '   '}{conf:.2f}  {text}")   # dấu ⚠: không chỉ dựa vào màu
             if low:
                 dark = self.lines.palette().base().color().lightness() < 128
-                item.setForeground(QColor("#FF8A80" if dark else "#B3261E"))
+                item.setForeground(QColor(PALETTES["tối" if dark else "sáng"]["danger"]))
             self.lines.addItem(item)
             self._row_to_line.append(i)
         if not self._line_data:
@@ -596,13 +597,17 @@ class ModelBox(QGroupBox):
 # ---------- hiển thị ----------
 
 def _dark_palette() -> QPalette:
+    """Palette Qt cho chế độ tối, lấy từ cùng bảng token với QSS (gui_style) để hai nơi không lệch nhau."""
+    t = PALETTES["tối"]
     p = QPalette()
-    dark = {QPalette.ColorRole.Window: "#1B1E23", QPalette.ColorRole.Base: "#1E2228", QPalette.ColorRole.AlternateBase: "#262A31",
-            QPalette.ColorRole.Text: "#E6E8EC", QPalette.ColorRole.WindowText: "#E6E8EC", QPalette.ColorRole.Button: "#262A31",
-            QPalette.ColorRole.ButtonText: "#E6E8EC", QPalette.ColorRole.Highlight: "#2F4A70",
-            QPalette.ColorRole.HighlightedText: "#E6E8EC", QPalette.ColorRole.ToolTipBase: "#262A31",
-            QPalette.ColorRole.ToolTipText: "#E6E8EC", QPalette.ColorRole.Mid: "#3A404A", QPalette.ColorRole.PlaceholderText: "#9AA3B2"}
-    for role, color in dark.items():
+    tokens = {QPalette.ColorRole.Window: t["page"], QPalette.ColorRole.Base: t["field"],
+              QPalette.ColorRole.AlternateBase: t["card"], QPalette.ColorRole.Text: t["text"],
+              QPalette.ColorRole.WindowText: t["text"], QPalette.ColorRole.Button: t["card"],
+              QPalette.ColorRole.ButtonText: t["text"], QPalette.ColorRole.Highlight: t["accent_soft"],
+              QPalette.ColorRole.HighlightedText: t["accent_dark"], QPalette.ColorRole.ToolTipBase: t["card"],
+              QPalette.ColorRole.ToolTipText: t["text"], QPalette.ColorRole.Mid: t["border"],
+              QPalette.ColorRole.PlaceholderText: t["muted"]}
+    for role, color in tokens.items():
         p.setColor(role, QColor(color))
     return p
 
