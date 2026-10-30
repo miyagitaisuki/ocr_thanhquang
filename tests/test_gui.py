@@ -110,7 +110,7 @@ def test_responsive_cua_so_hep(window):
     window.resize(800, 700)
     app.processEvents()
     app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
-    assert window.side.width() < 120 and window.nav.item(1).text() == "Tách"
+    assert window.side.width() < 120 and window.nav.item(1).text() == "Tách\nPDF"
     assert window.ocr.root_layout.direction() == QBoxLayout.Direction.TopToBottom
     window.resize(1180, 800)
     app.processEvents()
@@ -149,3 +149,21 @@ def test_o_nhap_co_ten_truy_cap(window):
                if not isinstance(w.parentWidget(), QSpinBox)]
     missing = [type(w).__name__ for w in widgets if w not in hidden and not w.accessibleName()]
     assert missing == []
+
+
+def test_dung_o_header_bat_theo_trang_thai(window):
+    """Nút Dừng nằm trên header, bật khi OCR đang chạy và tắt khi xong."""
+    window._on_ocr_busy(True)
+    assert window.stop_btn.isEnabled() and not window.run_btn.isEnabled()
+    window._on_ocr_busy(False)
+    assert not window.stop_btn.isEnabled() and window.run_btn.isEnabled()
+
+
+def test_muc_file_co_ten_de_doc_va_goi_y_keo_tha_rut_gon(window, tmp_path):
+    f = tmp_path / "so_tay.pdf"
+    f.write_bytes(b"")
+    window.ocr._add([f])
+    assert window.ocr.listing.item(0).text() == "so_tay.pdf"
+    assert window.ocr.drop.text() == gui.DROP_HINT_SHORT
+    window.ocr.clear()
+    assert window.ocr.drop.text() == gui.DROP_HINT
