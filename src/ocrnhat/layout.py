@@ -30,12 +30,11 @@ _LATIN_RUN = re.compile(r"[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ .,'’()\-]*")
 
 # tiêu đề chạy đầu trang bị dính số trang/mục ('2すぐに使える例文集', '1日本語メールの基本とコツ'): chỉ bỏ số ở các dòng này
 _RUNNING_HEADER = re.compile(r"^[0-9０-９]{1,2}(?=(?:すぐに使える|日本語メールの基本|日本語入力の基本|覚えておきたい|より良いメール))")
-_LEAD_BOX = re.compile(r"^[□■▪▫]\s*(?=[぀-ヿ㐀-䶿一-鿿])")
 
 
 def _strip_prefix(text: str) -> str:
-    """Bỏ số đầu tiêu đề chạy và ô vuông trang trí ở đầu đoạn. Số trong câu ('10月に', '4月1日') được giữ nguyên."""
-    return _LEAD_BOX.sub("", _RUNNING_HEADER.sub("", text, count=1), count=1)
+    """Bỏ số đầu tiêu đề chạy. Số trong câu ('10月に', '4月1日') và ký hiệu của sách (□, ※) được giữ nguyên."""
+    return _RUNNING_HEADER.sub("", text, count=1)
 
 
 def _jp_part(text: str) -> str:
