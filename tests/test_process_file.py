@@ -27,7 +27,7 @@ class _CountingEngine(OcrEngine):
 def fake_engine(monkeypatch):
     _CountingEngine.calls = 0
     monkeypatch.setattr(engines, "create", lambda name, device="cpu": _CountingEngine(device))
-    monkeypatch.setattr(engines, "resolve", lambda name=None: (name or "ndlocr", "test"))
+    monkeypatch.setattr(engines, "resolve", lambda name=None: (name if name not in (None, "auto") else "ndlocr", "test"))
     monkeypatch.setattr(engines, "engine_version", lambda name: "test")
     monkeypatch.setattr(pipeline, "_tls", threading.local())
     return _CountingEngine
@@ -95,7 +95,7 @@ def test_batch_gom_trang_va_giu_thu_tu(monkeypatch, tmp_path):
             return [self.ocr(i, n) for i, n in zip(imgs, names)]
 
     monkeypatch.setattr(engines, "create", lambda name, device="cpu": _Batch(device))
-    monkeypatch.setattr(engines, "resolve", lambda name=None: (name or "ndlocr", "test"))
+    monkeypatch.setattr(engines, "resolve", lambda name=None: (name if name not in (None, "auto") else "ndlocr", "test"))
     monkeypatch.setattr(engines, "engine_version", lambda name: "test")
     monkeypatch.setattr(engines, "batch_size", lambda name: 2)
     monkeypatch.setattr(pipeline, "_tls", threading.local())
@@ -107,4 +107,4 @@ def test_batch_gom_trang_va_giu_thu_tu(monkeypatch, tmp_path):
 def test_ngon_ngu_khac_tieng_nhat_chi_cho_chandra(fake_engine, pdf, tmp_path):
     import pytest as _pt
     with _pt.raises(ValueError, match="chandra"):
-        pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, lang="all")
+        pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, engine="ndlocr", lang="all")

@@ -11,6 +11,18 @@ from .model import Block, Line, Page
 
 _JP = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 _KANJI = re.compile(r"[㐀-䶿一-鿿]")
+# chữ của từng ngôn ngữ (không phải tiếng Nhật): dòng có đủ chữ thuộc bảng chữ này được giữ
+_SCRIPT = {"en": re.compile(r"[A-Za-z]"), "zh": re.compile(r"[㐀-䶿一-鿿]"),
+           "vi": re.compile(r"[A-Za-z\u00C0-\u1EF9]")}
+
+
+def _script_keep(t: str, lang: str) -> bool:
+    """Giữ dòng nếu đa số chữ cái thuộc bảng chữ của ngôn ngữ. Dòng chỉ có số (không có chữ) giữ với en/vi."""
+    letters = [c for c in t if c.isalpha()]
+    if not letters:
+        return lang != "zh" and any(c.isdigit() for c in t)
+    hit = sum(1 for c in letters if _SCRIPT[lang].match(c))
+    return hit / len(letters) >= 0.6
 _KANA_ONLY = re.compile(r"^[぀-ヿー・、。\s]+$")
 # ký tự rác engine hay gộp vào dòng furigana: chữ/số ASCII, ký hiệu, khoảng trắng
 _NOISE = re.compile(r"[A-Za-z0-9$＄#*%&@^~|/\\_<>=+\-.,:;!?()（）\[\]{}\s]")
@@ -57,6 +69,18 @@ def _jp_part(text: str) -> str:
     t = _LATIN_RUN.sub("", _OCR_SYMBOL_NOISE.sub("", t))
     return t.strip()
 _SENT_END = re.compile(r"[。！？!?」』）)]$")
+_SENT_END_LATIN = re.compile(r"[.!?:;]$")   # tiếng Anh/Việt: kết câu bằng dấu chấm, hỏi, than, hai chấm
+_SPACED = ("en", "vi")                      # ngôn ngữ viết cách từ: nối dòng bằng khoảng trắng
+
+
+def _ends_sentence(text: str, lang: str = "ja") -> bool:
+    return bool(_SENT_END.search(text)) or (lang in _SPACED and bool(_SENT_END_LATIN.search(text)))
+
+
+def _glue(a: str, b: str, lang: str = "ja") -> str:
+    """Nối hai đoạn chữ. Với tiếng Anh/Việt, thêm khoảng trắng khi hai bên đều là chữ hoặc số."""
+    sep = " " if lang in _SPACED and a[-1:].isalnum() and b[:1].isalnum() else ""
+    return a + sep + b
 _BULLET = re.compile(r"^([◆◇●○■□※❖・·]|\d+[\.)）]|[(（]\d+[)）]|[①-⑳])")
 
 
@@ -169,8 +193,10 @@ class _Filter:
         t = l.text.strip()
         if not t or self.furigana(l):
             return False
-        if self.lang != "ja":
+        if self.lang == "all":
             return True
+        if self.lang != "ja":
+            return _script_keep(t, self.lang)
         if table:   # ô bảng giữ nguyên quy tắc cũ: dòng có từ Latin bị loại hẳn
             if _LATIN_WORD.search(t):
                 return False
@@ -215,25 +241,27 @@ def _line_ruby(l: Line, anns: list[tuple[float, float, str]], off: int) -> list[
 def _mk(ls: list[Line], kind: str = "body", flt: "_Filter | None" = None) -> Para:
     ls[0].text = _strip_prefix(ls[0].text)
     ls[0].text, bullet = _split_bullet(ls[0].text)
-    ruby, off = [], 0
+    ruby = []
+    lang = flt.lang if flt is not None else "ja"
+    text = ""
     for l in ls:
+        text = _glue(text, l.text, lang) if text else l.text
         if flt is not None and id(l) in flt.ruby:
-            ruby += _line_ruby(l, flt.ruby[id(l)], off)
-        off += len(l.text)
-    return Para("".join(l.text for l in ls), kind, min(l.x for l in ls), min(l.y for l in ls),
+            ruby += _line_ruby(l, flt.ruby[id(l)], len(text) - len(l.text))
+    return Para(text, kind, min(l.x for l in ls), min(l.y for l in ls),
                 max(l.x1 for l in ls), max(l.y1 for l in ls), statistics.median(l.size for l in ls),
                 min(l.conf for l in ls), ruby, bullet=bullet)
 
 
-def _merge_paras(items: list[tuple[int, "Para | Table"]]) -> list[tuple[int, "Para | Table"]]:
+def _merge_paras(items: list[tuple[int, "Para | Table"]], lang: str = "ja") -> list[tuple[int, "Para | Table"]]:
     """Nối đoạn bị tách giữa hai khối: đoạn trước chưa kết câu, đoạn sau cùng cột, sát bên dưới."""
     out: list[tuple[int, "Para | Table"]] = []
     for o, it in items:
         if out and isinstance(it, Para) and isinstance(out[-1][1], Para):
             a: Para = out[-1][1]
-            if (a.kind == "body" and it.kind == "body" and not it.hard_break and not a.toc and not it.toc and not it.bullet and not _SENT_END.search(a.text) and not _BULLET.match(it.text)
+            if (a.kind == "body" and it.kind == "body" and not it.hard_break and not a.toc and not it.toc and not it.bullet and not _ends_sentence(a.text, lang) and not _BULLET.match(it.text)
                     and abs(it.x - a.x) < 1.2 * a.size and -0.5 * a.size < it.y - a.y1 < 1.6 * a.size):
-                a.ruby += [(s + len(a.text), e + len(a.text), r) for s, e, r in it.ruby]; a.text += it.text; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
+                a.text = _glue(a.text, it.text, lang); shift = len(a.text) - len(it.text); a.ruby += [(s + shift, e + shift, r) for s, e, r in it.ruby]; a.x1 = max(a.x1, it.x1); a.y1 = it.y1; a.conf = min(a.conf, it.conf)
                 continue
         out.append((o, it))
     return out
@@ -272,7 +300,7 @@ def _paragraphs(block: Block, flt: _Filter) -> list[Para]:
             p = paras[-1][-1]
             if not l.vertical and not p.vertical:
                 if l.x - left > 0.6 * H: new = True
-                elif _SENT_END.search(p.text) and p.x1 < right - 1.5 * H: new = True
+                elif _ends_sentence(p.text, flt.lang) and p.x1 < right - 1.5 * H: new = True
                 elif _BULLET.match(l.text): new = True
                 elif wide(p, l): new = wide_gap = True
         if new:
@@ -763,10 +791,10 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_r
             rest = [l for l in b.lines if id(l) not in taken]
             for p in _paragraphs(Block(b.kind, b.x, b.y, b.w, b.h, rest, b.label), flt): items.append((b.order, p))
     items.sort(key=lambda it: it[0])
-    return [it for _, it in _merge_paras(items)]
+    return [it for _, it in _merge_paras(items, lang)]
 
 
-def merge_pages(pages: list[tuple[int, list]]) -> list[tuple[int, list]]:
+def merge_pages(pages: list[tuple[int, list]], lang: str = "ja") -> list[tuple[int, list]]:
     """Gộp các trang thành một khối liền mạch: đoạn bị cắt ở cuối trang nối với đoạn đầu trang sau
     (khi đoạn trước chưa kết câu), trang không còn chữ bị bỏ. Tiêu đề, bảng và danh sách không nối."""
     out: list[tuple[int, list]] = []
@@ -776,8 +804,8 @@ def merge_pages(pages: list[tuple[int, list]]) -> list[tuple[int, list]]:
         if prev and items and isinstance(prev[-1], Para) and isinstance(items[0], Para):
             a, b = prev[-1], items[0]
             if (a.kind == "body" and b.kind == "body" and not a.toc and not b.toc and not a.bullet and not b.bullet
-                    and not _SENT_END.search(a.text) and not _BULLET.match(b.text)):
-                joined = replace(a, text=a.text + b.text, x1=max(a.x1, b.x1), y1=b.y1,
+                    and not _ends_sentence(a.text, lang) and not _BULLET.match(b.text)):
+                joined = replace(a, text=_glue(a.text, b.text, lang), x1=max(a.x1, b.x1), y1=b.y1,
                                  conf=min(a.conf, b.conf),
                                  ruby=a.ruby + [(s + len(a.text), e + len(a.text), r) for s, e, r in b.ruby])
                 prev[-1] = joined

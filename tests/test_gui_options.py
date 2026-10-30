@@ -68,7 +68,7 @@ def test_upscale_khong_phai_so_bao_loi():
 
 def test_chon_doc_kana_duoc_chuyen_thanh_kana_reader():
     assert _read()["kana_reader"] == ""
-    assert _read(kana="Mẫu IPAGothic (thử nghiệm)")["kana_reader"] == "template"
+    assert _read(kana="Mẫu chữ IPAGothic (thử nghiệm)")["kana_reader"] == "template"
     assert _read(kana="Tesseract (thử nghiệm)")["kana_reader"] == "tesseract"
     params = inspect.signature(pipeline.process_file).parameters
     assert "kana_reader" in params

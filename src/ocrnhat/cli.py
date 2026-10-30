@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
     ap = argparse.ArgumentParser(prog="ocrnhat", description="OCR PDF/ảnh, chỉ lấy tiếng Nhật, xuất Word (.docx).")
     ap.add_argument("inputs", nargs="*", help="PDF, ảnh hoặc thư mục")
-    ap.add_argument("-o", "--out", default="ocr_output", help="thư mục kết quả")
+    ap.add_argument("-o", "--out", default=None, help="thư mục kết quả (mặc định: thư mục chứa file gốc)")
     ap.add_argument("--pages", default="", help="ví dụ 1-5,8 (chỉ áp dụng cho PDF)")
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--no-txt", action="store_true", help="không ghi kèm file .txt")
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--conf", type=float, default=0.8, help="ngưỡng độ tin cậy cho --review (mặc định 0.8)")
     ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định auto)")
     ap.add_argument("--keep-pages", action="store_true", help="giữ nguyên từng trang (mặc định: gộp các trang thành một khối liền mạch)")
-    ap.add_argument("--lang", default="ja", choices=["ja", "all"], help="ja: chỉ giữ tiếng Nhật (mặc định); all: mọi ngôn ngữ, chỉ dùng với --engine chandra")
+    ap.add_argument("--lang", default="ja", choices=["ja", "en", "zh", "vi", "all"], help="ja: tiếng Nhật (mặc định, NDLOCR/Chandra); en: tiếng Anh, zh: tiếng Trung (PaddleOCR); vi: tiếng Việt (VietOCR); all: mọi ngôn ngữ (chỉ Chandra)")
     ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--device", default="auto", choices=gpu_mod.DEVICES, help="auto | cpu | cuda (GPU NVIDIA, cần onnxruntime-gpu)")
     ap.add_argument("--no-cell-reocr", action="store_true", help="không nhận dạng lại các ô bảng có dòng vượt đường kẻ")
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     pages = pipeline.parse_pages(a.pages)
     for f in files:
         r = pipeline.process_file(
-            f, Path(a.out), a.dpi, pages if f.suffix.lower() == ".pdf" else None,
+            f, Path(a.out) if a.out else None, a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
             review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, lang=a.lang, merge_pages=not a.keep_pages, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, crop=crop, upscale=a.upscale, suspect=a.suspect, kana_reader=a.kana_reader,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))

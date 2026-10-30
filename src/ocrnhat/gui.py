@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
+import math
 import os
 import queue
 import subprocess
@@ -36,12 +37,16 @@ PALETTES = {
                 SEL="#2F4A70", HEAD="#2F343D", TROUGH="#343A44", FIELD="#1E2228"),
 }
 FONT_SIZES = {"Nhỏ": 9, "Vừa": 10, "Lớn": 12}
+ALPHA_LEVELS = (100, 95, 90, 85, 80)   # độ đục của cửa sổ, phần trăm
 PRESETS = {   # mẫu tài liệu: đặt sẵn một số tùy chọn; các ô khác giữ nguyên
     "Sổ tay / sách (mặc định)": dict(upscale="1", cell_reocr=True),
     "Ảnh chụp điện thoại": dict(upscale="2", cell_reocr=True),
     "Chỉ văn bản (không bảng)": dict(upscale="1", cell_reocr=False),
 }
 INPUT_W = 34   # độ rộng thống nhất của mọi ô nhập và danh sách chọn
+HEADER_BTN_W = 150   # ba nút trên thanh đầu (Chạy OCR, Dừng, Tìm nhanh) có cùng kích thước
+BTN_W = 300    # chiều rộng chung (px) của các nút tải model và cài gói
+INPUT_PX = 330  # độ rộng tối thiểu (px) của cột ô nhập, khớp INPUT_W
 SETTINGS = gpupack.pack_dir().parent / "settings.json"
 LOG_FILE = gpupack.pack_dir().parent / "logs" / "app.log"
 log = logging.getLogger("ocrnhat.gui")
@@ -78,6 +83,278 @@ def _pick_font() -> str | None:
     return None
 
 
+def _hex(c: str) -> tuple:
+    return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _mix(a: str, b: str, t: float) -> str:
+    """Trộn màu a về phía b (t = 0..1)."""
+    return "#%02X%02X%02X" % tuple(round(x + (y - x) * t) for x, y in zip(_hex(a), _hex(b)))
+
+
+def _lum(c: str) -> float:
+    r, g, b = _hex(c)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def _parent_bg(widget) -> str:
+    """Màu nền của khung chứa gần nhất, để nút khớp nền (ttk không cho đọc trực tiếp)."""
+    style = ttk.Style()
+    w = widget
+    while w is not None:
+        cls = w.winfo_class()
+        if cls in ("TFrame", "TLabelframe"):
+            bg = style.lookup(str(w.cget("style")) or cls, "background")
+        elif cls in ("Frame", "Canvas", "Tk", "Toplevel"):
+            bg = w.cget("background")
+        else:
+            bg = ""
+        if bg:
+            return bg
+        w = w.master
+    return "#F4F5F7"
+
+
+class GradientButton(tk.Canvas):
+    """Nút chức năng có gradient dọc (ttk không hỗ trợ gradient). API giống ttk.Button: text, command, state, style.
+
+    style "Run.TButton" -> xanh lá (Chạy OCR), "Accent.TButton" -> xanh dương, còn lại trung tính theo nền.
+    width (px) đặt chiều rộng cố định; không đặt thì theo độ dài chữ.
+    """
+
+    VARIANTS = {"run": ("#34B25C", "#1B5E20", "#FFFFFF"), "accent": ("#5B9BFF", "#1F6FEB", "#FFFFFF"),
+                "danger": ("#F2625C", "#B71C1C", "#FFFFFF"),
+                "run_soft": ("#7FCB92", "#3E9A55", "#FFFFFF")}   # tab không được chọn: xanh nhạt hơn
+    HEIGHT = 32
+    RADIUS = 8   # bán kính góc bo tròn (px)
+    ICON_W, ICON_GAP = 16, 8
+
+    def __init__(self, master, text: str = "", command=None, state: str = "normal", style: str = "",
+                 width: int | None = None, icon: str | None = None, **_):
+        self._bg = _parent_bg(master)
+        super().__init__(master, height=self.HEIGHT, highlightthickness=0, bd=0, bg=self._bg, cursor="hand2")
+        self._text, self._command, self._state = text, command, state
+        self._variant = ("run" if style.startswith("Run") else "accent" if style.startswith("Accent")
+                         else "danger" if style.startswith("Danger") else "run_soft" if style.startswith("Soft")
+                         else "neutral")
+        self._icon = icon   # "stop": hình vuông trắng; "search": kính lúp
+        self._font = tkfont.nametofont("TkDefaultFont")
+        self._fixed_w = width
+        self._hover = self._down = False
+        self._apply_width()
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self._draw()
+
+    def set_variant(self, variant: str):
+        self._variant = variant
+        self._draw()
+
+    def _apply_width(self):
+        extra = (self.ICON_W + self.ICON_GAP) if self._icon else 0
+        tk.Canvas.configure(self, width=self._fixed_w or self._font.measure(self._text) + 36 + extra)
+
+    def _colors(self) -> tuple[str, str, str]:
+        """(đỉnh, đáy, chữ) theo biến thể, trạng thái và nền."""
+        light = _lum(self._bg) > 128
+        if self._state == "disabled" and self._variant == "danger":   # Dừng: đỏ nhạt, vẫn nhận ra là nút dừng
+            return "#E8776F", "#C2453F", "#FFFFFF"
+        if self._state == "disabled":
+            top, bot, fg = ("#D9DDE3", "#C5CAD2", "#8A919C") if light else ("#3D434C", "#30353C", "#6B7280")
+            return top, bot, fg
+        if self._variant == "neutral":
+            top = _mix(self._bg, "#FFFFFF", 0.75 if light else 0.18)
+            bot = _mix(self._bg, "#000000", 0.14 if light else 0.35)
+            fg = "#1F2328" if light else "#E6E8EC"
+        else:
+            top, bot, fg = self.VARIANTS[self._variant]
+        if self._down:
+            top, bot = _mix(top, "#000000", 0.15), _mix(bot, "#000000", 0.15)
+        elif self._hover:
+            top, bot = _mix(top, "#FFFFFF", 0.12), _mix(bot, "#FFFFFF", 0.12)
+        return top, bot, fg
+
+    def _draw(self):
+        self.delete("all")
+        w, h = max(1, self.winfo_width()), max(1, self.winfo_height())
+        top, bot, fg = self._colors()
+        r = min(self.RADIUS, h // 2, w // 2)
+        for y in range(h):
+            yc = y + 0.5   # bo góc: thu hẹp mỗi dòng theo cung tròn ở đầu và cuối nút
+            if yc < r:
+                inset = r - math.sqrt(max(0.0, r * r - (r - yc) ** 2))
+            elif yc > h - r:
+                inset = r - math.sqrt(max(0.0, r * r - (yc - (h - r)) ** 2))
+            else:
+                inset = 0
+            self.create_line(inset, y, w - inset, y, fill=_mix(top, bot, y / max(1, h - 1)))
+        icon_w = (self.ICON_W + self.ICON_GAP) if self._icon else 0
+        x0 = (w - icon_w - self._font.measure(self._text)) / 2
+        if self._icon:
+            self._draw_icon(x0, h / 2, fg)
+        self.create_text(x0 + icon_w, h / 2, text=self._text, fill=fg, font=self._font, anchor="w")
+
+    def _draw_icon(self, x: float, cy: float, color: str):
+        if self._icon == "stop":
+            self.create_rectangle(x + 2, cy - 6, x + 13, cy + 5, fill=color, outline="")
+        elif self._icon == "search":
+            self.create_oval(x + 1, cy - 8, x + 11, cy + 2, outline=color, width=2)
+            self.create_line(x + 9, cy + 1, x + 14, cy + 6, fill=color, width=3, capstyle="round")
+
+    def configure(self, cnf=None, **kw):
+        kw = dict(cnf or {}, **kw)
+        if "text" in kw:
+            self._text = kw.pop("text")
+            if self._fixed_w is None:
+                self._apply_width()
+        if "state" in kw:
+            self._state = kw.pop("state")
+        if "command" in kw:
+            self._command = kw.pop("command")
+        if kw:
+            tk.Canvas.configure(self, **kw)
+        self._draw()
+
+    config = configure
+
+    def cget(self, key):
+        if key == "text":
+            return self._text
+        if key == "state":
+            return self._state
+        return tk.Canvas.cget(self, key)
+
+    def _on_enter(self, _e):
+        if self._state != "disabled":
+            self._hover = True
+            self._draw()
+
+    def _on_leave(self, _e):
+        self._hover = self._down = False
+        self._draw()
+
+    def _press(self, _e):
+        if self._state != "disabled":
+            self._down = True
+            self._draw()
+
+    def _release(self, _e):
+        if self._state == "disabled":
+            return
+        fire = self._down and self._hover
+        self._down = False
+        self._draw()
+        if fire and self._command:
+            self._command()
+
+
+class GradientNotebook(tk.Frame):
+    """Thanh tab bo tròn, gradient xanh như nút Chạy OCR. Chỉ có add() và select() như ttk.Notebook."""
+
+    def __init__(self, master, **_):
+        super().__init__(master, bg=_parent_bg(master), highlightthickness=0, bd=0)
+        self._bar = tk.Frame(self, bg=self["bg"], highlightthickness=0, bd=0)
+        self._bar.pack(fill="x", pady=(0, 10))
+        self._body = tk.Frame(self, bg=self["bg"], highlightthickness=0, bd=0)
+        self._body.pack(fill="both", expand=True)
+        self._tabs: list[tuple[tk.Misc, GradientButton]] = []
+
+    def add(self, child, text: str = ""):
+        btn = GradientButton(self._bar, text=text.strip(), style="Soft.TButton",
+                             command=lambda c=child: self.select(c))
+        btn.pack(side="left", padx=(0, 8))
+        self._tabs.append((child, btn))
+        if len(self._tabs) == 1:
+            self.select(child)
+
+    def select(self, child):
+        for c, b in self._tabs:
+            b.set_variant("run" if c is child else "run_soft")
+            c.pack_forget()
+        child.pack(in_=self._body, fill="both", expand=True)
+
+    def tabs(self) -> list:
+        return [c for c, _ in self._tabs]
+
+
+CAT_ORANGE = "#F2A03D"
+
+
+class _CatMixin:
+    """Mèo chạy trên đường ray dưới thanh tiến trình. Vẽ bằng Canvas, không cần file ảnh.
+
+    Vị trí theo tiến trình OCR; chân đổi khung mỗi 130 ms khi đang chạy; về đích thì đứng cạnh cờ.
+    """
+
+    def _cat_init(self, parent, before):
+        """Vùng mèo nằm ngay trên thanh tiến trình; chân mèo chạm mép trên thanh."""
+        self.cat = tk.Canvas(parent, height=34, highlightthickness=0, bd=0, bg=_parent_bg(parent))
+        self.cat.pack(fill="x", pady=(10, 0), before=before)
+        self._cat_pos, self._cat_frame, self._cat_running, self._cat_job = 0.0, 0, False, None
+        self._cat_finished = False
+        self.cat.bind("<Configure>", lambda e: self._cat_draw())
+        self.after(50, self._cat_draw)
+
+    def _cat_start(self):
+        self._cat_pos, self._cat_finished = 0.0, False
+        self._cat_running = True
+        self._cat_loop()
+
+    def _cat_loop(self):
+        if not self._cat_running:
+            return
+        self._cat_frame ^= 1
+        self._cat_draw()
+        self._cat_job = self.after(130, self._cat_loop)
+
+    def _cat_move(self, frac: float):
+        self._cat_pos = max(0.0, min(1.0, frac))
+        self._cat_draw()
+
+    def _cat_stop(self):
+        """Hết việc: mèo về đích nếu không bị dừng giữa chừng."""
+        self._cat_running = False
+        if self._cat_job is not None:
+            self.after_cancel(self._cat_job)
+            self._cat_job = None
+        self._cat_finished = not self.cancel.is_set()
+        if self._cat_finished:
+            self._cat_pos = 1.0
+        self._cat_frame = 0
+        self._cat_draw()
+
+    def _cat_draw(self):
+        c = self.cat
+        c.delete("all")
+        w = max(1, c.winfo_width())
+        ground = max(10, c.winfo_height() - 1)   # mép trên thanh tiến trình
+        # cờ về đích
+        if self._cat_finished:
+            c.create_line(w - 10, ground, w - 10, 4, fill=self.pal["MUTED"], width=2)
+            c.create_polygon(w - 10, 4, w - 1, 8, w - 10, 12, fill="#2E7D32", outline="")
+        x0 = 4 + (w - 64) * self._cat_pos
+        bob = 0 if self._cat_finished or not self._cat_running else (1 if self._cat_frame else 0)
+        y = ground - bob
+        o = CAT_ORANGE
+        # đuôi, thân, đầu, tai, mắt
+        c.create_line(x0 + 9, y - 6, x0 + 2, y - 12, x0 + 1, y - 19, smooth=True, width=3, fill=o)
+        c.create_oval(x0 + 8, y - 17, x0 + 37, y - 6, fill=o, outline="")
+        c.create_oval(x0 + 30, y - 24, x0 + 46, y - 9, fill=o, outline="")
+        c.create_polygon(x0 + 32, y - 22, x0 + 33, y - 30, x0 + 37, y - 23, fill=o, outline="")
+        c.create_polygon(x0 + 39, y - 23, x0 + 42, y - 30, x0 + 44, y - 21, fill=o, outline="")
+        c.create_oval(x0 + 40, y - 17, x0 + 43, y - 14, fill=self.pal["TEXT"], outline="")
+        # chân: hai khung xen kẽ khi chạy, đứng yên khi về đích
+        if self._cat_running and not self._cat_finished:
+            a, b = ((x0 + 33, x0 + 37), (x0 + 13, x0 + 9)) if self._cat_frame == 0 else ((x0 + 33, x0 + 29), (x0 + 13, x0 + 17))
+        else:
+            a, b = ((x0 + 33, x0 + 37), (x0 + 13, x0 + 9))
+        for fx, fy in (a, b):
+            c.create_line(fx, y - 8, fy, ground, width=3, fill=o)
+
+
 class Tip:
     """Chú thích khi di chuột vào: hiện sau 0,4 giây, ẩn khi rời chuột."""
 
@@ -106,16 +383,48 @@ class Tip:
             self.win.destroy(); self.win = None
 
 
-class App(_Base):
+class Spinner(tk.Canvas):
+    """Vòng tròn xoay báo đang làm việc. start()/stop(); stop() dừng xoay, còn hiện hay ẩn do người gọi quyết."""
+
+    def __init__(self, master, size: int = 20, **kw):
+        style = ttk.Style()
+        bg = style.lookup("Card.TFrame", "background") or None
+        fg = style.lookup("Accent.Horizontal.TProgressbar", "background") or "#2e7d32"
+        super().__init__(master, width=size, height=size, highlightthickness=0, bd=0, bg=bg, **kw)
+        pad = 3
+        self._arc = self.create_arc(pad, pad, size - pad, size - pad, start=0, extent=270,
+                                    style="arc", width=3, outline=fg)
+        self._angle = 0
+        self._job = None
+
+    def start(self):
+        if self._job is None:
+            self._tick()
+
+    def _tick(self):
+        self._angle = (self._angle - 30) % 360
+        self.itemconfigure(self._arc, start=self._angle)
+        self._job = self.after(60, self._tick)
+
+    def stop(self):
+        if self._job is not None:
+            self.after_cancel(self._job)
+            self._job = None
+
+
+class App(_CatMixin, _Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
-    KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
-    LANG_LABELS = {"ja": "Tiếng Nhật", "all": "Mọi ngôn ngữ"}
+    KANA_LABELS = {"": "Tắt", "template": "Mẫu chữ IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
+    LANG_LABELS = {"ja": "Tiếng Nhật", "en": "Tiếng Anh", "zh": "Tiếng Trung", "vi": "Tiếng Việt", "all": "Mọi ngôn ngữ (cần Chandra)"}
+    # ngôn ngữ được chọn cho từng engine (auto: mọi ngôn ngữ, engine tự chọn theo ngôn ngữ)
+    ENGINE_LANGS = {"ndlocr": ("ja",), "chandra": ("ja", "en", "zh", "vi", "all"), "paddle": ("en", "zh"),
+                    "ocr_vi": ("vi",), "auto": ("ja", "en", "zh", "vi", "all")}
     # chandra chỉ hiện khi đã cài (exe GPU hoặc gói GPU tùy chọn đã kích hoạt)
-    ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("ocr_en", "ocr_vi")
-    # danh sách engine theo ngôn ngữ; tiếng Anh và tiếng Việt là chỗ giữ, chưa có engine
-    ENGINE_LABELS = {"auto": "Tự động (engine phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
-                     "chandra": "Tiếng Nhật – Chandra", "ocr_en": "Tiếng Anh – [chưa có engine]",
-                     "ocr_vi": "Tiếng Việt – [chưa có engine]"}
+    ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("paddle", "ocr_vi")
+    # danh sách engine theo ngôn ngữ
+    ENGINE_LABELS = {"auto": "Tự động (công cụ phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
+                     "chandra": "Tiếng Nhật – Chandra", "paddle": "Tiếng Anh, Trung – PaddleOCR",
+                     "ocr_vi": "Tiếng Việt – VietOCR"}
     MERGE_LABELS = {True: "Gộp trang (mặc định)", False: "Giữ nguyên trang"}
 
     def _engine_key(self) -> str:
@@ -124,7 +433,7 @@ class App(_Base):
 
     def __init__(self):
         super().__init__()
-        self.title("OCR tiếng Nhật")
+        self.title("OCR-Nhat · nhiều ngôn ngữ")
         self.geometry("960x820")
         self.minsize(860, 600)
         self.files: list[Path] = []
@@ -158,7 +467,7 @@ class App(_Base):
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
         canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
 
-        self.nb = ttk.Notebook(page)
+        self.nb = GradientNotebook(page)
         self.nb.pack(fill="both", expand=True)
         self.tab_src = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.tab_proc = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
@@ -166,9 +475,9 @@ class App(_Base):
         self.tab_res = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
         self.nb.add(self.tab_src, text="  Tài liệu  ")
         self.tab_ai = ttk.Frame(self.nb, style="Page.TFrame", padding=(12, 12))
-        self.nb.add(self.tab_proc, text="  Xử lý OCR  ")
+        self.nb.add(self.tab_proc, text="  Tùy chọn  ")
         self.nb.add(self.tab_ai, text="  AI powered  ")
-        self.nb.add(self.tab_rev, text="  Rà soát  ")
+        self.nb.add(self.tab_rev, text="  Kiểm tra  ")
         self.nb.add(self.tab_res, text="  Kết quả  ")
         self._tab_sources()
         self._tab_process()
@@ -199,8 +508,20 @@ class App(_Base):
         for label, pt in FONT_SIZES.items():
             size.add_command(label=f"{label} ({pt})", command=lambda p=pt: self._set_font(p))
         view.add_cascade(label="Cỡ chữ", menu=size)
+        trans = tk.Menu(view, tearoff=0)
+        self._alpha = tk.IntVar(value=int(self.settings.get("alpha", 100)))
+        for pct in ALPHA_LEVELS:
+            trans.add_radiobutton(label=f"{pct}%", variable=self._alpha, value=pct, command=lambda p=pct: self._set_alpha(p))
+        view.add_cascade(label="Độ trong suốt cửa sổ", menu=trans)
         menubar.add_cascade(label="Hiển thị", menu=view)
         self.config(menu=menubar)
+        self.attributes("-alpha", self._alpha.get() / 100)   # áp dụng ngay khi mở
+
+    def _set_alpha(self, pct: int):
+        """Độ mờ của cả cửa sổ (100% = đục). Áp dụng ngay, không cần khởi động lại."""
+        self.settings["alpha"] = pct
+        save_settings(self.settings)
+        self.attributes("-alpha", pct / 100)
 
     def _set_theme(self, name: str):
         self.settings["theme"] = name
@@ -218,16 +539,20 @@ class App(_Base):
         top.pack(side="top", fill="x")
         btns = ttk.Frame(top, style="Page.TFrame")
         btns.pack(fill="x")
-        self.btn = ttk.Button(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start)
+        self.btn = GradientButton(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start, width=HEADER_BTN_W)
         self.btn.pack(side="left")
-        self.stop = ttk.Button(btns, text="Dừng", command=self.cancel.set, state="disabled")
+        self.stop = GradientButton(btns, text="Dừng", command=self._request_stop, state="disabled", style="Danger.TButton", icon="stop", width=HEADER_BTN_W)
         self.stop.pack(side="left", padx=8)
-        self.hw = tk.StringVar(value="Đang dò phần cứng…")
+        self.find = GradientButton(btns, text="Tìm nhanh", command=self.find_output, icon="search", width=HEADER_BTN_W)
+        self.find.pack(side="left", padx=(0, 8))
+        Tip(self.find, "Mở thư mục kết quả (mục đang chọn, hoặc mục mới nhất).")
+        self.hw = tk.StringVar(value="Đang kiểm tra phần cứng…")
         ttk.Label(btns, textvariable=self.hw, style="Status.TLabel").pack(side="right")
         Tip(self.btn, "Bắt đầu OCR cho mọi file trong danh sách. Phím tắt: Ctrl+R hoặc F5.")
-        Tip(self.stop, "Dừng sau trang đang xử lý. Các trang đã xong vẫn được lưu. Phím tắt: Esc.")
+        Tip(self.stop, "Dừng sau trang hiện tại. Các trang đã xong vẫn được lưu (Esc).")
         self.pb = ttk.Progressbar(top, maximum=100, style="Accent.Horizontal.TProgressbar")
-        self.pb.pack(fill="x", pady=(10, 4))
+        self.pb.pack(fill="x", pady=(0, 4))
+        self._cat_init(top, before=self.pb)
         self.status = tk.StringVar(value="Sẵn sàng.")
         ttk.Label(top, textvariable=self.status, style="Status.TLabel", wraplength=880, justify="left").pack(fill="x")
 
@@ -235,7 +560,7 @@ class App(_Base):
         self.bind("<Control-o>", lambda e: self.add_files())
         self.bind("<Control-r>", lambda e: self.start())
         self.bind("<F5>", lambda e: self.start())
-        self.bind("<Escape>", lambda e: self.cancel.set() if self.worker and self.worker.is_alive() else None)
+        self.bind("<Escape>", lambda e: self._request_stop() if self.worker and self.worker.is_alive() else None)
         self.tree.bind("<Delete>", lambda e: self.remove_selected())
 
     # ---------- các tab ----------
@@ -244,14 +569,14 @@ class App(_Base):
         src = self._card(self.tab_src, "Tài liệu nguồn")
         bar = ttk.Frame(src, style="Card.TFrame")
         bar.pack(fill="x", pady=(0, 8))
-        b_add = ttk.Button(bar, text="Thêm file…", command=self.add_files); b_add.pack(side="left")
-        b_dir = ttk.Button(bar, text="Thêm thư mục…", command=self.add_dir); b_dir.pack(side="left", padx=6)
-        b_del = ttk.Button(bar, text="Xóa mục đã chọn", command=self.remove_selected); b_del.pack(side="left")
-        b_clr = ttk.Button(bar, text="Xóa danh sách", command=self.clear); b_clr.pack(side="left", padx=6)
+        b_add = GradientButton(bar, text="Thêm file…", command=self.add_files); b_add.pack(side="left")
+        b_dir = GradientButton(bar, text="Thêm thư mục…", command=self.add_dir); b_dir.pack(side="left", padx=6)
+        b_del = GradientButton(bar, text="Bỏ mục đã chọn", command=self.remove_selected); b_del.pack(side="left")
+        b_clr = GradientButton(bar, text="Bỏ tất cả", command=self.clear); b_clr.pack(side="left", padx=6)
         Tip(b_add, "Chọn một hoặc nhiều file PDF hoặc ảnh (PNG, JPG, TIFF...). Phím tắt: Ctrl+O.")
         Tip(b_dir, "Lấy tất cả PDF và ảnh trong một thư mục.")
-        Tip(b_del, "Bỏ file đang chọn khỏi danh sách (phím Delete). File gốc không bị xóa.")
-        Tip(b_clr, "Bỏ hết file khỏi danh sách. File gốc trên máy không bị xóa.")
+        Tip(b_del, "Bỏ mục đang chọn khỏi danh sách (Delete). File gốc vẫn còn.")
+        Tip(b_clr, "Bỏ hết mục khỏi danh sách. File gốc vẫn còn.")
         self.count = tk.StringVar(value="Chưa có file nào")
         ttk.Label(bar, textvariable=self.count, style="Muted.TLabel").pack(side="right")
         table = ttk.Frame(src, style="Card.TFrame")
@@ -277,24 +602,27 @@ class App(_Base):
                 w.dnd_bind("<<Drop>>", self._on_drop)
 
         out = self._card(self.tab_src, "Đầu ra")
-        self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", str(Path.home() / "ocr_output")), width=INPUT_W))
-        b_out = ttk.Button(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
-        Tip(b_out, "Chọn thư mục để lưu file kết quả (.docx và .txt).")
+        self._row(out, 0, "Thư mục lưu kết quả", ttk.Entry(out, textvariable=self._var("out", ""), width=INPUT_W))
+        b_out = GradientButton(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
+        Tip(b_out, "Chọn thư mục lưu kết quả. Để trống thì lưu cạnh file gốc.")
+        self.out_hint = tk.StringVar()
+        self._var("out", "").trace_add("write", lambda *_: self._update_out_hint())
+        ttk.Label(out, textvariable=self.out_hint, style="Hint.TLabel", wraplength=900, justify="left").grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=INPUT_W))
         ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         cb_mg = ttk.Combobox(out, textvariable=self._var("merge", self.MERGE_LABELS[True]), values=list(self.MERGE_LABELS.values()),
                              state="readonly", width=INPUT_W)
-        self._row(out, 2, "Gộp trang", cb_mg)
-        ttk.Label(out, text="Gộp: nối các đoạn bị cắt giữa trang thành một khối liền mạch, bỏ khoảng trống.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
-        Tip(cb_mg, "Gộp trang: khối văn bản liền mạch, không ngắt trang trong Word. Giữ nguyên trang: mỗi trang một trang Word.")
+        self._row(out, 2, "Cách ghép trang", cb_mg)
+        ttk.Label(out, text="Nối đoạn bị cắt giữa các trang; bỏ trang trống.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
+        Tip(cb_mg, "Gộp: một đoạn văn liền, không ngắt trang. Giữ trang: mỗi trang gốc là một trang Word.")
         checks = ttk.Frame(out, style="Card.TFrame")
         checks.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
         cb_m = self._check(checks, "marker", True, "Ghi số trang gốc 【原本 p.N】"); cb_m.pack(anchor="w", pady=2)
         cb_t = self._check(checks, "txt", True, "Ghi kèm file .txt"); cb_t.pack(anchor="w", pady=2)
-        cb_r = self._check(checks, "ruby", False, "Giữ furigana thành ruby của Word"); cb_r.pack(anchor="w", pady=2)
-        Tip(cb_m, "Mỗi trang trong Word có dòng 【原本 p.N】 để biết trang gốc trong sách.")
-        Tip(cb_t, "Thêm file .txt thuần để dán vào công cụ khác và để xem trước ở tab Kết quả.")
-        Tip(cb_r, "Chữ nhỏ (furigana) hiện phía trên chữ Hán bằng ruby của Word. Mặc định bỏ furigana.")
+        cb_r = self._check(checks, "ruby", False, "Giữ chữ phiên âm kana trên chữ Hán (ruby)"); cb_r.pack(anchor="w", pady=2)
+        Tip(cb_m, "Mỗi trang trong Word ghi số trang gốc của sách (【原本 p.N】).")
+        Tip(cb_t, "Tạo thêm file .txt thuần (dán được vào phần mềm khác).")
+        Tip(cb_r, "Chữ phiên âm nhỏ (furigana) hiện phía trên chữ Hán. Mặc định: bỏ.")
         out.columnconfigure(1, weight=1)
 
     def _tab_process(self):
@@ -304,82 +632,142 @@ class App(_Base):
                             state="readonly", width=INPUT_W)
         self._row(pre, 0, "Loại tài liệu", cb_p)
         cb_p.bind("<<ComboboxSelected>>", lambda e: self._apply_preset())
-        ttk.Label(pre, text="Đặt sẵn tùy chọn theo loại tài liệu.",
+        ttk.Label(pre, text="Chọn sẵn các tùy chọn hợp với loại tài liệu.",
                   style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
 
-        proc = self._card(self.tab_proc, "Engine và thiết bị")
+        proc = self._card(self.tab_proc, "Cách nhận dạng và phần cứng")
         self.engine_cb = ttk.Combobox(proc, textvariable=self._var("engine", self.ENGINE_LABELS["auto"]),
                                       values=[self.ENGINE_LABELS[k] for k in self.ENGINES],
                                       state="readonly", width=INPUT_W)
-        self._row(proc, 0, "Engine", self.engine_cb)
-        ttk.Label(proc, text="auto: tự chọn. ndlocr: engine chính.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
-        self._row(proc, 1, "Thiết bị", ttk.Combobox(proc, textvariable=self._var("dev", self.DEV_LABELS["auto"]),
+        self._row(proc, 0, "Công cụ", self.engine_cb)
+        ttk.Label(proc, text="Tự động chọn theo máy. NDLOCR là công cụ mặc định.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self._row(proc, 1, "Phần cứng", ttk.Combobox(proc, textvariable=self._var("dev", self.DEV_LABELS["auto"]),
                                                   values=list(self.DEV_LABELS.values()), state="readonly", width=INPUT_W))
-        ttk.Label(proc, text="GPU tăng tốc NDLOCR ở bản GPU.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(proc, text="GPU tăng tốc NDLOCR (chỉ bản GPU).", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         self.lang_cb = ttk.Combobox(proc, textvariable=self._var("lang", self.LANG_LABELS["ja"]),
                                     values=list(self.LANG_LABELS.values()), state="readonly", width=INPUT_W)
         self._row(proc, 2, "Ngôn ngữ", self.lang_cb)
-        ttk.Label(proc, text="“Mọi ngôn ngữ” chỉ mở khi Engine = chandra.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(proc, text="Chỉ hiện ngôn ngữ mà công cụ đang chọn đọc được. Mọi ngôn ngữ cần Chandra.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
         self.engine_cb.bind("<<ComboboxSelected>>", lambda e: self._check_engine_choice())
         self._engine_sync = self._var("engine", self.ENGINE_LABELS["auto"]).trace_add("write", lambda *_: self._sync_lang())
         self._sync_lang()
 
         # mục Nâng cao: thu gọn, ít dùng
-        self.adv_btn = ttk.Button(self.tab_proc, text="▸ Nâng cao", command=self._toggle_adv)
+        self.adv_btn = GradientButton(self.tab_proc, text="▸ Nâng cao", command=self._toggle_adv)
         self.adv_btn.pack(anchor="w", pady=(0, 8))
         self.adv = self._card(self.tab_proc, "Nâng cao")
         self.adv_outer = self.adv.master.master
         self.adv_outer.pack_forget()
-        self._row(self.adv, 0, "Phóng to", ttk.Entry(self.adv, textvariable=self._var("upscale", "1"), width=INPUT_W))
-        ttk.Label(self.adv, text="1 = không phóng to · 2 = ảnh chữ nhỏ", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
-        self._row(self.adv, 1, "Cắt vùng", ttk.Entry(self.adv, textvariable=self._var("crop", ""), width=INPUT_W))
-        ttk.Label(self.adv, text="x0,y0,x1,y1 theo pixel · để trống = cả trang", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
-        self._row(self.adv, 2, "Đọc bảng kana", ttk.Combobox(self.adv, textvariable=self._var("kana", self.KANA_LABELS[""]),
+        self._row(self.adv, 0, "Phóng to ảnh", ttk.Entry(self.adv, textvariable=self._var("upscale", "1"), width=INPUT_W))
+        ttk.Label(self.adv, text="1 = giữ nguyên · 2 = gấp đôi (dùng khi chữ nhỏ)", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self._row(self.adv, 1, "Chỉ đọc một vùng", ttk.Entry(self.adv, textvariable=self._var("crop", ""), width=INPUT_W))
+        ttk.Label(self.adv, text="trái, trên, phải, dưới (pixel) · để trống = cả trang", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        self._row(self.adv, 2, "Đọc bảng chữ kana (thử nghiệm)", ttk.Combobox(self.adv, textvariable=self._var("kana", self.KANA_LABELS[""]),
                                                             values=list(self.KANA_LABELS.values()), state="readonly", width=INPUT_W))
-        cb_c = self._check(self.adv, "cell_reocr", True, "Nhận dạng lại ô bảng có dòng vượt đường kẻ")
+        cb_c = self._check(self.adv, "cell_reocr", True, "Đọc lại ô bảng bị lẫn đường kẻ")
         cb_c.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        Tip(cb_c, "Cắt riêng từng ô bị engine nối chữ qua đường kẻ rồi đọc lại. Chậm hơn một chút; tắt nếu muốn nhanh hơn.")
-        cb_k = self._check(self.adv, "use_cache", True, "Dùng cache kết quả OCR (chạy lại cùng file sẽ nhanh hơn)")
+        Tip(cb_c, "Cắt riêng ô bị lẫn đường kẻ rồi đọc lại. Chậm hơn một chút; tắt để nhanh hơn.")
+        cb_k = self._check(self.adv, "use_cache", True, "Nhớ kết quả đã đọc (chạy lại file cũ sẽ nhanh hơn)")
         cb_k.grid(row=4, column=0, columnspan=3, sticky="w", pady=2)
-        Tip(cb_k, "Lưu kết quả từng trang trong thư mục đầu ra (.cache). Tắt nếu muốn OCR lại từ đầu.")
+        Tip(cb_k, "Lưu kết quả từng trang trong thư mục đầu ra (.cache). Tắt nếu muốn đọc lại từ đầu.")
         self.adv.columnconfigure(1, weight=1)
 
         # engine AI: gói GPU và model Chandra, có thanh tiến trình tải
         self._ai_card()
 
     def _ai_card(self):
-        ai = self._card(self.tab_ai, "Engine AI (tùy chọn, tải một lần)")
+        ai = self._card(self.tab_ai, "Công cụ AI (tùy chọn, chỉ tải một lần)")
+        self._model_card(ai)
         if not gpupack.installed():
             row = ttk.Frame(ai, style="Card.TFrame")
             row.pack(fill="x", pady=(0, 6))
-            self.pack_btn = ttk.Button(row, text="Cài gói GPU + Chandra (vài GB)", command=self.install_pack)
+            self.pack_btn = GradientButton(row, text="Cài tăng tốc GPU (vài GB)", command=self.install_pack, width=BTN_W)
             self.pack_btn.pack(side="left")
             # thanh tiến trình chỉ hiện khi bắt đầu cài (xem install_pack)
             self.pack_pb = ttk.Progressbar(row, mode="indeterminate", length=220, style="Accent.Horizontal.TProgressbar")
-            self.pack_status = tk.StringVar(value="Chỉ tăng tốc Chandra. Cần card NVIDIA, cần Internet. Sau khi cài, khởi động lại app.")
+            self.pack_status = tk.StringVar(value="Chỉ dùng cho Chandra. Cần card NVIDIA và Internet. Cài xong thì khởi động lại phần mềm.")
             ttk.Label(ai, textvariable=self.pack_status, style="Hint.TLabel", wraplength=760, justify="left").pack(anchor="w", pady=(0, 10))
         if "chandra" in self.ENGINES:
             from .engines.chandra import model_downloaded
-            cb_l = self._check(ai, "chandra_license", False, "Tôi đã đọc và chấp nhận điều khoản OpenRAIL-M của trọng số Chandra")
+            cb_l = self._check(ai, "chandra_license", False, "Tôi đồng ý điều khoản sử dụng của mô hình Chandra (OpenRAIL-M)")
             cb_l.pack(anchor="w")
-            Tip(cb_l, "Trọng số Chandra theo OpenRAIL-M: miễn ngưỡng thương mại khi dùng cá nhân/nghiên cứu. Chi tiết trong NOTICE.md.")
+            Tip(cb_l, "Mô hình Chandra miễn phí cho cá nhân và nghiên cứu. Chi tiết trong NOTICE.md.")
             row = ttk.Frame(ai, style="Card.TFrame")
             row.pack(fill="x", pady=(6, 0))
-            self.dl_btn = ttk.Button(row, text="Tải model Chandra", command=self.download_chandra)
+            self.dl_btn = GradientButton(row, text="Tải mô hình Chandra", command=self.download_chandra, width=BTN_W)
             self.dl_btn.pack(side="left")
             self.dl_pb = ttk.Progressbar(row, maximum=100, length=220, style="Accent.Horizontal.TProgressbar")
             self.dl_pb.pack(side="left", padx=10)
             ready = model_downloaded()
-            self.dl_status = tk.StringVar(value="Đã có model Chandra trên máy." if ready else "Chưa có model Chandra (vài GB, chỉ tải một lần).")
+            self.dl_status = tk.StringVar(value="Đã có mô hình Chandra trên máy." if ready else "Chưa có mô hình Chandra (vài GB, chỉ tải một lần).")
             ttk.Label(ai, textvariable=self.dl_status, style="Hint.TLabel").pack(anchor="w", pady=(4, 0))
 
+    def _model_card(self, parent):
+        """PaddleOCR (tiếng Anh, Trung) tải tự động. VietOCR (tiếng Việt) phải tạo thủ công, xem hướng dẫn."""
+        from .engines.paddle import PaddleEngine
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(fill="x", pady=(0, 6))
+        need = not PaddleEngine.is_available()[0]
+        self.pm_btn = GradientButton(row, text="Tải mô hình OCR (PaddleOCR)", width=BTN_W, command=self.download_paddle,
+                                 state="normal" if need else "disabled")
+        self.pm_btn.pack(side="left")
+        self.pm_spin = Spinner(row, size=20)
+        self.pm_pb = ttk.Progressbar(row, maximum=100, length=200, style="Accent.Horizontal.TProgressbar")
+        self.pm_pb.pack(side="left", padx=10)
+        self.pm_pct = tk.StringVar(value="")
+        ttk.Label(row, textvariable=self.pm_pct, width=12).pack(side="left")
+        self.pm_status = tk.StringVar(value=self._model_status_text())
+        ttk.Label(parent, textvariable=self.pm_status, style="Hint.TLabel", wraplength=760, justify="left").pack(anchor="w", pady=(0, 10))
+
+    def _model_status_text(self) -> str:
+        from .engines.paddle import PaddleEngine
+        from .engines.viet import VietnameseEngine
+        paddle_ok = PaddleEngine.is_available()[0]
+        vi_ok = VietnameseEngine.is_available()[0]
+        lines = ["PaddleOCR (tiếng Anh, Trung): " + ("đã có." if paddle_ok else "chưa có — bấm nút để tải (vài chục MB)."),
+                 "VietOCR (tiếng Việt): " + ("đã có." if vi_ok else "chưa có. Phải tạo bằng công cụ dòng lệnh (cần cài torch).")]
+        return "\n".join(lines)
+
+    def download_paddle(self):
+        self.pm_btn.config(state="disabled")
+        self.pm_pb["value"] = 0
+        self.pm_pct.set("0%")
+        self.pm_status.set("Đang tải mô hình PaddleOCR…")
+        self.pm_spin.pack(side="left", padx=(0, 4), before=self.pm_pb)
+        self.pm_spin.start()
+        threading.Thread(target=self._paddle_worker, daemon=True).start()
+
+    def _paddle_worker(self):
+        from .engines import models as mdl
+        try:
+            mdl.download_paddle(progress=lambda i, n, name, frac: self.q.put(("pm_prog", (i, n, name, frac))))
+            ok, msg = True, "Đã tải xong mô hình PaddleOCR. " + self._model_status_text().split("\n")[1]
+        except Exception as e:
+            log.exception("Lỗi tải mô hình PaddleOCR")
+            ok, msg = False, f"Tải mô hình PaddleOCR thất bại: {e}"
+        self.q.put(("pm_done", (ok, msg)))
+
+    def _on_pm_progress(self, i, n, name, frac):
+        overall = (i + frac) / max(1, n)
+        self.pm_pb["value"] = 100 * overall
+        self.pm_pct.set(f"{round(100 * overall)}%")
+        self.pm_status.set(f"Đang tải {name} (tệp {min(i + 1, n)}/{n})…")
+
+    def _on_pm_done(self, ok, msg):
+        self.pm_spin.stop()
+        self.pm_spin.pack_forget()
+        self.pm_pb["value"] = 100 if ok else 0
+        self.pm_pct.set("100%" if ok else "")
+        self.pm_status.set(msg)
+        self.pm_btn.config(state="normal" if not ok else "disabled")
+
     def _tab_review(self):
-        rev = self._card(self.tab_rev, "Rà soát")
-        cb_v = self._check(rev, "review", False, "Xuất file rà soát *_review.html (ảnh trang cạnh chữ, tô đỏ chỗ nghi ngờ)")
+        rev = self._card(self.tab_rev, "Kiểm tra kết quả")
+        cb_v = self._check(rev, "review", False, "Tạo file so sánh để kiểm tra (*_review.html)")
         cb_v.grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
-        Tip(cb_v, "Mở file .html bằng trình duyệt để so ảnh trang với chữ đã nhận dạng. Dòng nghi ngờ được tô đỏ.")
-        self._row(rev, 1, "Ngưỡng tin cậy", ttk.Entry(rev, textvariable=self._var("conf", "0.8"), width=INPUT_W))
-        ttk.Label(rev, text="Dòng có độ tin cậy dưới ngưỡng bị tô đỏ. Mặc định 0.8.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        Tip(cb_v, "Mở file bằng trình duyệt để so ảnh trang với chữ đã đọc. Dòng nghi ngờ được tô đỏ.")
+        self._row(rev, 1, "Ngưỡng nghi ngờ", ttk.Entry(rev, textvariable=self._var("conf", "0.8"), width=INPUT_W))
+        ttk.Label(rev, text="Dòng có độ chắc chắn thấp hơn mức này sẽ bị tô đỏ (mặc định 0,8).", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         rev.columnconfigure(1, weight=1)
 
     def _tab_results(self):
@@ -391,11 +779,11 @@ class App(_Base):
         self.res.bind("<<TreeviewSelect>>", lambda e: self._preview_refresh())
         bar = ttk.Frame(res, style="Card.TFrame")
         bar.pack(fill="x", pady=(8, 8))
-        self.b_docx = ttk.Button(bar, text="Mở file Word", command=lambda: self._open_result("docx"), state="disabled")
+        self.b_docx = GradientButton(bar, text="Mở file Word", command=lambda: self._open_result("docx"), state="disabled")
         self.b_docx.pack(side="left")
-        self.b_dir = ttk.Button(bar, text="Mở thư mục", command=lambda: self._open_result("dir"), state="disabled")
+        self.b_dir = GradientButton(bar, text="Mở thư mục", command=lambda: self._open_result("dir"), state="disabled")
         self.b_dir.pack(side="left", padx=6)
-        self.b_rev = ttk.Button(bar, text="Mở file rà soát", command=lambda: self._open_result("review"), state="disabled")
+        self.b_rev = GradientButton(bar, text="Mở file so sánh", command=lambda: self._open_result("review"), state="disabled")
         self.b_rev.pack(side="left")
 
         prev = self._card(self.tab_res, "Xem trước trang")
@@ -465,6 +853,7 @@ class App(_Base):
         ttk.Label(box, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
         body = ttk.Frame(box, style="Card.TFrame")   # phần thân dùng grid, tách khỏi tiêu đề dùng pack
         body.pack(fill="both", expand=True)
+        body.columnconfigure(1, minsize=INPUT_PX)   # cột ô nhập không bị co về 0 khi nhãn gợi ý dài
         return body
 
     def _var(self, name: str, default):
@@ -495,16 +884,21 @@ class App(_Base):
         self._var("cell_reocr", True).set(p["cell_reocr"])
 
     def _check_engine_choice(self):
-        if self._engine_key() in ("ocr_en", "ocr_vi"):
-            messagebox.showinfo("Engine", "Engine này chưa được phát triển. Hiện chỉ có tiếng Nhật (NDLOCR, Chandra).")
-            self._var("engine", self.ENGINE_LABELS["auto"]).set(self.ENGINE_LABELS["auto"])
+        key = self._engine_key()
+        if key in ("paddle", "ocr_vi"):
+            from .engines import paddle, viet
+            cls = paddle.PaddleEngine if key == "paddle" else viet.VietnameseEngine
+            ok, why = cls.is_available()
+            if not ok:
+                messagebox.showwarning("Công cụ", f"Chưa dùng được {self.ENGINE_LABELS[key]} vì {why}")
+                self._var("engine", self.ENGINE_LABELS["auto"]).set(self.ENGINE_LABELS["auto"])
 
     def _sync_lang(self):
-        if self._engine_key() == "chandra":
-            self.lang_cb.config(state="readonly")
-        else:
-            self.lang_cb.config(state="disabled")
-            self._var("lang", self.LANG_LABELS["ja"]).set(self.LANG_LABELS["ja"])
+        key = self._engine_key()
+        allowed = [self.LANG_LABELS[k] for k in self.ENGINE_LANGS.get(key, self.ENGINE_LANGS["auto"])]
+        self.lang_cb.config(values=allowed, state="readonly")
+        if self._var("lang", self.LANG_LABELS["ja"]).get() not in allowed:
+            self._var("lang", self.LANG_LABELS["ja"]).set(allowed[0])
 
     # ---------- danh sách file ----------
 
@@ -516,7 +910,26 @@ class App(_Base):
         else:
             self.empty.place(relx=0.5, rely=0.5, anchor="center")
 
+    def _request_stop(self):
+        """Yêu cầu dừng: trang đang đọc vẫn xong, sau đó mới dừng."""
+        self.cancel.set()
+        self.status.set("Đang dừng… chờ trang hiện tại đọc xong.")
+
+    def _update_out_hint(self):
+        """Dòng gợi ý thư mục lưu: hiện đường dẫn thật để người dùng biết file sẽ nằm ở đâu."""
+        if not hasattr(self, "out_hint"):
+            return
+        out = self._var("out", "").get().strip()
+        if out:
+            where = f"Lưu vào: {out}"
+        elif self.files:
+            where = f"Để trống: lưu cạnh file gốc, ví dụ {self.files[0].parent}"
+        else:
+            where = "Để trống: lưu cạnh file gốc."
+        self.out_hint.set(where + "   ·   Tên file: OCR_<tên không dấu>_<trang đầu>_<trang cuối>")
+
     def _redraw(self):
+        self._update_out_hint()
         self.tree.delete(*self.tree.get_children())
         for i, f in enumerate(self.files):
             self.tree.insert("", "end", iid=str(i), values=(f.name, str(f.parent), self.statuses[i]))
@@ -562,6 +975,26 @@ class App(_Base):
         self.files.clear(); self.statuses.clear()
         self._redraw()
 
+    def find_output(self):
+        """Mở thư mục kết quả: dòng đang chọn -> kết quả gần nhất -> thư mục lưu đã đặt (hoặc cạnh file đầu tiên)."""
+        item = self._selected_result() if self.result_rows else None
+        if item:
+            target = Path(item[1]["docx"]).parent
+        elif self.results:
+            target = Path(self.results[-1][1]["docx"]).parent
+        elif self.files:
+            target = Path(self._var("out", "").get().strip() or self.files[0].parent)
+        else:
+            messagebox.showinfo("Tìm nhanh", "Chưa có file nào trong danh sách.")
+            return
+        if not target.is_dir():
+            messagebox.showinfo("Tìm nhanh", f"Chưa có thư mục kết quả:\n{target}")
+            return
+        try:
+            open_path(target)
+        except OSError as e:
+            messagebox.showerror("Tìm nhanh", f"Không mở được thư mục này: {e}")
+
     def pick_out(self):
         d = filedialog.askdirectory()
         if d:
@@ -574,7 +1007,7 @@ class App(_Base):
         try:
             conf = float(self._var("conf", "0.8").get())
         except ValueError:
-            raise ValueError("Ngưỡng độ tin cậy phải là số, ví dụ 0.8.") from None
+            raise ValueError("Ngưỡng nghi ngờ phải là số, ví dụ 0.8.") from None
         try:
             upscale = float(self._var("upscale", "1").get() or "1")
         except ValueError:
@@ -584,7 +1017,7 @@ class App(_Base):
         try:
             crop = pipeline.parse_crop(self._var("crop", "").get())
         except ValueError as e:
-            raise ValueError(f"Vùng cắt không hợp lệ: {e}") from None
+            raise ValueError("Vùng cắt sai. Nhập theo thứ tự: trái, trên, phải, dưới (pixel).") from None
         dev = next(k for k, v in self.DEV_LABELS.items() if v == self._var("dev", "").get())
         lang = next(k for k, v in self.LANG_LABELS.items() if v == self._var("lang", self.LANG_LABELS["ja"]).get())
         return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(), lang=lang,
@@ -603,7 +1036,7 @@ class App(_Base):
         try:
             pages = pipeline.parse_pages(self._var("pages", "").get())
         except ValueError:
-            messagebox.showerror("OCR", "Khoảng trang không hợp lệ."); return
+            messagebox.showerror("OCR", "Số trang không hợp lệ. Ví dụ: 1-5,8."); return
         try:
             opts = self._read_options()
         except ValueError as e:
@@ -613,7 +1046,9 @@ class App(_Base):
         self.results = []
         self._t0 = time.time()
         self.cancel.clear(); self.btn.config(state="disabled"); self.stop.config(state="normal")
-        args = (list(self.files), Path(self._var("out", "").get()), pages, opts)
+        self._cat_start()
+        out = self._var("out", "").get().strip()
+        args = (list(self.files), Path(out) if out else None, pages, opts)
         self.worker = threading.Thread(target=self.run_job, args=args, daemon=True); self.worker.start()
 
     def run_job(self, files, out, pages, opts):
@@ -622,7 +1057,7 @@ class App(_Base):
             if self.cancel.is_set():
                 break
             self.q.put(("file", (i, "Đang xử lý")))
-            self.q.put(("status", f"Đang nạp model / xử lý {f.name} ({i + 1}/{len(files)})…"))
+            self.q.put(("status", f"Đang tải công cụ và đọc {f.name} ({i + 1}/{len(files)})…"))
             try:
                 r = pipeline.process_file(
                     f, out, 200, pages if f.suffix.lower() == ".pdf" else None,
@@ -634,7 +1069,7 @@ class App(_Base):
                     reviews.append(r["review"])
             except Exception as e:  # một file lỗi không làm dừng các file còn lại
                 errors += 1
-                log.exception("Lỗi khi xử lý %s", f)
+                log.exception("Không xử lý được %s", f)
                 self.q.put(("file", (i, "Lỗi")))
         self.q.put(("results", list(self.results)))
         if self.cancel.is_set():
@@ -642,7 +1077,7 @@ class App(_Base):
         else:
             msg = f"Xong. Kết quả ở: {out}"
             if reviews:
-                msg += "\nFile rà soát: " + ", ".join(reviews)
+                msg += "\nFile so sánh: " + ", ".join(reviews)
         if errors:
             msg += f"\nCó {errors} file lỗi. Chi tiết trong nhật ký: {LOG_FILE}"
         self.q.put(("done", msg))
@@ -653,13 +1088,13 @@ class App(_Base):
             gpus = gpu.detect()
             gtxt = f"GPU: {gpus[0].name}" if gpus else "Không thấy GPU NVIDIA"
             eng, why = engines.resolve("auto")
-            text = f"{gtxt} · Engine tự động: {eng} ({why})"
+            text = f"{gtxt} · Công cụ tự động: {eng} ({why})"
         except Exception:
-            text = "Không dò được phần cứng"
+            text = "Không kiểm tra được phần cứng"
         self.q.put(("hw", text))
 
     def install_pack(self):
-        if not messagebox.askyesno("Gói GPU", "Tải torch CUDA và Chandra, khoảng vài GB. Tiếp tục?"):
+        if not messagebox.askyesno("Tăng tốc GPU", "Tải phần mềm tăng tốc GPU, khoảng vài GB. Tiếp tục?"):
             return
         self.pack_btn.config(state="disabled")
         self.pack_pb.pack(side="left", padx=10)
@@ -669,29 +1104,29 @@ class App(_Base):
     def _pack_worker(self):
         try:
             gpupack.install(progress=lambda m: self.q.put(("pack", m)))
-            msg = "Đã cài gói GPU. Hãy khởi động lại OCR-Nhat để dùng Chandra."
+            msg = "Đã cài xong tăng tốc GPU. Hãy khởi động lại OCR-Nhat để dùng Chandra."
         except Exception as e:
             log.exception("Lỗi cài gói GPU")
-            msg = f"Cài gói GPU lỗi: {e}"
+            msg = f"Cài tăng tốc GPU thất bại: {e}"
         self.q.put(("packdone", msg))
 
     def download_chandra(self):
         if not self._var("chandra_license", False).get():
-            messagebox.showwarning("Chandra", "Hãy tick xác nhận điều khoản OpenRAIL-M trước khi tải model.")
+            messagebox.showwarning("Chandra", "Hãy tick đồng ý điều khoản Chandra trước khi tải mô hình.")
             return
         self.dl_btn.config(state="disabled")
         self.dl_pb["value"] = 0
-        self.dl_status.set("Đang tải model Chandra từ Hugging Face (vài GB, có thể mất nhiều phút)…")
+        self.dl_status.set("Đang tải mô hình Chandra (vài GB, có thể mất vài phút)…")
         threading.Thread(target=self._download_worker, daemon=True).start()
 
     def _download_worker(self):
         from .engines.chandra import download_model
         try:
             download_model(progress=lambda d, t: self.q.put(("dl_prog", (d, t))))
-            msg = "Đã tải xong model Chandra."
+            msg = "Đã tải xong mô hình Chandra."
         except Exception as e:
-            log.exception("Lỗi tải model Chandra")
-            msg = f"Tải model lỗi: {e}"
+            log.exception("Lỗi tải mô hình Chandra")
+            msg = f"Tải mô hình thất bại: {e}"
         self.q.put(("dl", msg))
 
     # ---------- kết quả và xem trước ----------
@@ -728,9 +1163,9 @@ class App(_Base):
             elif what == "review" and r.get("review"):
                 open_path(Path(r["review"]))
             elif what == "review":
-                messagebox.showinfo("Rà soát", "Chưa có file rà soát. Bật “Xuất file rà soát” ở tab Rà soát rồi chạy lại.")
+                messagebox.showinfo("Kiểm tra kết quả", "Chưa có file so sánh. Bật “Tạo file so sánh để kiểm tra” ở tab Kiểm tra rồi chạy lại.")
         except OSError as e:
-            messagebox.showerror("Mở file", f"Không mở được: {e}")
+            messagebox.showerror("Mở file", f"Không mở được thư mục này: {e}")
 
     def _preview_refresh(self):
         item = self._selected_result()
@@ -770,7 +1205,7 @@ class App(_Base):
                 from PIL import Image
                 img = Image.open(f).convert("RGB")
         except Exception:
-            log.exception("Không vẽ được xem trước %s", f)
+            log.exception("Không vẽ được bản xem trước %s", f)
             return
         from PIL import ImageTk
         img.thumbnail((420, 360))
@@ -786,6 +1221,7 @@ class App(_Base):
                 if k == "prog":
                     d, t, m = v
                     self.pb["value"] = 100 * d / max(1, t)
+                    self._cat_move(d / max(1, t))
                     eta = ""
                     if d >= 2:
                         rem = (time.time() - self._t0) / d * (t - d)
@@ -802,16 +1238,21 @@ class App(_Base):
                 elif k == "dl_prog":
                     d, t = v
                     self.dl_pb["value"] = 100 * d / max(1, t)
-                    self.dl_status.set(f"Đang tải model Chandra: {d * 100 // max(1, t)}% ({d // 2**20} / {t // 2**20} MB)")
+                    self.dl_status.set(f"Đang tải mô hình Chandra: {d * 100 // max(1, t)}% ({d // 2**20} / {t // 2**20} MB)")
                 elif k == "dl":
                     self.dl_status.set(v); self.dl_pb["value"] = 100 if "xong" in v else 0
                     self.dl_btn.config(state="normal")
+                elif k == "pm_prog":
+                    self._on_pm_progress(*v)
+                elif k == "pm_done":
+                    self._on_pm_done(*v)
                 elif k == "pack":
                     self.pack_status.set(v)
                 elif k == "packdone":
                     self.pack_pb.stop(); self.pack_pb.pack_forget()
                     self.pack_status.set(v); self.pack_btn.config(state="normal")
                 else:   # done
+                    self._cat_stop()
                     self.status.set(v); self.btn.config(state="normal"); self.stop.config(state="disabled")
                     self.pb["value"] = 100
         except queue.Empty:

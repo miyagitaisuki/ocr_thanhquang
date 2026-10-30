@@ -20,6 +20,18 @@ Engine này dùng **Chandra OCR 2** của Datalab (`datalab-to/chandra-ocr-2`, g
 - Gói GPU (tải khi người dùng bấm nút trong GUI, không đóng vào exe) gồm torch và torchvision (BSD-3, PyTorch), `chandra-ocr` (Apache-2.0) và các phụ thuộc. Trọng số Chandra vẫn tải riêng từ Hugging Face khi người dùng bấm, và người dùng phải chấp nhận điều khoản OpenRAIL-M của trọng số. Gói GPU có thể kèm thư viện CUDA của NVIDIA theo giấy phép của NVIDIA.
 - **Phạm vi sử dụng hiện tại: chỉ cá nhân chủ dự án, không phân phối.** Theo điều khoản, sử dụng cá nhân/nghiên cứu được miễn ngưỡng thương mại. Nếu chia sẻ exe, đưa cho người khác, hoặc dùng cho mục đích có doanh thu, phải xem lại điều khoản trên trước.
 
+## PaddleOCR (engine `paddle`: tiếng Anh và tiếng Trung)
+
+Dùng mô hình PP-OCRv4 (dò dòng `ch_PP-OCRv4_det_infer`, nhận dạng `ch_PP-OCRv4_rec_infer`) và từ điển `ppocr_keys_v1.txt` của **PaddleOCR** (PaddlePaddle), giấy phép **Apache-2.0**: https://github.com/PaddlePaddle/PaddleOCR
+- File ONNX lấy từ Hugging Face `SWHL/RapidOCR` (đóng gói lại, Apache-2.0). Từ điển lấy từ mã nguồn PaddleOCR (nhánh release/2.7).
+- Model không đóng vào exe; `scripts/fetch_models.py` tải về `models/` và kiểm SHA-256.
+
+## VietOCR (engine `ocr_vi`: tiếng Việt)
+
+Dùng kiến trúc và trọng số `vgg_seq2seq.pth` của **VietOCR** (pbcquoc/vietocr, phiên bản 0.3.13), tải từ vocr.vn; xuất sang ONNX int8 bằng `scripts/export_vi.py`.
+- **Cần xác minh trước khi phân phối:** file LICENSE trong gói ghi Apache-2.0, nhưng metadata ghi MIT. Giấy phép của trọng số chưa được xác minh.
+- Trọng số không đóng vào exe; chỉ sản phẩm xuất ra (ONNX) được tạo cục bộ.
+
 ## Thành phần đóng gói trong bộ cài `OCR-Nhat-setup.exe`
 
 Bộ cài (exe CPU) chứa các thành phần sau. Mỗi thành phần theo giấy phép riêng; xem file LICENSE của dự án gốc.

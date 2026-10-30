@@ -1,9 +1,5 @@
-"""Gộp trang thành một khối liền mạch, và engine giữ chỗ tiếng Anh/Việt. Không cần model."""
-import pytest
-
-from ocrnhat import engines
+"""Gộp trang thành một khối liền mạch. Không cần model."""
 from ocrnhat.layout import Para, merge_pages
-from ocrnhat.engines.placeholder import EnglishPlaceholder, VietnamesePlaceholder
 
 
 def _p(text, kind="body", **kw):
@@ -35,12 +31,3 @@ def test_ruby_duoc_dich_theo_do_dai_sau_khi_noi():
     b = _p("読み", ruby=[(0, 2, "よみ")])
     out = merge_pages([(1, [a]), (2, [b])])
     assert out[0][1][0].ruby == [(0, 2, "かんじ"), (3, 5, "よみ")]
-
-
-def test_engine_giu_cho_chua_cai_va_bao_loi():
-    assert "ocr_en" in engines.available() and "ocr_vi" in engines.available()
-    assert engines.engine_version("ocr_en") == "placeholder"
-    ok, why = EnglishPlaceholder.is_available()
-    assert ok is False and "chưa" in why
-    with pytest.raises(NotImplementedError):
-        VietnamesePlaceholder()
