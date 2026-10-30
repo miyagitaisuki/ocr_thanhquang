@@ -38,7 +38,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `pdf_ops.py` | Xoay trang, nén PDF và theo dõi thư mục (`watch_folder`, quét định kỳ, không dùng watchdog). |
 | `pdf_extract.py` | Công cụ PDF: trích xuất trang và tách file (pypdf): cú pháp `2,5-7,12-`, file riêng cho mỗi nhóm, ghi đè, nén, bỏ bookmark, phiên bản PDF. Lệnh `ocrnhat-pdf`. Tab "Công cụ PDF" trong GUI. |
 | `suspect.py` | `--suspect` (thử nghiệm, tắt mặc định): BERT tiếng Nhật đánh dấu ký tự nghi ngờ, không sửa văn bản. |
-| `gpupack.py` | Gói GPU tùy chọn: chọn torch cu126 + torchvision từ chỉ mục PyTorch, cài Chandra bằng pip (có sẵn trong exe) vào `%LOCALAPPDATA%\OCR-Nhat\gpu`; `activate()` đưa vào đường dẫn import lúc khởi động. |
+| `gpupack.py` | Gói GPU tùy chọn: chọn torch cu126 + torchvision từ chỉ mục PyTorch, cài Chandra bằng pip (có sẵn trong exe) vào `%LOCALAPPDATA%\OCR-Nhat\gpu`; `activate()` đưa vào đường dẫn import lúc khởi động. Cài lỗi thì GUI báo bằng tiếng Việt và mở được `install.log`; `ocrnhat --check-gpu-pack` kiểm tra pip đóng gói sẵn (CI chạy bước này trên cả hai exe). |
 | `gpu.py` | Dò GPU NVIDIA, chọn thiết bị cho NDLOCR (cuda chỉ khi onnxruntime có CUDA provider). |
 | `cli.py` | Dòng lệnh `ocrnhat`. |
 | `gui.py` | Giao diện Tkinter, kéo-thả file. |

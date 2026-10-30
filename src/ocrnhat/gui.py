@@ -690,6 +690,8 @@ class App(_CatMixin, _Base):
             # thanh tiến trình chỉ hiện khi bắt đầu cài (xem install_pack)
             self.pack_pb = ttk.Progressbar(row, mode="indeterminate", length=220, style="Accent.Horizontal.TProgressbar")
             self.pack_status = tk.StringVar(value="Chỉ dùng cho Chandra. Cần card NVIDIA và Internet. Cài xong thì khởi động lại phần mềm.")
+            # nút xem chi tiết lỗi chỉ hiện khi cài thất bại (xem packdone)
+            self.pack_log_btn = ttk.Button(row, text="Xem chi tiết lỗi", command=self._open_pack_log)
             ttk.Label(ai, textvariable=self.pack_status, style="Hint.TLabel", wraplength=760, justify="left").pack(anchor="w", pady=(0, 10))
         if "chandra" in self.ENGINES:
             from .engines.chandra import model_downloaded
@@ -1499,11 +1501,22 @@ class App(_CatMixin, _Base):
     def _pack_worker(self):
         try:
             gpupack.install(progress=lambda m: self.q.put(("pack", m)))
-            msg = "Đã cài xong tăng tốc GPU. Hãy khởi động lại OCR-Nhat để dùng Chandra."
+            msg, ok = "Đã cài xong tăng tốc GPU. Hãy khởi động lại OCR-Nhat để dùng Chandra.", True
         except Exception as e:
             log.exception("Lỗi cài gói GPU")
-            msg = f"Cài tăng tốc GPU thất bại: {e}"
-        self.q.put(("packdone", msg))
+            msg = f"{e} Nhấn “Xem chi tiết lỗi” để mở file ghi log."
+            ok = False
+        self.q.put(("packdone", (msg, ok)))
+
+    def _open_pack_log(self):
+        p = gpupack.log_file()
+        if not p.is_file():
+            messagebox.showinfo("Tăng tốc GPU", "Chưa có file chi tiết.")
+            return
+        try:
+            os.startfile(str(p))  # noqa: S606 (mở bằng ứng dụng mặc định)
+        except OSError as e:
+            messagebox.showerror("Tăng tốc GPU", f"Không mở được file này: {e}")
 
     def download_chandra(self):
         if not self._var("chandra_license", False).get():
@@ -1648,8 +1661,13 @@ class App(_CatMixin, _Base):
                 elif k == "pdfx_done":
                     self.pdfx_status.set(v); self._pdfx_busy(False)
                 elif k == "packdone":
+                    msg, ok = v
                     self.pack_pb.stop(); self.pack_pb.pack_forget()
-                    self.pack_status.set(v); self.pack_btn.config(state="normal")
+                    self.pack_status.set(msg); self.pack_btn.config(state="normal")
+                    if ok:
+                        self.pack_log_btn.pack_forget()
+                    else:
+                        self.pack_log_btn.pack(side="left", padx=10)
                 else:   # done
                     self._cat_stop()
                     self.status.set(v); self.btn.config(state="normal"); self.stop.config(state="disabled")

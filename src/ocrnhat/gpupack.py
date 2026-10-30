@@ -10,6 +10,7 @@ import contextlib
 import os
 import re
 import sys
+import traceback
 import urllib.request
 from pathlib import Path
 
@@ -74,20 +75,49 @@ def pip_args(pins: list[str], target: Path) -> list[str]:
             "--index-url", PYPI_INDEX, "--extra-index-url", CU_INDEX, *pins, CHANDRA_SPEC]
 
 
-def install(progress=print) -> None:
-    """Cài gói GPU bằng pip trong cùng tiến trình (pip đóng gói sẵn trong exe). Ném lỗi nếu thất bại."""
-    from pip._internal.cli.main import main as pip_main
+class PackError(RuntimeError):
+    """Cài gói GPU thất bại. Thông báo gửi cho người dùng; chi tiết kỹ thuật nằm trong install.log."""
 
+
+PACK_FAILED_MSG = "Không cài được tăng tốc GPU. Phần mềm vẫn chạy bình thường bằng CPU."
+
+
+def log_file() -> Path:
+    return pack_dir() / "install.log"
+
+
+def check_pip() -> None:
+    """Kiểm tra pip đóng gói sẵn import được module mà lệnh cài dùng. Ném lỗi nếu không.
+
+    Lỗi thật gặp trên exe PyInstaller: `pip._vendor.distlib` không tìm được finder khi import
+    `pip._internal.operations.install.wheel`. Hàm này import đúng module đó để lỗi lộ ra sớm.
+    """
+    from pip._internal.cli.main import main  # noqa: F401
+    from pip._internal.operations.install import wheel  # noqa: F401
+
+
+def install(progress=print) -> None:
+    """Cài gói GPU bằng pip trong cùng tiến trình (pip đóng gói sẵn trong exe). Ném PackError nếu thất bại."""
     d = pack_dir()
     d.mkdir(parents=True, exist_ok=True)
-    progress("Đang chọn phiên bản torch CUDA…")
-    pins = cuda_pins()
-    progress(f"Đang tải {', '.join(pins)} và Chandra (có thể mất nhiều phút)…")
-    # bản --windowed có sys.stdout/stderr = None: pip ghi log vào đó và thoát mã 2. Chuyển đầu ra vào file log.
-    log = d / "install.log"
-    with open(log, "w", encoding="utf-8") as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-        code = pip_main(pip_args(pins, d))
-    if code != 0:
-        raise RuntimeError(f"pip thoát với mã {code}; chi tiết trong {log}")
-    (d / MARKER).write_text("\n".join(pins), encoding="utf-8")
+    # bản --windowed có sys.stdout/stderr = None: pip ghi log vào đó và thoát mã 2. Mọi đầu ra vào file log.
+    with open(log_file(), "w", encoding="utf-8") as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+        try:
+            check_pip()
+            from pip._internal.cli.main import main as pip_main
+
+            progress("Đang chọn phiên bản torch CUDA…")
+            pins = cuda_pins()
+            progress(f"Đang tải {', '.join(pins)} và Chandra (có thể mất nhiều phút)…")
+            code = pip_main(pip_args(pins, d))
+            if code != 0:
+                raise RuntimeError(f"pip thoát với mã {code}")
+            (d / MARKER).write_text("\n".join(pins), encoding="utf-8")
+        except Exception:
+            traceback.print_exc()
+            failed = True
+        else:
+            failed = False
+    if failed:
+        raise PackError(PACK_FAILED_MSG)
     activate()
