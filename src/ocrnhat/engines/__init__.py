@@ -42,6 +42,16 @@ def resolve(name: str = DEFAULT) -> tuple[str, str]:
     return "chandra", f"GPU {g.name} ({g.vram_mb} MB, {g.backend})"
 
 
+def batch_size(name: str) -> int:
+    """Số trang gom lại mỗi lần OCR. Chỉ Chandra (VLM trên GPU) có batch; theo VRAM của card đang dùng."""
+    if name != "chandra":
+        return 1
+    from .. import gpu
+    from .chandra import batch_for_vram
+    g = gpu.best_gpu()
+    return batch_for_vram(g.vram_mb if g else None)
+
+
 def create(name: str = DEFAULT, **kw) -> OcrEngine:
     if name == "auto":
         name = resolve(name)[0]

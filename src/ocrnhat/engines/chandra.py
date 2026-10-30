@@ -167,6 +167,17 @@ def parse_chandra_html(html: str, width: int, height: int) -> Page:
     return Page(width, height, blocks)
 
 
+def batch_for_vram(vram_mb: int | None) -> int:
+    """Số trang mỗi lần suy luận theo VRAM: 6 GB -> 4 trang, 8 GB trở lên -> 8 trang. Không đủ thì 1."""
+    if vram_mb is None:
+        return 1
+    if vram_mb >= 8000:
+        return 8
+    if vram_mb >= 6000:
+        return 4
+    return 1
+
+
 class ChandraEngine(OcrEngine):
     name = "chandra"
     version = CHANDRA_VERSION
@@ -191,14 +202,21 @@ class ChandraEngine(OcrEngine):
             cfg.TORCH_DEVICE = "cpu"    # ô Thiết bị = CPU: ép chạy CPU (mặc định HF tự chọn GPU)
         self.manager = InferenceManager(method=method)
 
-    def ocr(self, img_rgb: np.ndarray, name: str = "page.png") -> Page:
+    def ocr_many(self, imgs: list[np.ndarray], names: list[str]) -> list[Page]:
         from chandra.model.schema import BatchInputItem
 
-        img = Image.fromarray(img_rgb.astype(np.uint8))
-        out = self.manager.generate([BatchInputItem(image=img, prompt_type="ocr_layout")])[0]
-        if out.error:
-            raise RuntimeError(f"Chandra lỗi khi xử lý {name}")
-        return parse_chandra_html(out.raw, img.width, img.height)
+        pil = [Image.fromarray(img.astype(np.uint8)) for img in imgs]
+        items = [BatchInputItem(image=img, prompt_type="ocr_layout") for img in pil]
+        outs = self.manager.generate(items)
+        pages = []
+        for out, img, name in zip(outs, pil, names):
+            if out.error:
+                raise RuntimeError(f"Chandra lỗi khi xử lý {name}")
+            pages.append(parse_chandra_html(out.raw, img.width, img.height))
+        return pages
+
+    def ocr(self, img_rgb: np.ndarray, name: str = "page.png") -> Page:
+        return self.ocr_many([img_rgb], [name])[0]
 
 
 def model_repo() -> str:

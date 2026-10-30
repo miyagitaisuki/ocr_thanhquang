@@ -148,6 +148,9 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         pre_tag += f"u{upscale:g}"
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
+    batch = engines.batch_size(engine)   # Chandra: số trang mỗi lần suy luận theo VRAM
+    if batch > 1 or engine == "chandra":
+        n_workers = 1                    # một bản model trên GPU; các trang gom thành nhóm
     from . import kana as _kana
     kana_log: list[tuple[int, np.ndarray, str]] = []   # thử nghiệm: mỗi ô kana được ghi lại để rà soát
     kana_pno = [0]
@@ -168,14 +171,25 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         """Nhận dạng lại một ô bảng (engine của luồng gọi, lấy lười)."""
         return get_engine(engine, dev).ocr(crop, "cell.png")
 
-    def ocr_one(pno: int, img):
-        """Chạy trong luồng nền: đọc cache hoặc OCR (engine riêng của luồng) rồi ghi cache. Trả về (pno, Page, ảnh)."""
-        page = cache.get(pno) if cache else None
-        if page is None:
-            page = get_engine(engine, dev).ocr(img, f"{path.stem}_{pno}.png")
-            if cache:
-                cache.put(pno, page)
-        return pno, page, img
+    def ocr_batch(items):
+        """Chạy trong luồng nền: đọc cache hoặc OCR cả nhóm trang (một lần suy luận nếu engine hỗ trợ).
+        Trả về [(pno, Page, ảnh)] đúng thứ tự đầu vào."""
+        got = {}
+        todo = []
+        for pno, img in items:
+            page = cache.get(pno) if cache else None
+            if page is None:
+                todo.append((pno, img))
+            else:
+                got[pno] = page
+        if todo:
+            pages = get_engine(engine, dev).ocr_many([img for _, img in todo],
+                                                     [f"{path.stem}_{pno}.png" for pno, _ in todo])
+            for (pno, _), page in zip(todo, pages):
+                if cache:
+                    cache.put(pno, page)
+                got[pno] = page
+        return [(pno, got[pno], img) for pno, img in items]
 
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
     suspect_rows: list[tuple[int, str]] = []
@@ -184,13 +198,24 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         pending = []
         feed = ((pno, preprocess(img, crop, upscale)) for pno, img in iter_pages(path, dpi, pages))
 
+        def groups():
+            chunk = []
+            for item in feed:
+                chunk.append(item)
+                if len(chunk) == batch:
+                    yield chunk
+                    chunk = []
+            if chunk:
+                yield chunk
+        group_feed = groups()
+
         def submit_next() -> bool:
             if cancel and cancel():
                 return False
-            nxt = next(feed, None)
+            nxt = next(group_feed, None)
             if nxt is None:
                 return False
-            pending.append(pool.submit(ocr_one, nxt[0], nxt[1]))
+            pending.append(pool.submit(ocr_batch, nxt))
             return True
 
         for _ in range(2 * n_workers):
@@ -198,21 +223,21 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                 break
         while pending:
             fut = pending.pop(0)               # giữ thứ tự trang
-            pno, page, img = fut.result()
             submit_next()
-            kana_pno[0] = pno
-            items = build_page(page, img, reocr if cell_reocr else None, kana_fn)
-            if suspect:
-                suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
-            if review:
-                from .review import render_page
-                sec, low = render_page(pno, items, page, img, conf_threshold)
-                sections.append(sec); n_low += low
-            n_tables += sum(isinstance(i, Table) for i in items)
-            results.append((pno, items))
-            done += 1
-            if progress:
-                progress(done, total, f"{path.name} - trang {pno}")
+            for pno, page, img in fut.result():
+                kana_pno[0] = pno
+                items = build_page(page, img, reocr if cell_reocr else None, kana_fn)
+                if suspect:
+                    suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
+                if review:
+                    from .review import render_page
+                    sec, low = render_page(pno, items, page, img, conf_threshold)
+                    sections.append(sec); n_low += low
+                n_tables += sum(isinstance(i, Table) for i in items)
+                results.append((pno, items))
+                done += 1
+                if progress:
+                    progress(done, total, f"{path.name} - trang {pno}")
     docx_path = out_dir / f"{path.stem}.docx"
     if results:
         write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby)

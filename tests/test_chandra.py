@@ -95,3 +95,12 @@ def test_model_downloaded_false_khi_chua_co_cache(monkeypatch):
         raise FileNotFoundError("không có trong cache")
     monkeypatch.setattr(huggingface_hub, "snapshot_download", fake)
     assert ch.model_downloaded() is False
+
+
+def test_batch_theo_vram():
+    from ocrnhat.engines.chandra import batch_for_vram
+    assert batch_for_vram(6144) == 4      # RTX 3060 Laptop 6 GB
+    assert batch_for_vram(8192) == 8
+    assert batch_for_vram(12288) == 8
+    assert batch_for_vram(4096) == 1      # dưới 6 GB không gom batch
+    assert batch_for_vram(None) == 1
