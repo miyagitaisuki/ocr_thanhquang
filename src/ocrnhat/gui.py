@@ -60,6 +60,9 @@ class Tip:
             self.win.destroy(); self.win = None
 
 
+INPUT_W = 34   # độ rộng thống nhất của mọi ô nhập và danh sách chọn
+
+
 class App(_Base):
     # "GPU (NVIDIA)" chỉ hiện khi onnxruntime có CUDA (bản GPU); bản CPU không có lựa chọn này
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
@@ -80,20 +83,45 @@ class App(_Base):
         self._vars: dict = {}
         self._style()
 
+        # thanh điều khiển cố định ở đầu: Chạy, Dừng, tiến trình, trạng thái
+        top = ttk.Frame(self, style="Page.TFrame", padding=(20, 12, 20, 6))
+        top.pack(side="top", fill="x")
+        btns = ttk.Frame(top, style="Page.TFrame")
+        btns.pack(fill="x")
+        self.btn = ttk.Button(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start)
+        self.btn.pack(side="left")
+        self.stop = ttk.Button(btns, text="Dừng", command=self.cancel.set, state="disabled")
+        self.stop.pack(side="left", padx=8)
+        Tip(self.btn, "Bắt đầu OCR cho mọi file trong danh sách.")
+        Tip(self.stop, "Dừng sau trang đang xử lý. Các trang đã xong vẫn được lưu.")
+        self.pb = ttk.Progressbar(top, maximum=100, style="Accent.Horizontal.TProgressbar")
+        self.pb.pack(fill="x", pady=(10, 4))
+        self.status = tk.StringVar(value="Sẵn sàng.")
+        ttk.Label(top, textvariable=self.status, style="Status.TLabel", wraplength=860, justify="left").pack(fill="x")
+
         # nội dung cuộn dọc để vừa mọi màn hình (kể cả laptop 768px)
         canvas = tk.Canvas(self, background=BG, highlightthickness=0, borderwidth=0)
         vbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=vbar.set)
         vbar.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
-        page = ttk.Frame(canvas, style="Page.TFrame", padding=(20, 16))
+        page = ttk.Frame(canvas, style="Page.TFrame", padding=(20, 12))
         win = canvas.create_window((0, 0), window=page, anchor="nw")
         page.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
         canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
 
+        self.nb = nb = ttk.Notebook(page)
+        nb.pack(fill="both", expand=True)
+        tab_src = ttk.Frame(nb, style="Page.TFrame", padding=(12, 12))
+        tab_proc = ttk.Frame(nb, style="Page.TFrame", padding=(12, 12))
+        tab_rev = ttk.Frame(nb, style="Page.TFrame", padding=(12, 12))
+        nb.add(tab_src, text="  Tài liệu  ")
+        nb.add(tab_proc, text="  Xử lý OCR  ")
+        nb.add(tab_rev, text="  Rà soát  ")
+
         # --- tài liệu nguồn ---
-        src = self._card(page, "Tài liệu nguồn")
+        src = self._card(tab_src, "Tài liệu nguồn")
         bar = ttk.Frame(src, style="Card.TFrame")
         bar.pack(fill="x", pady=(0, 8))
         b_add = ttk.Button(bar, text="Thêm file…", command=self.add_files); b_add.pack(side="left")
@@ -129,12 +157,12 @@ class App(_Base):
                 w.dnd_bind("<<Drop>>", self._on_drop)
 
         # --- đầu ra và trang ---
-        out = self._card(page, "Đầu ra")
-        self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", str(Path.home() / "ocr_output")), width=52))
+        out = self._card(tab_src, "Đầu ra")
+        self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", str(Path.home() / "ocr_output")), width=INPUT_W))
         b_out = ttk.Button(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, padx=(8, 0), pady=4)
         Tip(b_out, "Chọn thư mục để lưu file kết quả (.docx và .txt).")
         ttk.Label(out, text="Nơi lưu file Word (.docx) và văn bản (.txt) kết quả.", style="Hint.TLabel").grid(row=3, column=0, columnspan=3, sticky="w", pady=(0, 2))
-        self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=24))
+        self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=INPUT_W))
         ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
         checks = ttk.Frame(out, style="Card.TFrame")
         checks.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
@@ -147,15 +175,15 @@ class App(_Base):
         out.columnconfigure(1, weight=1)
 
         # --- xử lý OCR ---
-        proc = self._card(page, "Xử lý OCR")
+        proc = self._card(tab_proc, "Xử lý OCR")
         ttk.Label(proc, text="auto: tự chọn engine phù hợp. ndlocr: engine OCR chính.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
-        self._row(proc, 0, "Engine", ttk.Combobox(proc, textvariable=self._var("engine", "auto"), values=list(self.ENGINES), state="readonly", width=14))
-        self._row(proc, 1, "Thiết bị", ttk.Combobox(proc, textvariable=self._var("dev", self.DEV_LABELS["auto"]), values=list(self.DEV_LABELS.values()), state="readonly", width=24))
+        self._row(proc, 0, "Engine", ttk.Combobox(proc, textvariable=self._var("engine", "auto"), values=list(self.ENGINES), state="readonly", width=INPUT_W))
+        self._row(proc, 1, "Thiết bị", ttk.Combobox(proc, textvariable=self._var("dev", self.DEV_LABELS["auto"]), values=list(self.DEV_LABELS.values()), state="readonly", width=INPUT_W))
         ttk.Label(proc, text="GPU chỉ tăng tốc NDLOCR ở bản GPU (onnxruntime-gpu). Gói GPU (nút bên dưới) chỉ tăng tốc Chandra, không đổi NDLOCR.",
                   style="Hint.TLabel", wraplength=640, justify="left").grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
-        self._row(proc, 3, "Phóng to", ttk.Entry(proc, textvariable=self._var("upscale", "1"), width=8))
+        self._row(proc, 3, "Phóng to", ttk.Entry(proc, textvariable=self._var("upscale", "1"), width=INPUT_W))
         ttk.Label(proc, text="1 = không phóng to · 2 = ảnh chữ nhỏ", style="Hint.TLabel").grid(row=3, column=2, sticky="w", padx=(8, 0))
-        self._row(proc, 4, "Cắt vùng", ttk.Entry(proc, textvariable=self._var("crop", ""), width=24))
+        self._row(proc, 4, "Cắt vùng", ttk.Entry(proc, textvariable=self._var("crop", ""), width=INPUT_W))
         ttk.Label(proc, text="x0,y0,x1,y1 theo pixel · để trống = cả trang", style="Hint.TLabel").grid(row=4, column=2, sticky="w", padx=(8, 0))
         cb_c = self._check(proc, "cell_reocr", True, "Nhận dạng lại ô bảng có dòng vượt đường kẻ")
         cb_c.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
@@ -163,7 +191,7 @@ class App(_Base):
         cb_k = self._check(proc, "use_cache", True, "Dùng cache kết quả OCR (chạy lại cùng file sẽ nhanh hơn)")
         cb_k.grid(row=6, column=0, columnspan=3, sticky="w", pady=2)
         Tip(cb_k, "Lưu kết quả từng trang trong thư mục đầu ra (.cache). Tắt nếu muốn OCR lại từ đầu.")
-        self._row(proc, 7, "Đọc bảng kana", ttk.Combobox(proc, textvariable=self._var("kana", self.KANA_LABELS[""]), values=list(self.KANA_LABELS.values()), state="readonly", width=34))
+        self._row(proc, 7, "Đọc bảng kana", ttk.Combobox(proc, textvariable=self._var("kana", self.KANA_LABELS[""]), values=list(self.KANA_LABELS.values()), state="readonly", width=INPUT_W))
         if not gpupack.installed():
             pk = ttk.Frame(proc)
             pk.grid(row=9, column=0, columnspan=3, sticky="w", pady=(8, 0))
@@ -186,11 +214,11 @@ class App(_Base):
             self.dl_status = tk.StringVar(value="Đã có model Chandra trên máy." if ready else "Chưa có model Chandra (vài GB, chỉ tải một lần).")
             ttk.Label(row, textvariable=self.dl_status, style="Hint.TLabel").pack(side="left", padx=(10, 0))
         Tip(proc.grid_slaves(row=7, column=1)[0], "Thử nghiệm. Đọc ô bảng chữ kana (trang 13–16, 19). Mẫu IPAGothic cho kết quả tốt hơn; ô không chắc để trống. Luôn xuất file *_kana_review.html để đối chiếu.")
-        self.LANG_LABELS = {"ja": "Tiếng Nhật (mặc định)", "all": "Mọi ngôn ngữ (chỉ Chandra)"}
-        lang_cb = ttk.Combobox(proc, textvariable=self._var("lang", self.LANG_LABELS["ja"]), values=list(self.LANG_LABELS.values()), state="readonly", width=34)
+        self.LANG_LABELS = {"ja": "Tiếng Nhật", "all": "Mọi ngôn ngữ"}
+        lang_cb = ttk.Combobox(proc, textvariable=self._var("lang", self.LANG_LABELS["ja"]), values=list(self.LANG_LABELS.values()), state="readonly", width=INPUT_W)
         self._row(proc, 10, "Ngôn ngữ", lang_cb)
         self.lang_cb = lang_cb
-        ttk.Label(proc, text="Chỉ mở khi chọn Engine = chandra. Mọi ngôn ngữ: giữ toàn bộ chữ, không lọc tiếng Nhật.", style="Hint.TLabel").grid(row=10, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(proc, text="Mặc định: tiếng Nhật. \"Mọi ngôn ngữ\" chỉ mở khi Engine = chandra.", style="Hint.TLabel").grid(row=10, column=2, sticky="w", padx=(8, 0))
         engine_var = self._var("engine", "auto")
         def _sync_lang(*_):
             if engine_var.get() == "chandra":
@@ -203,30 +231,14 @@ class App(_Base):
         proc.columnconfigure(1, weight=1)
 
         # --- rà soát ---
-        rev = self._card(page, "Rà soát")
+        rev = self._card(tab_rev, "Rà soát")
         cb_v = self._check(rev, "review", False, "Xuất file rà soát *_review.html (ảnh trang cạnh chữ, tô đỏ chỗ nghi ngờ)")
         cb_v.grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
         Tip(cb_v, "Mở file .html bằng trình duyệt để so ảnh trang với chữ đã nhận dạng. Dòng nghi ngờ được tô đỏ.")
-        self._row(rev, 1, "Ngưỡng tin cậy", ttk.Entry(rev, textvariable=self._var("conf", "0.8"), width=8))
+        self._row(rev, 1, "Ngưỡng tin cậy", ttk.Entry(rev, textvariable=self._var("conf", "0.8"), width=INPUT_W))
         ttk.Label(rev, text="Dòng có độ tin cậy dưới ngưỡng này bị tô đỏ. Mặc định 0.8; cao hơn thì đánh dấu nhiều dòng hơn.", style="Hint.TLabel", wraplength=520, justify="left").grid(row=1, column=2, sticky="w", padx=(8, 0))
         rev.columnconfigure(1, weight=1)
 
-        # --- hành động ---
-        bar2 = ttk.Frame(page, style="Page.TFrame")
-        bar2.pack(fill="x", pady=(14, 0))
-        self.btn = ttk.Button(bar2, text="▶  Chạy OCR", style="Accent.TButton", command=self.start)
-        self.btn.pack(side="left")
-        self.stop = ttk.Button(bar2, text="Dừng", command=self.cancel.set, state="disabled")
-        self.stop.pack(side="left", padx=8)
-        Tip(self.btn, "Bắt đầu OCR cho mọi file trong danh sách.")
-        Tip(self.stop, "Dừng sau trang đang xử lý. Các trang đã xong vẫn được lưu.")
-        ttk.Label(page, style="Hint.TLabel", wraplength=860, justify="left", text=(
-            "Chạy OCR: xử lý mọi file trong danh sách theo các tùy chọn ở trên. "
-            "Dừng: dừng sau trang đang làm; các trang đã xong vẫn được lưu.")).pack(fill="x", pady=(6, 0))
-        self.pb = ttk.Progressbar(page, maximum=100, style="Accent.Horizontal.TProgressbar")
-        self.pb.pack(fill="x", pady=(14, 4))
-        self.status = tk.StringVar(value="Sẵn sàng.")
-        ttk.Label(page, textvariable=self.status, style="Status.TLabel", wraplength=860, justify="left").pack(fill="x")
         self.after(150, self.poll)
 
     # ---------- giao diện ----------
@@ -249,6 +261,10 @@ class App(_Base):
         s.configure("TButton", padding=(12, 6), background=CARD, bordercolor=LINE, focusthickness=0)
         s.map("TButton", background=[("active", "#EEF1F6"), ("disabled", CARD)],
               foreground=[("disabled", "#A0A6B1")])
+        s.configure("Run.TButton", background="#1B5E20", foreground="#FFFFFF", bordercolor="#1B5E20",
+                    padding=(22, 10), font=("TkDefaultFont", 11, "bold"))
+        s.map("Run.TButton", background=[("active", "#14481A"), ("disabled", "#9CB8A0")],
+              foreground=[("disabled", "#FFFFFF")])
         s.configure("Accent.TButton", background=ACCENT, foreground="#FFFFFF", bordercolor=ACCENT, padding=(18, 8))
         s.map("Accent.TButton", background=[("active", ACCENT_DARK), ("disabled", "#A9C5F2")],
               foreground=[("disabled", "#FFFFFF")])
@@ -278,7 +294,7 @@ class App(_Base):
 
     def _row(self, parent, row: int, label: str, widget):
         """Hàng nhãn + ô nhập. Bố cục dùng grid nên mọi khối cùng một cột nhãn."""
-        ttk.Label(parent, text=label, style="Card.TLabel", width=14, anchor="w").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
+        ttk.Label(parent, text=label, style="Card.TLabel", width=16, anchor="w").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
         widget.grid(row=row, column=1, sticky="w", pady=4)
         return widget
 
