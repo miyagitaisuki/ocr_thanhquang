@@ -28,7 +28,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `engines/paddle.py` | Engine `paddle` (tiếng Anh và tiếng Trung, dùng chung): PP-OCRv4 det + rec ONNX, CTC. Model: `scripts/fetch_models.py`. |
 | `engines/viet.py` | Engine `ocr_vi` (tiếng Việt): dò dòng PP-OCRv4 + VietOCR (seq2seq, ONNX int8, giải mã greedy). Model: `scripts/export_vi.py`. |
 | `engines/ocr_onnx.py` | Thành phần chung ONNX: hậu xử lý DB bằng OpenCV (không pyclipper), sắp thứ tự đọc, nắn phối cảnh, CTC, ghép Page. |
-| `engines/models.py` | Tìm thư mục model: `OCRNHAT_MODELS`, `models/` cạnh exe/gốc repo, `%LOCALAPPDATA%\OCR-Nhat\models`. |
+| `engines/models.py` | Tìm và tải model: `OCRNHAT_MODELS`, `models/` cạnh exe/gốc repo, `%LOCALAPPDATA%\OCR-Nhat\models`. `download_paddle()` tải PaddleOCR có báo tiến độ, kiểm SHA-256 (GUI và `scripts/fetch_models.py` dùng chung). |
 | `engines/chandra.py` | Engine Chandra 2 (tùy chọn, cần GPU, không trong exe): `parse_chandra_html` (HTML -> Page, có test) + `ChandraEngine` gọi `chandra-ocr` (HF cục bộ, hoặc vLLM). Giấy phép: xem NOTICE.md. |
 | `pipeline.py` | `process_file`: OCR song song (ThreadPool, cửa sổ trượt, giữ thứ tự trang), cache, gọi layout, ghi file. |
 | `layout.py` | Lõi dựng văn bản: lọc tiếng Nhật, bỏ furigana, gộp đoạn (ngắt theo khoảng trống dọc bất thường so với khoảng thông thường của khối), nhận tiêu đề (dòng ngắn đứng riêng, kể cả cùng cỡ chữ), dò đường kẻ bảng (OpenCV), ô gộp, nhận dạng lại ô vượt kẻ, sửa số khoanh tròn, ruby. |
@@ -62,7 +62,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - Ngôn ngữ: `--lang ja` (mặc định), `en`, `zh`, `vi`, `all` (chỉ Chandra). Mỗi ngôn ngữ chỉ giữ chữ của ngôn ngữ đó (`layout._script_keep`). `auto` chọn engine theo ngôn ngữ: en/zh -> paddle, vi -> ocr_vi. Ô Ngôn ngữ trong GUI chỉ liệt kê ngôn ngữ mà engine đang chọn hỗ trợ. Với en/vi, nối dòng bằng khoảng trắng và kết câu bằng `.!?:;`. Heuristic ngắt đoạn vẫn thiên về tiếng Nhật (dấu 。, hạt).
 - Chandra: GUI có ô xác nhận OpenRAIL-M và nút "Tải model Chandra" (tải trọng số từ Hugging Face vào cache, chạy nền). Đã nối vào `--engine chandra` và GUI; `auto` chọn khi có NVIDIA đủ VRAM, đã cài `ocrnhat[chandra]` và torch có CUDA; AMD/Intel về NDLOCR. Ô Thiết bị = CPU ép Chandra chạy CPU. Batch: 6 GB -> 4 trang, từ 8 GB -> 8 trang (chỉ Chandra; một luồng OCR). CHƯA chạy model thật (môi trường không có GPU), chưa biết chất lượng đầu ra.
 - PaddleOCR + VietOCR (nhánh `claude/ocr-vi-engine`): đã chạy thật trên mẫu tổng hợp (tiếng Anh, Việt, Trung) qua CLI; test model thật chạy khi có `models/`. Chưa kiểm trên PDF scan thật, chưa đo tốc độ trên máy người dùng.
-- Chưa làm: GPU chạy thật trong exe (exe CI dùng onnxruntime CPU). Model PaddleOCR/VietOCR KHÔNG đóng vào exe: cần đặt vào `models/` trước khi dùng (chưa có nút tải trong GUI).
+- Chưa làm: GPU chạy thật trong exe (exe CI dùng onnxruntime CPU). Model PaddleOCR/VietOCR KHÔNG đóng vào exe. Tab "AI powered" có nút "Tải model OCR (PaddleOCR)" (thanh % và spinner; lưu vào `%LOCALAPPDATA%\OCR-Nhat\models` khi chạy exe). VietOCR không tải được từ GUI: chạy `scripts/export_vi.py`.
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 
 ## Lỗi và giới hạn đã biết

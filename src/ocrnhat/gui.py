@@ -106,6 +106,35 @@ class Tip:
             self.win.destroy(); self.win = None
 
 
+class Spinner(tk.Canvas):
+    """Vòng tròn xoay báo đang làm việc. start()/stop(); stop() dừng xoay, còn hiện hay ẩn do người gọi quyết."""
+
+    def __init__(self, master, size: int = 20, **kw):
+        style = ttk.Style()
+        bg = style.lookup("Card.TFrame", "background") or None
+        fg = style.lookup("Accent.Horizontal.TProgressbar", "background") or "#2e7d32"
+        super().__init__(master, width=size, height=size, highlightthickness=0, bd=0, bg=bg, **kw)
+        pad = 3
+        self._arc = self.create_arc(pad, pad, size - pad, size - pad, start=0, extent=270,
+                                    style="arc", width=3, outline=fg)
+        self._angle = 0
+        self._job = None
+
+    def start(self):
+        if self._job is None:
+            self._tick()
+
+    def _tick(self):
+        self._angle = (self._angle - 30) % 360
+        self.itemconfigure(self._arc, start=self._angle)
+        self._job = self.after(60, self._tick)
+
+    def stop(self):
+        if self._job is not None:
+            self.after_cancel(self._job)
+            self._job = None
+
+
 class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
     KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
@@ -352,6 +381,7 @@ class App(_Base):
 
     def _ai_card(self):
         ai = self._card(self.tab_ai, "Engine AI (tùy chọn, tải một lần)")
+        self._model_card(ai)
         if not gpupack.installed():
             row = ttk.Frame(ai, style="Card.TFrame")
             row.pack(fill="x", pady=(0, 6))
@@ -375,6 +405,65 @@ class App(_Base):
             ready = model_downloaded()
             self.dl_status = tk.StringVar(value="Đã có model Chandra trên máy." if ready else "Chưa có model Chandra (vài GB, chỉ tải một lần).")
             ttk.Label(ai, textvariable=self.dl_status, style="Hint.TLabel").pack(anchor="w", pady=(4, 0))
+
+    def _model_card(self, parent):
+        """Model PaddleOCR (tiếng Anh, Trung) tải tự động; model VietOCR phải xuất bằng scripts/export_vi.py."""
+        from .engines.paddle import PaddleEngine
+        row = ttk.Frame(parent, style="Card.TFrame")
+        row.pack(fill="x", pady=(0, 6))
+        need = not PaddleEngine.is_available()[0]
+        self.pm_btn = ttk.Button(row, text="Tải model OCR (PaddleOCR)", command=self.download_paddle,
+                                 state="normal" if need else "disabled")
+        self.pm_btn.pack(side="left")
+        self.pm_spin = Spinner(row, size=20)
+        self.pm_pb = ttk.Progressbar(row, maximum=100, length=200, style="Accent.Horizontal.TProgressbar")
+        self.pm_pb.pack(side="left", padx=10)
+        self.pm_pct = tk.StringVar(value="")
+        ttk.Label(row, textvariable=self.pm_pct, width=12).pack(side="left")
+        self.pm_status = tk.StringVar(value=self._model_status_text())
+        ttk.Label(parent, textvariable=self.pm_status, style="Hint.TLabel", wraplength=760, justify="left").pack(anchor="w", pady=(0, 10))
+
+    def _model_status_text(self) -> str:
+        from .engines.paddle import PaddleEngine
+        from .engines.viet import VietnameseEngine
+        paddle_ok = PaddleEngine.is_available()[0]
+        vi_ok = VietnameseEngine.is_available()[0]
+        lines = ["Model PaddleOCR (tiếng Anh, Trung): " + ("đã có." if paddle_ok else "chưa có — bấm nút để tải (vài chục MB)."),
+                 "Model VietOCR (tiếng Việt): " + ("đã có." if vi_ok else "chưa có — không tải từ đây được; chạy scripts/export_vi.py (cần torch).")]
+        return "\n".join(lines)
+
+    def download_paddle(self):
+        self.pm_btn.config(state="disabled")
+        self.pm_pb["value"] = 0
+        self.pm_pct.set("0%")
+        self.pm_status.set("Đang tải model PaddleOCR từ Hugging Face / GitHub…")
+        self.pm_spin.pack(side="left", padx=(0, 4), before=self.pm_pb)
+        self.pm_spin.start()
+        threading.Thread(target=self._paddle_worker, daemon=True).start()
+
+    def _paddle_worker(self):
+        from .engines import models as mdl
+        try:
+            mdl.download_paddle(progress=lambda i, n, name, frac: self.q.put(("pm_prog", (i, n, name, frac))))
+            ok, msg = True, "Đã tải xong model PaddleOCR. " + self._model_status_text().split("\n")[1]
+        except Exception as e:
+            log.exception("Lỗi tải model PaddleOCR")
+            ok, msg = False, f"Tải model PaddleOCR lỗi: {e}"
+        self.q.put(("pm_done", (ok, msg)))
+
+    def _on_pm_progress(self, i, n, name, frac):
+        overall = (i + frac) / max(1, n)
+        self.pm_pb["value"] = 100 * overall
+        self.pm_pct.set(f"{round(100 * overall)}%")
+        self.pm_status.set(f"Đang tải {name} (tệp {min(i + 1, n)}/{n})…")
+
+    def _on_pm_done(self, ok, msg):
+        self.pm_spin.stop()
+        self.pm_spin.pack_forget()
+        self.pm_pb["value"] = 100 if ok else 0
+        self.pm_pct.set("100%" if ok else "")
+        self.pm_status.set(msg)
+        self.pm_btn.config(state="normal" if not ok else "disabled")
 
     def _tab_review(self):
         rev = self._card(self.tab_rev, "Rà soát")
@@ -814,6 +903,10 @@ class App(_Base):
                 elif k == "dl":
                     self.dl_status.set(v); self.dl_pb["value"] = 100 if "xong" in v else 0
                     self.dl_btn.config(state="normal")
+                elif k == "pm_prog":
+                    self._on_pm_progress(*v)
+                elif k == "pm_done":
+                    self._on_pm_done(*v)
                 elif k == "pack":
                     self.pack_status.set(v)
                 elif k == "packdone":
