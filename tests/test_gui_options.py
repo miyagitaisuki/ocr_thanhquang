@@ -21,6 +21,7 @@ class _Form:
     """Thay cho App: chỉ giữ biến và nhãn thiết bị, để gọi trực tiếp App._read_options."""
     DEV_LABELS = gui.App.DEV_LABELS
     KANA_LABELS = gui.App.KANA_LABELS
+    LANG_LABELS = gui.App.LANG_LABELS
 
     def __init__(self, **values):
         self.values = {"dev": gui.App.DEV_LABELS["auto"], "kana": gui.App.KANA_LABELS[""], **values}   # giá trị mặc định như khi mở GUI
