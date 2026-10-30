@@ -120,15 +120,19 @@ class GradientButton(tk.Canvas):
     width (px) đặt chiều rộng cố định; không đặt thì theo độ dài chữ.
     """
 
-    VARIANTS = {"run": ("#34B25C", "#1B5E20", "#FFFFFF"), "accent": ("#5B9BFF", "#1F6FEB", "#FFFFFF")}
+    VARIANTS = {"run": ("#34B25C", "#1B5E20", "#FFFFFF"), "accent": ("#5B9BFF", "#1F6FEB", "#FFFFFF"),
+                "danger": ("#F2625C", "#B71C1C", "#FFFFFF")}
     HEIGHT = 32
+    ICON_W, ICON_GAP = 16, 8
 
     def __init__(self, master, text: str = "", command=None, state: str = "normal", style: str = "",
-                 width: int | None = None, **_):
+                 width: int | None = None, icon: str | None = None, **_):
         self._bg = _parent_bg(master)
         super().__init__(master, height=self.HEIGHT, highlightthickness=0, bd=0, bg=self._bg, cursor="hand2")
         self._text, self._command, self._state = text, command, state
-        self._variant = "run" if style.startswith("Run") else "accent" if style.startswith("Accent") else "neutral"
+        self._variant = ("run" if style.startswith("Run") else "accent" if style.startswith("Accent")
+                         else "danger" if style.startswith("Danger") else "neutral")
+        self._icon = icon   # "stop": hình vuông trắng; "search": kính lúp
         self._font = tkfont.nametofont("TkDefaultFont")
         self._fixed_w = width
         self._hover = self._down = False
@@ -141,11 +145,14 @@ class GradientButton(tk.Canvas):
         self._draw()
 
     def _apply_width(self):
-        tk.Canvas.configure(self, width=self._fixed_w or self._font.measure(self._text) + 36)
+        extra = (self.ICON_W + self.ICON_GAP) if self._icon else 0
+        tk.Canvas.configure(self, width=self._fixed_w or self._font.measure(self._text) + 36 + extra)
 
     def _colors(self) -> tuple[str, str, str]:
         """(đỉnh, đáy, chữ) theo biến thể, trạng thái và nền."""
         light = _lum(self._bg) > 128
+        if self._state == "disabled" and self._variant == "danger":   # Dừng: đỏ nhạt, vẫn nhận ra là nút dừng
+            return "#E8776F", "#C2453F", "#FFFFFF"
         if self._state == "disabled":
             top, bot, fg = ("#D9DDE3", "#C5CAD2", "#8A919C") if light else ("#3D434C", "#30353C", "#6B7280")
             return top, bot, fg
@@ -167,7 +174,18 @@ class GradientButton(tk.Canvas):
         top, bot, fg = self._colors()
         for y in range(h):
             self.create_line(0, y, w, y, fill=_mix(top, bot, y / max(1, h - 1)))
-        self.create_text(w / 2, h / 2, text=self._text, fill=fg, font=self._font)
+        icon_w = (self.ICON_W + self.ICON_GAP) if self._icon else 0
+        x0 = (w - icon_w - self._font.measure(self._text)) / 2
+        if self._icon:
+            self._draw_icon(x0, h / 2, fg)
+        self.create_text(x0 + icon_w, h / 2, text=self._text, fill=fg, font=self._font, anchor="w")
+
+    def _draw_icon(self, x: float, cy: float, color: str):
+        if self._icon == "stop":
+            self.create_rectangle(x + 2, cy - 6, x + 13, cy + 5, fill=color, outline="")
+        elif self._icon == "search":
+            self.create_oval(x + 1, cy - 8, x + 11, cy + 2, outline=color, width=2)
+            self.create_line(x + 9, cy + 1, x + 14, cy + 6, fill=color, width=3, capstyle="round")
 
     def configure(self, cnf=None, **kw):
         kw = dict(cnf or {}, **kw)
@@ -402,9 +420,9 @@ class App(_Base):
         btns.pack(fill="x")
         self.btn = GradientButton(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start)
         self.btn.pack(side="left")
-        self.stop = GradientButton(btns, text="Dừng", command=self.cancel.set, state="disabled")
+        self.stop = GradientButton(btns, text="Dừng", command=self.cancel.set, state="disabled", style="Danger.TButton", icon="stop")
         self.stop.pack(side="left", padx=8)
-        self.find = GradientButton(btns, text="Tìm nhanh", command=self.find_output)
+        self.find = GradientButton(btns, text="Tìm nhanh", command=self.find_output, icon="search")
         self.find.pack(side="left", padx=(0, 8))
         Tip(self.find, "Mở thư mục chứa file kết quả: kết quả đang chọn, không thì kết quả gần nhất, không thì thư mục lưu.")
         self.hw = tk.StringVar(value="Đang dò phần cứng…")
