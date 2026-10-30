@@ -12,8 +12,10 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import pipeline
+from . import gpupack, pipeline
 from .cli import collect
+
+gpupack.activate()   # trước khi App.ENGINES đọc find_spec('chandra')
 
 try:  # kéo-thả file: cần tkinterdnd2 (tkdnd); không có thì giao diện vẫn chạy với nút bấm
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -161,6 +163,13 @@ class App(_Base):
         cb_k.grid(row=6, column=0, columnspan=3, sticky="w", pady=2)
         Tip(cb_k, "Lưu kết quả từng trang trong thư mục đầu ra (.cache). Tắt nếu muốn OCR lại từ đầu.")
         self._row(proc, 7, "Đọc bảng kana", ttk.Combobox(proc, textvariable=self._var("kana", self.KANA_LABELS[""]), values=list(self.KANA_LABELS.values()), state="readonly", width=34))
+        if not gpupack.installed():
+            pk = ttk.Frame(proc)
+            pk.grid(row=9, column=0, columnspan=3, sticky="w", pady=(8, 0))
+            self.pack_btn = ttk.Button(pk, text="Cài gói GPU + Chandra (vài GB)", command=self.install_pack)
+            self.pack_btn.pack(side="left")
+            self.pack_status = tk.StringVar(value="Chỉ dùng khi có card NVIDIA. Tải một lần, cần Internet. Sau khi cài, khởi động lại app.")
+            ttk.Label(pk, textvariable=self.pack_status, style="Hint.TLabel", wraplength=560, justify="left").pack(side="left", padx=(10, 0))
         if "chandra" in self.ENGINES:
             from .engines.chandra import model_downloaded
             dl = ttk.Frame(proc)
@@ -367,6 +376,20 @@ class App(_Base):
         except Exception as e:  # hiển thị lỗi thay vì chết im lặng
             self.q.put(("done", f"Lỗi: {e}"))
 
+    def install_pack(self):
+        if not messagebox.askyesno("Gói GPU", "Tải torch CUDA và Chandra, khoảng vài GB. Tiếp tục?"):
+            return
+        self.pack_btn.config(state="disabled")
+        threading.Thread(target=self._pack_worker, daemon=True).start()
+
+    def _pack_worker(self):
+        try:
+            gpupack.install(progress=lambda m: self.q.put(("pack", m)))
+            msg = "Đã cài gói GPU. Hãy khởi động lại OCR-Nhat để dùng Chandra."
+        except Exception as e:
+            msg = f"Cài gói GPU lỗi: {e}"
+        self.q.put(("packdone", msg))
+
     def download_chandra(self):
         if not self._var("chandra_license", False).get():
             messagebox.showwarning("Chandra", "Hãy tick xác nhận điều khoản OpenRAIL-M trước khi tải model.")
@@ -394,6 +417,10 @@ class App(_Base):
                     self.status.set(v)
                 elif k == "dl":
                     self.dl_status.set(v); self.dl_btn.config(state="normal")
+                elif k == "pack":
+                    self.pack_status.set(v)
+                elif k == "packdone":
+                    self.pack_status.set(v); self.pack_btn.config(state="normal")
                 else:
                     self.status.set(v); self.btn.config(state="normal"); self.stop.config(state="disabled")
         except queue.Empty:

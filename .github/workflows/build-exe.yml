@@ -28,7 +28,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
-          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
+          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2 --collect-all pip
           run_gui.py
       - name: Build exe (dòng lệnh)
         run: >
@@ -37,7 +37,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
-          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
+          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2 --collect-all pip
           run_gui.py
       - name: Đóng gói bộ cài (Inno Setup)
         shell: pwsh

@@ -1,6 +1,6 @@
 name: Build Windows exe (GPU NVIDIA)
 # Bản riêng cho máy có card NVIDIA: dùng onnxruntime-gpu (CUDA). Bản CPU vẫn ở build-exe.yml.
-# Người dùng cần driver NVIDIA. Bản này có sẵn Chandra (torch CUDA). Trọng số Chandra được tải lần đầu khi dùng.
+# Người dùng cần driver NVIDIA. Torch CUDA và Chandra KHÔNG đóng vào exe: app tải gói GPU khi người dùng bấm nút.
 on:
   workflow_dispatch:
 jobs:
@@ -23,10 +23,6 @@ jobs:
         run: |
           pip uninstall -y onnxruntime
           pip install onnxruntime-gpu
-      - name: "Cài torch CUDA và Chandra (đóng gói vào exe GPU; torch PyPI trên Windows là bản CPU nên lấy từ chỉ mục CUDA)"
-        run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-          pip install "chandra-ocr[hf]==0.2.0"
       - name: Kiểm tra onnxruntime có CUDA
         run: |
           python -c "import onnxruntime as o; p=o.get_available_providers(); print(p); assert 'CUDAExecutionProvider' in p"
@@ -40,7 +36,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
           --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
-          --collect-all chandra --collect-all transformers --collect-all huggingface_hub
+          --collect-all pip
           run_gui.py
       - name: Build exe (dòng lệnh GPU)
         run: >
@@ -50,7 +46,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
           --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
-          --collect-all chandra --collect-all transformers --collect-all huggingface_hub
+          --collect-all pip
           run_gui.py
       - name: "Kiểm tra exe GPU (runner không có GPU: phải lùi về CPU và vẫn OCR đúng)"
         shell: pwsh
