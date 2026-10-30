@@ -76,8 +76,9 @@ def open_path(p: Path) -> None:
 
 
 def _pick_font() -> str | None:
+    """Font giao diện: ưu tiên font có đủ dấu tiếng Việt. Yu Gothic/Meiryo là font tiếng Nhật, dấu dễ bị chồng."""
     fams = set(tkfont.families())
-    for f in ("Yu Gothic UI", "Meiryo", "Segoe UI", "Helvetica"):
+    for f in ("Segoe UI", "Tahoma", "Arial"):
         if f in fams:
             return f
     return None
