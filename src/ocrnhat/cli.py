@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--crop", default="", help="cắt vùng trang trước khi OCR: x0,y0,x1,y1 (pixel)")
     ap.add_argument("--upscale", type=float, default=1.0, help="phóng to ảnh trước khi OCR, ví dụ 2 cho ảnh chữ nhỏ")
     ap.add_argument("--suspect", action="store_true", help="dò chữ nghi nhận sai bằng BERT tiếng Nhật, ghi *_suspect.txt (chỉ đánh dấu; cần pip install \".[suspect]\")")
+    ap.add_argument("--kana-tesseract", action="store_true", help="thử nghiệm: đọc ô bảng chữ kana bằng Tesseract (cần lệnh tesseract và dữ liệu jpn); độ chính xác chưa đủ, ô không chắc để trống")
     ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
     a = ap.parse_args(argv)
@@ -68,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         r = pipeline.process_file(
             f, Path(a.out), a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
-            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, crop=crop, upscale=a.upscale, suspect=a.suspect,
+            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, crop=crop, upscale=a.upscale, suspect=a.suspect, kana_ocr=a.kana_tesseract,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
         if r.get("suspect"):

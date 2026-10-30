@@ -127,7 +127,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  engine: str | None = None, ruby: bool = False, device: str = "auto",
                  workers: int | None = None, cell_reocr: bool = True,
                  crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
-                 suspect: bool = False, suspect_threshold: float = 0.0005) -> dict:
+                 suspect: bool = False, suspect_threshold: float = 0.0005,
+                 kana_ocr: bool = False) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -147,6 +148,8 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         pre_tag += f"u{upscale:g}"
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
+    from . import kana as _kana
+    kana_reader = _kana.read_cell if kana_ocr and _kana.available() else None   # thử nghiệm, cần tesseract + jpn
 
     def reocr(crop):
         """Nhận dạng lại một ô bảng (engine của luồng gọi, lấy lười)."""
@@ -184,7 +187,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             fut = pending.pop(0)               # giữ thứ tự trang
             pno, page, img = fut.result()
             submit_next()
-            items = build_page(page, img, reocr if cell_reocr else None)
+            items = build_page(page, img, reocr if cell_reocr else None, kana_reader)
             if suspect:
                 suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
             if review:

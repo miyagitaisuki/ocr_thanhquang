@@ -71,9 +71,9 @@ def test_cell_reocr_duoc_truyen_xuong_layout(fake_engine, pdf, tmp_path, monkeyp
     seen = []
     real = layout.build_page
 
-    def spy(page, img, reocr=None):
+    def spy(page, img, reocr=None, kana_reader=None):
         seen.append(reocr)
-        return real(page, img, reocr)
+        return real(page, img, reocr, kana_reader)
 
     monkeypatch.setattr(layout, "build_page", spy)
     pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, cell_reocr=cell_reocr)

@@ -98,6 +98,7 @@ class Table:
     n_rows: int
     n_cols: int
     cells: list[Cell] = field(default_factory=list)
+    kana: bool = False      # bảng chữ kana: ô đọc bằng kana_reader (Tesseract), ô trống là không chắc
 
 
 # ---------- lọc dòng ----------
@@ -437,13 +438,36 @@ def _fix_circled(cells: list[Cell]) -> None:
         c.text = chr(0x2460 + i)
 
 
+_ROMAJI_WORD = re.compile(r"[a-z]{2,}")
+
+
+def _is_kana_chart(block: Block, cells) -> bool:
+    """Bảng chữ kana: nhiều ô có romaji nhỏ (ka, shi…) cạnh chữ kana lớn. Bảng văn bản thường không có."""
+    if len(cells) < 20:
+        return False
+    rom = sum(1 for l in block.lines if re.fullmatch(r"[A-Za-z]{1,4}", l.text.strip()) or _ROMAJI_WORD.search(l.text))
+    return rom >= 0.25 * len(cells)
+
+
+def _read_kana_chart(cells, ys, xs, img_rgb, kana_reader) -> None:
+    for cell in cells:
+        x0, y0, x1, y1 = _cell_box(cell, ys, xs)
+        crop = img_rgb[int(y0):int(y1), int(x0):int(x1)]
+        cell.text = kana_reader(np.ascontiguousarray(crop)) if crop.size else ""
+        cell.conf = 1.0 if cell.text else 0.0
+
+
 def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
-           img_rgb: np.ndarray | None = None, reocr=None) -> Table | None:
+           img_rgb: np.ndarray | None = None, reocr=None, kana_reader=None) -> Table | None:
     ls = [l for l in block.lines if flt.keep(l, table=True)]
-    if not ls: return None
     g = _detect_grid(gray, block) if gray is not None else None
     if g:
         ys, xs, cells = _grid_cells(g)
+        if kana_reader is not None and img_rgb is not None and _is_kana_chart(block, cells):
+            _read_kana_chart(cells, ys, xs, img_rgb, kana_reader)
+            return Table(len(ys) - 1, len(xs) - 1, cells, kana=True)
+    if not ls: return None
+    if g:
         if reocr is not None:
             ls = _reocr_cells(ls, ys, xs, cells, img_rgb, reocr, flt)
         buckets: dict[tuple[int, int], list[Line]] = {}
@@ -588,8 +612,13 @@ def _sample_layout(page: Page) -> None:
             o.text = "■" + o.text
 
 
-def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> list[Para | Table]:
-    """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại."""
+KANA_NOTE = ("※ Bảng chữ kana đọc bằng Tesseract: ô để trống là không chắc chắn; "
+             "đối chiếu với trang gốc trước khi dùng.")
+
+
+def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None, kana_reader=None) -> list[Para | Table]:
+    """reocr(crop_rgb) -> Page: nhận dạng lại một ảnh ô bảng. None = không nhận dạng lại.
+    kana_reader(crop_rgb) -> str: đọc một ô chữ kana (một ký tự hoặc ''). None = không đọc bảng kana."""
     _number_toc(page)
     _sample_layout(page)
     gray = None
@@ -607,12 +636,16 @@ def build_page(page: Page, img_rgb: np.ndarray | None = None, reocr=None) -> lis
             if len(inside) < 2:
                 continue
             taken.update(id(l) for l in inside)
-            t = _table(Block("table", region.x, region.y, region.w, region.h, inside), flt, gray)
-            if t: items.append((min(l.order for l in inside), t))
+            t = _table(Block("table", region.x, region.y, region.w, region.h, inside), flt, gray, img_rgb, None, kana_reader)
+            if t:
+                items.append((min(l.order for l in inside), t))
+                if t.kana: items.append((min(l.order for l in inside), Para(KANA_NOTE, kind="body")))
     for b in page.blocks:
         if b.kind == "table":
-            t = _table(b, flt, gray, img_rgb, reocr)
-            if t: items.append((b.order, t))
+            t = _table(b, flt, gray, img_rgb, reocr, kana_reader)
+            if t:
+                items.append((b.order, t))
+                if getattr(t, "kana", False): items.append((b.order, Para(KANA_NOTE, kind="body")))
         elif b.kind in _TEXT_KINDS:
             rest = [l for l in b.lines if id(l) not in taken]
             for p in _paragraphs(Block(b.kind, b.x, b.y, b.w, b.h, rest, b.label), flt): items.append((b.order, p))
