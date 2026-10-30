@@ -28,7 +28,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
-          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
+          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2 --collect-all pip
           run_gui.py
       - name: Build exe (dòng lệnh)
         run: >
@@ -37,8 +37,14 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
-          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2
+          --collect-all onnxruntime --collect-all docx --collect-all tkinterdnd2 --collect-all pip
           run_gui.py
+      - name: Đóng gói bộ cài (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\OCR-Nhat.iss
+          if (-not (Test-Path installer_out/OCR-Nhat-setup.exe)) { throw "không tạo được bộ cài" }
       - name: Kiểm tra chính file exe (OCR ảnh mẫu ra docx)
         shell: pwsh
         run: |
@@ -55,4 +61,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: OCR-Nhat-windows
-          path: "*.zip"
+          path: |
+            *.zip
+            installer_out/OCR-Nhat-setup.exe

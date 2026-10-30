@@ -17,6 +17,7 @@ Engine này dùng **Chandra OCR 2** của Datalab (`datalab-to/chandra-ocr-2`, g
   - Dẫn xuất (lượng tử hóa, tinh chỉnh) phải giữ cùng giấy phép.
 - Trọng số **không được đóng vào exe và không nằm trong repo**: người dùng tự cài `pip install ".[chandra]"`, mô hình tải về từ Hugging Face.
 - Nếu vượt ngưỡng hoặc cần dùng thương mại rộng hơn, phải xin giấy phép thương mại từ Datalab.
+- Gói GPU (tải khi người dùng bấm nút trong GUI, không đóng vào exe) gồm torch và torchvision (BSD-3, PyTorch), `chandra-ocr` (Apache-2.0) và các phụ thuộc. Trọng số Chandra vẫn tải riêng từ Hugging Face khi người dùng bấm, và người dùng phải chấp nhận điều khoản OpenRAIL-M của trọng số. Gói GPU có thể kèm thư viện CUDA của NVIDIA theo giấy phép của NVIDIA.
 - **Phạm vi sử dụng hiện tại: chỉ cá nhân chủ dự án, không phân phối.** Theo điều khoản, sử dụng cá nhân/nghiên cứu được miễn ngưỡng thương mại. Nếu chia sẻ exe, đưa cho người khác, hoặc dùng cho mục đích có doanh thu, phải xem lại điều khoản trên trước.
 
 Các thư viện khác: onnxruntime, OpenCV, pypdfium2, python-docx, NumPy, Pillow (giấy phép riêng của từng thư viện).

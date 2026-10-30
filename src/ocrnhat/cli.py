@@ -22,6 +22,8 @@ def collect(paths: list[str]) -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from . import gpupack
+    gpupack.activate()   # gói GPU đã cài (Chandra, torch CUDA) thì đưa vào đường dẫn import
     for st in (sys.stdout, sys.stderr):  # console Windows mặc định cp1252
         try:
             st.reconfigure(encoding="utf-8", errors="replace")
