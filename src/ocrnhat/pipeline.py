@@ -139,9 +139,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     out_dir.mkdir(parents=True, exist_ok=True)
     total = len(pages) if pages else page_count(path)
     from . import engines
-    engine, why = engines.resolve(engine or engines.DEFAULT)
-    if lang != "ja" and engine != "chandra":
-        raise ValueError("Ngôn ngữ khác tiếng Nhật chỉ dùng được với engine chandra.")
+    engine, why = engines.resolve_for_lang(engine or engines.DEFAULT, lang)
     from .gpu import resolve_device
     dev, dev_why = resolve_device(device)
     if progress:

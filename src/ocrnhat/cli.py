@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--conf", type=float, default=0.8, help="ngưỡng độ tin cậy cho --review (mặc định 0.8)")
     ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định auto)")
     ap.add_argument("--keep-pages", action="store_true", help="giữ nguyên từng trang (mặc định: gộp các trang thành một khối liền mạch)")
-    ap.add_argument("--lang", default="ja", choices=["ja", "all"], help="ja: chỉ giữ tiếng Nhật (mặc định); all: mọi ngôn ngữ, chỉ dùng với --engine chandra")
+    ap.add_argument("--lang", default="ja", choices=["ja", "en", "zh", "vi", "all"], help="ja: tiếng Nhật (mặc định, NDLOCR/Chandra); en: tiếng Anh, zh: tiếng Trung (PaddleOCR); vi: tiếng Việt (VietOCR); all: mọi ngôn ngữ (chỉ Chandra)")
     ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--device", default="auto", choices=gpu_mod.DEVICES, help="auto | cpu | cuda (GPU NVIDIA, cần onnxruntime-gpu)")
     ap.add_argument("--no-cell-reocr", action="store_true", help="không nhận dạng lại các ô bảng có dòng vượt đường kẻ")

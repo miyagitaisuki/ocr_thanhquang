@@ -8,3 +8,4 @@ vendor/
 smoke.png
 exe_out/
 .cache/
+models/

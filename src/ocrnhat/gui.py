@@ -109,13 +109,16 @@ class Tip:
 class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
     KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
-    LANG_LABELS = {"ja": "Tiếng Nhật", "all": "Mọi ngôn ngữ"}
+    LANG_LABELS = {"ja": "Tiếng Nhật", "en": "Tiếng Anh", "zh": "Tiếng Trung", "vi": "Tiếng Việt", "all": "Mọi ngôn ngữ"}
+    # ngôn ngữ được chọn cho từng engine (auto: mọi ngôn ngữ, engine tự chọn theo ngôn ngữ)
+    ENGINE_LANGS = {"ndlocr": ("ja",), "chandra": ("ja", "en", "zh", "vi", "all"), "paddle": ("en", "zh"),
+                    "ocr_vi": ("vi",), "auto": ("ja", "en", "zh", "vi", "all")}
     # chandra chỉ hiện khi đã cài (exe GPU hoặc gói GPU tùy chọn đã kích hoạt)
-    ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("ocr_en", "ocr_vi")
-    # danh sách engine theo ngôn ngữ; tiếng Anh và tiếng Việt là chỗ giữ, chưa có engine
+    ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("paddle", "ocr_vi")
+    # danh sách engine theo ngôn ngữ
     ENGINE_LABELS = {"auto": "Tự động (engine phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
-                     "chandra": "Tiếng Nhật – Chandra", "ocr_en": "Tiếng Anh – [chưa có engine]",
-                     "ocr_vi": "Tiếng Việt – [chưa có engine]"}
+                     "chandra": "Tiếng Nhật – Chandra", "paddle": "Tiếng Anh/Trung – PaddleOCR",
+                     "ocr_vi": "Tiếng Việt – VietOCR"}
     MERGE_LABELS = {True: "Gộp trang (mặc định)", False: "Giữ nguyên trang"}
 
     def _engine_key(self) -> str:
@@ -319,7 +322,7 @@ class App(_Base):
         self.lang_cb = ttk.Combobox(proc, textvariable=self._var("lang", self.LANG_LABELS["ja"]),
                                     values=list(self.LANG_LABELS.values()), state="readonly", width=INPUT_W)
         self._row(proc, 2, "Ngôn ngữ", self.lang_cb)
-        ttk.Label(proc, text="“Mọi ngôn ngữ” chỉ mở khi Engine = chandra.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(proc, text="Engine chỉ nhận các ngôn ngữ hợp lệ; “Mọi ngôn ngữ” chỉ với Chandra.", style="Hint.TLabel").grid(row=2, column=2, sticky="w", padx=(8, 0))
         self.engine_cb.bind("<<ComboboxSelected>>", lambda e: self._check_engine_choice())
         self._engine_sync = self._var("engine", self.ENGINE_LABELS["auto"]).trace_add("write", lambda *_: self._sync_lang())
         self._sync_lang()
@@ -495,16 +498,21 @@ class App(_Base):
         self._var("cell_reocr", True).set(p["cell_reocr"])
 
     def _check_engine_choice(self):
-        if self._engine_key() in ("ocr_en", "ocr_vi"):
-            messagebox.showinfo("Engine", "Engine này chưa được phát triển. Hiện chỉ có tiếng Nhật (NDLOCR, Chandra).")
-            self._var("engine", self.ENGINE_LABELS["auto"]).set(self.ENGINE_LABELS["auto"])
+        key = self._engine_key()
+        if key in ("paddle", "ocr_vi"):
+            from .engines import paddle, viet
+            cls = paddle.PaddleEngine if key == "paddle" else viet.VietnameseEngine
+            ok, why = cls.is_available()
+            if not ok:
+                messagebox.showwarning("Engine", f"Chưa dùng được {self.ENGINE_LABELS[key]}: {why}")
+                self._var("engine", self.ENGINE_LABELS["auto"]).set(self.ENGINE_LABELS["auto"])
 
     def _sync_lang(self):
-        if self._engine_key() == "chandra":
-            self.lang_cb.config(state="readonly")
-        else:
-            self.lang_cb.config(state="disabled")
-            self._var("lang", self.LANG_LABELS["ja"]).set(self.LANG_LABELS["ja"])
+        key = self._engine_key()
+        allowed = [self.LANG_LABELS[k] for k in self.ENGINE_LANGS.get(key, self.ENGINE_LANGS["auto"])]
+        self.lang_cb.config(values=allowed, state="readonly")
+        if self._var("lang", self.LANG_LABELS["ja"]).get() not in allowed:
+            self._var("lang", self.LANG_LABELS["ja"]).set(allowed[0])
 
     # ---------- danh sách file ----------
 
