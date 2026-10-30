@@ -12,7 +12,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import gpupack, pipeline
+from . import gpu, gpupack, pipeline
 from .cli import collect
 
 gpupack.activate()   # trước khi App.ENGINES đọc find_spec('chandra')
@@ -61,7 +61,8 @@ class Tip:
 
 
 class App(_Base):
-    DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
+    # "GPU (NVIDIA)" chỉ hiện khi onnxruntime có CUDA (bản GPU); bản CPU không có lựa chọn này
+    DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", **({"cuda": "GPU (NVIDIA)"} if gpu.ort_cuda_available() else {})}
     KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
     # chandra chỉ hiện khi bản này có đóng gói Chandra (exe GPU hoặc máy đã cài ocrnhat[chandra])
     ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ())
@@ -150,7 +151,7 @@ class App(_Base):
         ttk.Label(proc, text="auto: tự chọn engine phù hợp. ndlocr: engine OCR chính.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
         self._row(proc, 0, "Engine", ttk.Combobox(proc, textvariable=self._var("engine", "auto"), values=list(self.ENGINES), state="readonly", width=14))
         self._row(proc, 1, "Thiết bị", ttk.Combobox(proc, textvariable=self._var("dev", self.DEV_LABELS["auto"]), values=list(self.DEV_LABELS.values()), state="readonly", width=24))
-        ttk.Label(proc, text="GPU chỉ dùng được với NVIDIA và onnxruntime-gpu + CUDA; không có thì tự lùi về CPU.",
+        ttk.Label(proc, text="GPU chỉ tăng tốc NDLOCR ở bản GPU (onnxruntime-gpu). Gói GPU (nút bên dưới) chỉ tăng tốc Chandra, không đổi NDLOCR.",
                   style="Hint.TLabel", wraplength=640, justify="left").grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
         self._row(proc, 3, "Phóng to", ttk.Entry(proc, textvariable=self._var("upscale", "1"), width=8))
         ttk.Label(proc, text="1 = không phóng to · 2 = ảnh chữ nhỏ", style="Hint.TLabel").grid(row=3, column=2, sticky="w", padx=(8, 0))
@@ -168,7 +169,7 @@ class App(_Base):
             pk.grid(row=9, column=0, columnspan=3, sticky="w", pady=(8, 0))
             self.pack_btn = ttk.Button(pk, text="Cài gói GPU + Chandra (vài GB)", command=self.install_pack)
             self.pack_btn.pack(side="left")
-            self.pack_status = tk.StringVar(value="Chỉ dùng khi có card NVIDIA. Tải một lần, cần Internet. Sau khi cài, khởi động lại app.")
+            self.pack_status = tk.StringVar(value="Chỉ tăng tốc Chandra (NDLOCR vẫn chạy CPU ở bản này). Cần card NVIDIA, tải một lần, cần Internet. Sau khi cài, khởi động lại app.")
             ttk.Label(pk, textvariable=self.pack_status, style="Hint.TLabel", wraplength=560, justify="left").pack(side="left", padx=(10, 0))
         if "chandra" in self.ENGINES:
             from .engines.chandra import model_downloaded

@@ -43,7 +43,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - `scripts/`: `fetch_ndlocr.py` (tải engine), `smoke_test.py` (OCR ảnh mẫu, dựng bảng), `compare_engines.py` (đối chiếu với YomiToku, chỉ để so sánh, không đóng gói vì giấy phép CC BY-NC-SA).
 - `tests/`: pytest (`test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`).
 - `tests/data/pretest_sample.pdf`: sổ tay tiếng Nhật thương mại 4 trang, file mẫu chính cho các test và đo độ chính xác từ nay.
-- `.github/workflows/`: `test.yml` (mỗi push/PR), `build-exe.yml` (exe CPU, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`), `build-exe-gpu.yml` (exe GPU: onnxruntime-gpu; chạy thủ công). Torch CUDA và Chandra KHÔNG nằm trong exe: `gpupack.py` tải về khi người dùng bấm "Cài gói GPU + Chandra".
+- `.github/workflows/`: `test.yml` (mỗi push/PR), `build-exe.yml` (exe CPU, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`), `build-exe-gpu.yml` (exe GPU: onnxruntime-gpu; chạy thủ công). Ô Thiết bị chỉ có "GPU (NVIDIA)" khi onnxruntime có CUDA, tức bản GPU. Gói GPU tùy chọn chỉ tăng tốc Chandra; NDLOCR trong bản CPU vẫn chạy CPU. Torch CUDA và Chandra KHÔNG nằm trong exe: `gpupack.py` tải về khi người dùng bấm "Cài gói GPU + Chandra".
 - `requirements.txt`: nguồn duy nhất của dependency. `pyproject.toml` đọc từ đó. Extra: `test`, `suspect`.
 - `.claude/agents/`: agent `developer` và `code-reviewer`.
 - `run_gui.py`: mở giao diện.
