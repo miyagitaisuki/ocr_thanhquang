@@ -313,6 +313,37 @@ def insert_repeated(main: Path, insert: Path, name: str = "chen_trang", out_dir:
     return _finish(writer, name, Path(out_dir) if out_dir else main.parent, opts)
 
 
+def _run_watch(a) -> int:
+    """--watch: xử lý PDF mới trong thư mục bằng --rotate hoặc --compress, cho đến khi Ctrl+C."""
+    import threading
+    from . import pdf_ops
+    folder = Path(a.watch)
+    if not folder.is_dir():
+        print(f"Không thấy thư mục: {folder}", file=sys.stderr)
+        return 1
+    if not (a.rotate or a.compress):
+        print("--watch cần --rotate hoặc --compress", file=sys.stderr)
+        return 1
+    out = pdf_ops.output_dir(folder)
+    opts = ExtractOptions(pdf_version=a.pdf_version)
+
+    def process(path: Path) -> Path:
+        if a.rotate:
+            return pdf_ops.rotate_pdf(path, a.rotate, a.pages, out, opts)
+        return pdf_ops.compress_pdf(path, a.image_quality, out, opts)
+
+    def report(path, result, err):
+        print(f"{path.name}: {'lỗi: ' + str(err) if err else '-> ' + str(result)}", flush=True)
+
+    print(f"Đang theo dõi {folder} (kết quả vào {out}). Ctrl+C để dừng.", flush=True)
+    stop = threading.Event()
+    try:
+        pdf_ops.watch_folder(folder, process, stop, on_result=report)
+    except KeyboardInterrupt:
+        stop.set()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ocrnhat-pdf", description="Trích xuất trang hoặc tách file PDF.")
     ap.add_argument("inputs", nargs="+", help="file PDF")
@@ -324,6 +355,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--insert", action="store_true", help="chèn lặp lại: inputs[0] là file chính, inputs[1] là file chứa trang chèn")
     ap.add_argument("--insert-page", type=int, default=1, help="--insert: số trang của file chèn (mặc định 1)")
     ap.add_argument("--insert-before", action="store_true", help="--insert: chèn trước mỗi trang thay vì sau")
+    ap.add_argument("--rotate", type=int, choices=(90, 180, 270), help="xoay trang theo chiều kim đồng hồ (dùng với --pages để chọn trang, mặc định tất cả)")
+    ap.add_argument("--compress", action="store_true", help="nén file (gộp đối tượng trùng, nén nội dung; kèm ảnh nếu có --image-quality)")
+    ap.add_argument("--image-quality", type=int, default=None, help="--compress: nén lại ảnh JPEG ở chất lượng này, 1–95 (ví dụ 75)")
+    ap.add_argument("--watch", default=None, metavar="THU_MUC", help="tự động xử lý PDF mới trong thư mục bằng --rotate hoặc --compress; Ctrl+C để dừng")
     ap.add_argument("--split", choices=SPLIT_MODES, help="tách file thay vì trích xuất: pages | bookmark | size")
     ap.add_argument("--every", type=int, default=1, help="--split pages: số trang mỗi file (mặc định 1)")
     ap.add_argument("--max-mb", type=float, default=10, help="--split size: dung lượng tối đa mỗi file, MB (mặc định 10)")
@@ -334,7 +369,25 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-bookmarks", action="store_true", help="bỏ bookmark")
     ap.add_argument("--pdf-version", default="1.5", choices=PDF_VERSIONS, help="phiên bản PDF ghi trong file (mặc định 1.5)")
     a = ap.parse_args(argv)
-    if not (a.split or a.merge or a.interleave or a.insert or a.pages):
+    if a.watch:
+        return _run_watch(a)
+    if a.rotate or a.compress:
+        from . import pdf_ops
+        opts = ExtractOptions(overwrite=a.overwrite, compress=not a.no_compress,
+                              keep_bookmarks=not a.no_bookmarks, pdf_version=a.pdf_version)
+        out = Path(a.out) if a.out else None
+        code = 0
+        for name in a.inputs:
+            try:
+                if a.rotate:
+                    print(f"-> {pdf_ops.rotate_pdf(Path(name), a.rotate, a.pages, out, opts)}")
+                else:
+                    print(f"-> {pdf_ops.compress_pdf(Path(name), a.image_quality, out, opts)}")
+            except (ValueError, OSError) as e:
+                print(f"Lỗi {name}: {e}", file=sys.stderr)
+                code = 1
+        return code
+    if not (a.split or a.merge or a.interleave or a.insert or a.rotate or a.compress or a.watch or a.pages):
         ap.error("cần --pages (trích xuất), --split (tách file) hoặc --merge (ghép file)")
     for st in (sys.stdout, sys.stderr):
         try:

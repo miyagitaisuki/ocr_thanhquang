@@ -17,7 +17,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import gpu, gpupack, pdf_extract as pe, pipeline, textview
+from . import gpu, gpupack, pdf_extract as pe, pdf_ops, pipeline, textview
 from .cli import collect
 
 gpupack.activate()   # trước khi App.ENGINES đọc find_spec('chandra')
@@ -777,16 +777,7 @@ class App(_CatMixin, _Base):
 
     def _tab_pdf(self):
         self._tab_extract()
-        groups = (
-            ("Khác", ("Xoay trang", "Nén PDF", "Tự động theo thư mục")),
-        )
-        for title, names in groups:
-            card = self._card(self.tab_pdf, title)
-            row = ttk.Frame(card, style="Card.TFrame")
-            row.pack(fill="x")
-            for name in names:
-                GradientButton(row, text=name, state="disabled").pack(side="left", padx=(0, 8), pady=4)
-            ttk.Label(card, text="Sắp có. Chưa có chức năng.", style="Status.TLabel").pack(anchor="w", pady=(4, 0))
+        self._tab_tools()
 
     def _tab_extract(self):
         """Trích xuất trang: danh sách PDF, số trang cần lấy và các tùy chọn đầu ra."""
@@ -947,6 +938,115 @@ class App(_CatMixin, _Base):
         out = self._pdfx_out()
         self._pdfx_start(lambda f: pe.split_pdf(f, mode, value, out, opts), "Đang tách")
 
+    def _tab_tools(self):
+        """Xoay trang, nén và tự động xử lý thư mục. Dùng danh sách file của thẻ "Tệp PDF"."""
+        rot = self._card(self.tab_pdf, "Xoay trang")
+        self._row(rot, 0, "Góc xoay", ttk.Combobox(rot, textvariable=self._var("pdfx_angle", "90"), values=["90", "180", "270"],
+                                                    state="readonly", width=INPUT_W))
+        ttk.Label(rot, text="Theo chiều kim đồng hồ.", style="Hint.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self._row(rot, 1, "Trang cần xoay", ttk.Entry(rot, textvariable=self._var("pdfx_rot_pages", ""), width=INPUT_W))
+        ttk.Label(rot, text="ví dụ 2,5-7 · để trống = tất cả trang", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        self.pdfx_rot_btn = GradientButton(rot, text="▶  Xoay trang", style="Run.TButton", command=self._pdfx_rotate_run, width=HEADER_BTN_W)
+        self.pdfx_rot_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
+        rot.columnconfigure(1, weight=1)
+
+        comp = self._card(self.tab_pdf, "Nén PDF")
+        cb_img = self._check(comp, "pdfx_img", True, "Nén lại ảnh (JPEG)")
+        cb_img.grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
+        Tip(cb_img, "Tắt: chỉ gộp đối tượng trùng và nén nội dung trang, không đổi ảnh. Bật: ảnh được ghi lại ở chất lượng bên dưới.")
+        self._row(comp, 1, "Chất lượng ảnh", ttk.Entry(comp, textvariable=self._var("pdfx_quality", "75"), width=INPUT_W))
+        ttk.Label(comp, text="1–95; thấp hơn = nhỏ hơn, ảnh kém nét hơn. Ảnh trong suốt giữ nguyên.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        self.pdfx_comp_btn = GradientButton(comp, text="▶  Nén file", style="Run.TButton", command=self._pdfx_compress_run, width=HEADER_BTN_W)
+        self.pdfx_comp_btn.grid(row=2, column=0, sticky="w", pady=(10, 0))
+        comp.columnconfigure(1, weight=1)
+
+        auto = self._card(self.tab_pdf, "Tự động theo thư mục")
+        self._row(auto, 0, "Thư mục theo dõi", ttk.Entry(auto, textvariable=self._var("pdfx_watch", ""), width=INPUT_W))
+        b_w = GradientButton(auto, text="Chọn…", command=self._pdfx_pick_watch); b_w.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
+        self._row(auto, 1, "Việc cần làm", ttk.Combobox(auto, textvariable=self._var("pdfx_watch_op", "Xoay trang (theo ô trên)"),
+                                                         values=["Xoay trang (theo ô trên)", "Nén file (theo ô trên)"],
+                                                         state="readonly", width=INPUT_W))
+        ttk.Label(auto, text=f"Kết quả vào thư mục con “{pdf_ops.OUT_SUBDIR}”. File có sẵn cũng được xử lý.", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        run = ttk.Frame(auto, style="Card.TFrame")
+        run.grid(row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self.pdfx_watch_btn = GradientButton(run, text="▶  Bắt đầu theo dõi", style="Run.TButton", command=self._pdfx_watch_toggle, width=HEADER_BTN_W)
+        self.pdfx_watch_btn.pack(side="left")
+        self.watch_status = tk.StringVar(value="Chưa theo dõi thư mục nào.")
+        ttk.Label(run, textvariable=self.watch_status, style="Status.TLabel", wraplength=640, justify="left").pack(side="left", padx=12)
+        self.watch_stop = None
+        auto.columnconfigure(1, weight=1)
+
+    def _pdfx_rotate_run(self):
+        if not self.pdfx_items:
+            messagebox.showinfo("Xoay trang", "Thêm ít nhất một file PDF.")
+            return
+        angle = int(self._var("pdfx_angle", "90").get())
+        pages = self._var("pdfx_rot_pages", "").get().strip()
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_start(lambda f: [pdf_ops.rotate_pdf(f, angle, pages, out, opts)], "Đang xoay")
+
+    def _pdfx_compress_run(self):
+        if not self.pdfx_items:
+            messagebox.showinfo("Nén PDF", "Thêm ít nhất một file PDF.")
+            return
+        try:
+            quality = self._pdfx_quality()
+        except ValueError:
+            return
+        opts = self._pdfx_options()
+        out = self._pdfx_out()
+        self._pdfx_start(lambda f: [pdf_ops.compress_pdf(f, quality, out, opts)], "Đang nén")
+
+    def _pdfx_quality(self):
+        if not self._var("pdfx_img", True).get():
+            return None
+        try:
+            q = int(self._var("pdfx_quality", "75").get().strip())
+            if not 1 <= q <= 95:
+                raise ValueError
+            return q
+        except ValueError:
+            messagebox.showinfo("Nén PDF", "Chất lượng ảnh phải là số từ 1 đến 95.")
+            raise
+
+    def _pdfx_pick_watch(self):
+        d = filedialog.askdirectory()
+        if d:
+            self._var("pdfx_watch", "").set(d)
+
+    def _pdfx_watch_toggle(self):
+        if self.watch_stop is not None:   # đang chạy: dừng
+            self.watch_stop.set()
+            self.watch_stop = None
+            self.pdfx_watch_btn.config(text="▶  Bắt đầu theo dõi")
+            self.watch_status.set("Đã dừng theo dõi.")
+            return
+        folder = self._var("pdfx_watch", "").get().strip()
+        if not folder or not Path(folder).is_dir():
+            messagebox.showinfo("Tự động theo thư mục", "Chọn một thư mục có sẵn.")
+            return
+        op = self._var("pdfx_watch_op", "").get()
+        opts = self._pdfx_options()
+        if op.startswith("Xoay"):
+            angle = int(self._var("pdfx_angle", "90").get())
+            pages = self._var("pdfx_rot_pages", "").get().strip()
+            process = lambda f: pdf_ops.rotate_pdf(f, angle, pages, pdf_ops.output_dir(Path(folder)), opts)
+        else:
+            try:
+                quality = self._pdfx_quality()
+            except ValueError:
+                return
+            process = lambda f: pdf_ops.compress_pdf(f, quality, pdf_ops.output_dir(Path(folder)), opts)
+        self.watch_stop = threading.Event()
+        self.pdfx_watch_btn.config(text="■  Dừng theo dõi")
+        self.watch_status.set(f"Đang theo dõi {folder}…")
+        threading.Thread(target=pdf_ops.watch_folder, args=(Path(folder), process, self.watch_stop, 2.0, self._watch_report),
+                         daemon=True).start()
+
+    def _watch_report(self, path, result, err):
+        self.q.put(("pdfx", f"{path.name}: " + (f"lỗi: {err}" if err else f"xong → {result.name}")))
+
     def _pdfx_move(self, step: int):
         sel = self.pdfx_tree.selection()
         if len(sel) != 1:
@@ -1023,7 +1123,8 @@ class App(_CatMixin, _Base):
 
     def _pdfx_busy(self, busy: bool):
         state = "disabled" if busy else "normal"
-        for b in (self.pdfx_btn, self.pdfx_split_btn, self.pdfx_merge_btn, self.pdfx_inter_btn, self.pdfx_rep_btn):
+        for b in (self.pdfx_btn, self.pdfx_split_btn, self.pdfx_merge_btn, self.pdfx_inter_btn, self.pdfx_rep_btn,
+                  self.pdfx_rot_btn, self.pdfx_comp_btn):
             b.config(state=state)
 
     def _pdfx_options(self):
