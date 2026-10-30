@@ -1,14 +1,26 @@
-"""Giao diện Tkinter đơn giản: chọn file/thư mục, chọn trang và tùy chọn, chạy OCR nền."""
+"""Giao diện Tkinter: chọn file/thư mục, chọn trang và tùy chọn, chạy OCR nền.
+
+Bố cục kiểu PDFsam: nền sáng, mỗi nhóm tùy chọn nằm trong một khối có tiêu đề,
+bảng file có cột, nút chính nổi bật, tiến trình và trạng thái ở dưới cùng.
+"""
 from __future__ import annotations
 
 import queue
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from . import engines, gpu, pipeline
+from . import pipeline
 from .cli import collect
+
+BG = "#F4F5F7"        # nền cửa sổ
+CARD = "#FFFFFF"      # nền khối tùy chọn
+TEXT = "#1F2328"
+MUTED = "#6B7280"
+ACCENT = "#1F6FEB"    # nút chính
+ACCENT_DARK = "#1858BF"
+LINE = "#D8DCE3"
 
 
 class App(tk.Tk):
@@ -19,66 +31,162 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("OCR tiếng Nhật")
-        self.geometry("720x720")
+        self.geometry("920x820")
+        self.minsize(820, 600)
+        self.configure(background=BG)
         self.files: list[Path] = []
         self.q: queue.Queue = queue.Queue()
         self.cancel = threading.Event()
         self.worker: threading.Thread | None = None
+        self._vars: dict = {}
+        self._style()
 
-        top = ttk.Frame(self, padding=8); top.pack(fill="x")
-        ttk.Button(top, text="Thêm file…", command=self.add_files).pack(side="left")
-        ttk.Button(top, text="Thêm thư mục…", command=self.add_dir).pack(side="left", padx=4)
-        ttk.Button(top, text="Xóa danh sách", command=self.clear).pack(side="left")
+        # nội dung cuộn dọc để vừa mọi màn hình (kể cả laptop 768px)
+        canvas = tk.Canvas(self, background=BG, highlightthickness=0, borderwidth=0)
+        vbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vbar.set)
+        vbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        page = ttk.Frame(canvas, style="Page.TFrame", padding=(20, 16))
+        win = canvas.create_window((0, 0), window=page, anchor="nw")
+        page.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
 
-        self.lb = tk.Listbox(self, height=8); self.lb.pack(fill="both", expand=False, padx=8)
+        # --- tài liệu nguồn ---
+        src = self._card(page, "Tài liệu nguồn")
+        bar = ttk.Frame(src, style="Card.TFrame")
+        bar.pack(fill="x", pady=(0, 8))
+        ttk.Button(bar, text="Thêm file…", command=self.add_files).pack(side="left")
+        ttk.Button(bar, text="Thêm thư mục…", command=self.add_dir).pack(side="left", padx=6)
+        ttk.Button(bar, text="Xóa danh sách", command=self.clear).pack(side="left")
+        self.count = tk.StringVar(value="Chưa có file nào")
+        ttk.Label(bar, textvariable=self.count, style="Muted.TLabel").pack(side="right")
 
-        opt = ttk.Frame(self, padding=8); opt.pack(fill="x")
-        ttk.Label(opt, text="Thư mục lưu:").grid(row=0, column=0, sticky="w")
-        self.out = tk.StringVar(value=str(Path.home() / "ocr_output"))
-        ttk.Entry(opt, textvariable=self.out, width=50).grid(row=0, column=1, padx=4)
-        ttk.Button(opt, text="Chọn…", command=self.pick_out).grid(row=0, column=2)
-        ttk.Label(opt, text="Trang (vd 1-5,8; để trống = tất cả):").grid(row=1, column=0, sticky="w", pady=4)
-        self.pages = tk.StringVar()
-        ttk.Entry(opt, textvariable=self.pages, width=20).grid(row=1, column=1, sticky="w", padx=4)
-        self.marker = tk.BooleanVar(value=True)
-        self.txt = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opt, text="Ghi số trang gốc 【原本 p.N】", variable=self.marker).grid(row=2, column=0, sticky="w")
-        ttk.Checkbutton(opt, text="Ghi kèm file .txt", variable=self.txt).grid(row=2, column=1, sticky="w")
+        table = ttk.Frame(src, style="Card.TFrame")
+        table.pack(fill="both", expand=True)
+        self.tree = ttk.Treeview(table, columns=("name", "folder"), show="headings", height=7, selectmode="extended")
+        self.tree.heading("name", text="Tên file", anchor="w")
+        self.tree.heading("folder", text="Thư mục", anchor="w")
+        self.tree.column("name", width=300, anchor="w")
+        self.tree.column("folder", width=520, anchor="w")
+        scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        self.empty = ttk.Label(table, text="Bấm “Thêm file…” hoặc “Thêm thư mục…” để chọn PDF/ảnh",
+                               style="Hint.TLabel", anchor="center")
+        self._refresh_list()
 
-        ttk.Label(opt, text="Engine:").grid(row=3, column=0, sticky="w", pady=4)
-        self.engine = tk.StringVar(value="auto")
-        ttk.Combobox(opt, textvariable=self.engine, values=list(self.ENGINES), state="readonly",
-                     width=12).grid(row=3, column=1, sticky="w", padx=4)
+        # --- đầu ra và trang ---
+        out = self._card(page, "Đầu ra")
+        self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", str(Path.home() / "ocr_output")), width=52))
+        ttk.Button(out, text="Chọn…", command=self.pick_out).grid(row=0, column=2, padx=(8, 0), pady=4)
+        self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=24))
+        ttk.Label(out, text="ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)", style="Hint.TLabel").grid(row=1, column=2, sticky="w", padx=(8, 0))
+        checks = ttk.Frame(out, style="Card.TFrame")
+        checks.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self._check(checks, "marker", True, "Ghi số trang gốc 【原本 p.N】").pack(anchor="w", pady=2)
+        self._check(checks, "txt", True, "Ghi kèm file .txt").pack(anchor="w", pady=2)
+        self._check(checks, "ruby", False, "Giữ furigana thành ruby của Word").pack(anchor="w", pady=2)
+        out.columnconfigure(1, weight=1)
 
-        ttk.Label(opt, text="Thiết bị:").grid(row=4, column=0, sticky="w", pady=4)
-        self.dev = tk.StringVar(value=self.DEV_LABELS["auto"])
-        ttk.Combobox(opt, textvariable=self.dev, values=list(self.DEV_LABELS.values()), state="readonly",
-                     width=28).grid(row=4, column=1, sticky="w", padx=4)
-        ttk.Label(opt, text="GPU: chỉ NVIDIA, cần onnxruntime-gpu + CUDA", foreground="#666").grid(row=4, column=2, sticky="w")
+        # --- xử lý OCR ---
+        proc = self._card(page, "Xử lý OCR")
+        self._row(proc, 0, "Engine", ttk.Combobox(proc, textvariable=self._var("engine", "auto"), values=list(self.ENGINES), state="readonly", width=14))
+        self._row(proc, 1, "Thiết bị", ttk.Combobox(proc, textvariable=self._var("dev", self.DEV_LABELS["auto"]), values=list(self.DEV_LABELS.values()), state="readonly", width=24))
+        ttk.Label(proc, text="GPU chỉ dùng được với NVIDIA và onnxruntime-gpu + CUDA; không có thì tự lùi về CPU.",
+                  style="Hint.TLabel", wraplength=640, justify="left").grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self._row(proc, 3, "Phóng to", ttk.Entry(proc, textvariable=self._var("upscale", "1"), width=8))
+        ttk.Label(proc, text="1 = không phóng to · 2 = ảnh chữ nhỏ", style="Hint.TLabel").grid(row=3, column=2, sticky="w", padx=(8, 0))
+        self._row(proc, 4, "Cắt vùng", ttk.Entry(proc, textvariable=self._var("crop", ""), width=24))
+        ttk.Label(proc, text="x0,y0,x1,y1 theo pixel · để trống = cả trang", style="Hint.TLabel").grid(row=4, column=2, sticky="w", padx=(8, 0))
+        proc.columnconfigure(1, weight=1)
 
-        self.ruby = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opt, text="Giữ furigana thành ruby của Word", variable=self.ruby).grid(row=5, column=0, columnspan=2, sticky="w")
-        self.review = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opt, text="Xuất file rà soát *_review.html (ảnh trang cạnh chữ, tô đỏ chỗ nghi ngờ)",
-                        variable=self.review).grid(row=6, column=0, columnspan=2, sticky="w")
-        ttk.Label(opt, text="Ngưỡng độ tin cậy rà soát:").grid(row=7, column=0, sticky="w", pady=4)
-        self.conf = tk.StringVar(value="0.8")
-        ttk.Entry(opt, textvariable=self.conf, width=8).grid(row=7, column=1, sticky="w", padx=4)
+        # --- rà soát ---
+        rev = self._card(page, "Rà soát")
+        self._check(rev, "review", False, "Xuất file rà soát *_review.html (ảnh trang cạnh chữ, tô đỏ chỗ nghi ngờ)").grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
+        self._row(rev, 1, "Ngưỡng tin cậy", ttk.Entry(rev, textvariable=self._var("conf", "0.8"), width=8))
+        rev.columnconfigure(1, weight=1)
 
-        ttk.Label(opt, text="Cắt vùng x0,y0,x1,y1 (pixel; để trống = cả trang):").grid(row=8, column=0, sticky="w")
-        self.crop = tk.StringVar()
-        ttk.Entry(opt, textvariable=self.crop, width=24).grid(row=8, column=1, sticky="w", padx=4)
-        ttk.Label(opt, text="Phóng to trước OCR (1 = không, 2 = ảnh chữ nhỏ):").grid(row=9, column=0, sticky="w", pady=4)
-        self.upscale = tk.StringVar(value="1")
-        ttk.Entry(opt, textvariable=self.upscale, width=8).grid(row=9, column=1, sticky="w", padx=4)
-
-        bar = ttk.Frame(self, padding=8); bar.pack(fill="x")
-        self.btn = ttk.Button(bar, text="Bắt đầu OCR", command=self.start); self.btn.pack(side="left")
-        self.stop = ttk.Button(bar, text="Dừng", command=self.cancel.set, state="disabled"); self.stop.pack(side="left", padx=4)
-        self.pb = ttk.Progressbar(self, maximum=100); self.pb.pack(fill="x", padx=8)
+        # --- hành động ---
+        bar2 = ttk.Frame(page, style="Page.TFrame")
+        bar2.pack(fill="x", pady=(14, 0))
+        self.btn = ttk.Button(bar2, text="▶  Chạy OCR", style="Accent.TButton", command=self.start)
+        self.btn.pack(side="left")
+        self.stop = ttk.Button(bar2, text="Dừng", command=self.cancel.set, state="disabled")
+        self.stop.pack(side="left", padx=8)
+        self.pb = ttk.Progressbar(page, maximum=100, style="Accent.Horizontal.TProgressbar")
+        self.pb.pack(fill="x", pady=(14, 4))
         self.status = tk.StringVar(value="Sẵn sàng.")
-        ttk.Label(self, textvariable=self.status, wraplength=690).pack(fill="x", padx=8, pady=4)
+        ttk.Label(page, textvariable=self.status, style="Status.TLabel", wraplength=860, justify="left").pack(fill="x")
         self.after(150, self.poll)
+
+    # ---------- giao diện ----------
+
+    def _style(self):
+        base = tkfont.nametofont("TkDefaultFont")
+        base.configure(size=10)
+        tkfont.nametofont("TkHeadingFont").configure(size=10, weight="bold")
+        s = ttk.Style(self)
+        s.theme_use("clam")
+        s.configure(".", background=BG, foreground=TEXT, font=base)
+        s.configure("Page.TFrame", background=BG)
+        s.configure("Card.TFrame", background=CARD)
+        s.configure("CardTitle.TLabel", background=CARD, foreground=TEXT, font=("TkDefaultFont", 11, "bold"))
+        s.configure("Card.TLabel", background=CARD, foreground=TEXT)
+        s.configure("Card.TCheckbutton", background=CARD, foreground=TEXT)
+        s.configure("Muted.TLabel", background=CARD, foreground=MUTED)
+        s.configure("Hint.TLabel", background=CARD, foreground=MUTED)
+        s.configure("Status.TLabel", background=BG, foreground=TEXT)
+        s.configure("TButton", padding=(12, 6), background=CARD, bordercolor=LINE, focusthickness=0)
+        s.map("TButton", background=[("active", "#EEF1F6"), ("disabled", CARD)],
+              foreground=[("disabled", "#A0A6B1")])
+        s.configure("Accent.TButton", background=ACCENT, foreground="#FFFFFF", bordercolor=ACCENT, padding=(18, 8))
+        s.map("Accent.TButton", background=[("active", ACCENT_DARK), ("disabled", "#A9C5F2")],
+              foreground=[("disabled", "#FFFFFF")])
+        s.configure("TEntry", fieldbackground=CARD, bordercolor=LINE, padding=4)
+        s.configure("TCombobox", fieldbackground=CARD, bordercolor=LINE, padding=3)
+        s.configure("Treeview", background=CARD, fieldbackground=CARD, rowheight=24, bordercolor=LINE)
+        s.configure("Treeview.Heading", background="#EEF1F6", foreground=TEXT, relief="flat", padding=(8, 4))
+        s.map("Treeview", background=[("selected", "#DCE8FB")], foreground=[("selected", TEXT)])
+        s.configure("Accent.Horizontal.TProgressbar", background=ACCENT, troughcolor="#E3E7EE", bordercolor=BG)
+
+    def _card(self, parent, title: str) -> ttk.Frame:
+        """Khối tùy chọn: nền trắng, viền mảnh, tiêu đề đậm ở đầu."""
+        outer = tk.Frame(parent, background=LINE)
+        outer.pack(fill="x", pady=(0, 12))
+        box = ttk.Frame(outer, style="Card.TFrame", padding=(16, 12))
+        box.pack(fill="both", expand=True, padx=1, pady=1)
+        ttk.Label(box, text=title, style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        body = ttk.Frame(box, style="Card.TFrame")   # phần thân dùng grid, tách khỏi tiêu đề dùng pack
+        body.pack(fill="both", expand=True)
+        return body
+
+    def _var(self, name: str, default):
+        """Biến Tk theo tên, tạo một lần."""
+        if name not in self._vars:
+            self._vars[name] = tk.StringVar(value=default) if isinstance(default, str) else tk.BooleanVar(value=default)
+        return self._vars[name]
+
+    def _row(self, parent, row: int, label: str, widget):
+        """Hàng nhãn + ô nhập. Bố cục dùng grid nên mọi khối cùng một cột nhãn."""
+        ttk.Label(parent, text=label, style="Card.TLabel", width=14, anchor="w").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
+        widget.grid(row=row, column=1, sticky="w", pady=4)
+        return widget
+
+    def _check(self, parent, name: str, default: bool, text: str) -> ttk.Checkbutton:
+        return ttk.Checkbutton(parent, text=text, variable=self._var(name, default), style="Card.TCheckbutton")
+
+    # ---------- danh sách file ----------
+
+    def _refresh_list(self):
+        n = len(self.files)
+        self.count.set(f"{n} file" if n else "Chưa có file nào")
+        if n:
+            self.empty.place_forget()
+        else:
+            self.empty.place(relx=0.5, rely=0.5, anchor="center")
 
     def add_files(self):
         fs = filedialog.askopenfilenames(filetypes=[("PDF / ảnh", "*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp")])
@@ -92,50 +200,57 @@ class App(tk.Tk):
     def _add(self, fs):
         for f in fs:
             if f not in self.files:
-                self.files.append(f); self.lb.insert("end", str(f))
+                self.files.append(f)
+                self.tree.insert("", "end", values=(f.name, str(f.parent)))
+        self._refresh_list()
 
     def clear(self):
-        self.files.clear(); self.lb.delete(0, "end")
+        self.files.clear()
+        self.tree.delete(*self.tree.get_children())
+        self._refresh_list()
 
     def pick_out(self):
         d = filedialog.askdirectory()
         if d:
-            self.out.set(d)
+            self._var("out", "").set(d)
 
-    def _options(self) -> dict:
+    # ---------- chạy ----------
+
+    def _read_options(self) -> dict:
         """Đọc và kiểm tra các ô nhập. Ném ValueError với thông báo tiếng Việt nếu sai."""
         try:
-            conf = float(self.conf.get())
+            conf = float(self._var("conf", "0.8").get())
         except ValueError:
             raise ValueError("Ngưỡng độ tin cậy phải là số, ví dụ 0.8.") from None
         try:
-            upscale = float(self.upscale.get() or "1")
+            upscale = float(self._var("upscale", "1").get() or "1")
         except ValueError:
             raise ValueError("Phóng to phải là số, ví dụ 1 hoặc 2.") from None
         if upscale <= 0:
             raise ValueError("Phóng to phải lớn hơn 0.")
         try:
-            crop = pipeline.parse_crop(self.crop.get())
+            crop = pipeline.parse_crop(self._var("crop", "").get())
         except ValueError as e:
             raise ValueError(f"Vùng cắt không hợp lệ: {e}") from None
-        dev = next(k for k, v in self.DEV_LABELS.items() if v == self.dev.get())
-        return dict(write_txt=self.txt.get(), page_marker=self.marker.get(), device=dev, ruby=self.ruby.get(),
-                    review=self.review.get(), conf_threshold=conf, engine=self.engine.get(),
-                    crop=crop, upscale=upscale)
+        dev = next(k for k, v in self.DEV_LABELS.items() if v == self._var("dev", "").get())
+        return dict(write_txt=self._var("txt", True).get(), page_marker=self._var("marker", True).get(),
+                    device=dev, ruby=self._var("ruby", False).get(),
+                    review=self._var("review", False).get(), conf_threshold=conf,
+                    engine=self._var("engine", "auto").get(), crop=crop, upscale=upscale)
 
     def start(self):
         if not self.files:
             messagebox.showinfo("OCR", "Chưa chọn file."); return
         try:
-            pages = pipeline.parse_pages(self.pages.get())
+            pages = pipeline.parse_pages(self._var("pages", "").get())
         except ValueError:
             messagebox.showerror("OCR", "Khoảng trang không hợp lệ."); return
         try:
-            opts = self._options()
+            opts = self._read_options()
         except ValueError as e:
             messagebox.showerror("OCR", str(e)); return
         self.cancel.clear(); self.btn.config(state="disabled"); self.stop.config(state="normal")
-        args = (list(self.files), Path(self.out.get()), pages, opts)
+        args = (list(self.files), Path(self._var("out", "").get()), pages, opts)
         self.worker = threading.Thread(target=self.run_job, args=args, daemon=True); self.worker.start()
 
     def run_job(self, files, out, pages, opts):
