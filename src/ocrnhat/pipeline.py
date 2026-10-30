@@ -215,6 +215,7 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
         return [(pno, got[pno], img) for pno, img in items]
 
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
+    page_lines: list[tuple[int, list]] = []   # rà soát trong GUI: tọa độ từng dòng (hệ ảnh đã cắt/phóng to)
     suspect_rows: list[tuple[int, str]] = []
     # Cửa sổ trượt: tối đa 2*n_workers trang đang chờ, để không giữ cả file trong RAM
     with ThreadPoolExecutor(max_workers=n_workers) as pool:
@@ -250,6 +251,8 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
             for pno, page, img in fut.result():
                 kana_pno[0] = pno
                 items = build_page(page, img, reocr if cell_reocr else None, kana_fn, lang=lang)
+                page_lines.append((pno, [(l.x, l.y, l.x1, l.y1, float(l.conf), l.text)
+                                         for b in page.blocks for l in b.lines if l.text.strip()]))
                 if suspect:
                     suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
                 if review:
@@ -285,4 +288,5 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
     return {"file": str(path), "pages": done, "tables": n_tables, "docx": str(docx_path),
             "kana_review": str(kana_review) if kana_review else None,
             "review": str(review_path) if review_path else None, "low_conf": n_low,
-            "suspect": str(suspect_path) if suspect_path else None, "suspect_lines": len(suspect_rows)}
+            "suspect": str(suspect_path) if suspect_path else None, "suspect_lines": len(suspect_rows),
+            "page_lines": page_lines, "crop": crop, "upscale": upscale, "conf_threshold": conf_threshold}

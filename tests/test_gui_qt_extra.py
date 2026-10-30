@@ -15,7 +15,7 @@ except ImportError:
 from pypdf import PdfWriter  # noqa: E402
 
 from ocrnhat import gui_qt, ui_logic as L  # noqa: E402
-from ocrnhat.gui_qt_extra import ModelBox, ResultsBox, apply_view, render_page  # noqa: E402
+from ocrnhat.gui_qt_extra import ModelBox, ResultsBox, apply_view, drag_rect, source_image, to_source  # noqa: E402
 
 
 def _pdf(path, pages=2):
@@ -35,28 +35,69 @@ def store(monkeypatch):
     return data
 
 
-def test_ket_qua_hien_bang_va_xem_truoc_trang_pdf(tmp_path):
+def test_ket_qua_hien_bang_va_rà_soat_trang_pdf(tmp_path):
     src = _pdf(tmp_path / "sach.pdf", 2)
     docx = tmp_path / "OCR_sach.docx"
     docx.write_bytes(b"")
-    (tmp_path / "OCR_sach.txt").write_text("=== Trang 1 ===\n日本語のテキスト\n=== Trang 2 ===\nTrang hai\n", encoding="utf-8")
     box = ResultsBox()
-    box.set_results([(src, {"docx": str(docx), "pages": 2, "tables": 0})])
+    lines = [(10, 10, 100, 30, 0.5, "日本語"), (10, 40, 100, 60, 0.95, "tốt")]
+    box.set_results([(src, {"docx": str(docx), "pages": 2, "tables": 0, "page_lines": [(1, lines)],
+                            "crop": None, "upscale": 1.0, "conf_threshold": 0.8})])
     assert box.table.rowCount() == 1 and box.table.item(0, 3).text() == "OCR_sach.docx"
     assert box.btn_docx.isEnabled()
-    assert not box.image.pixmap().isNull()          # ảnh trang PDF được vẽ
-    assert "日本語" in box.text.toPlainText()
+    assert box.view.image is not None                  # ảnh trang PDF đã nạp
+    assert box.view.lines and len(box.view.lines) == 2  # khung các dòng
+    assert box.lines.count() == 2 and "日本語" in box.lines.item(0).text()
+    box.only_low.setChecked(True)                      # chỉ dòng nghi ngờ
+    assert box.lines.count() == 1 and "日本語" in box.lines.item(0).text()
 
 
-def test_render_page_ngoai_so_trang_tra_none(tmp_path):
+def test_chon_dong_tren_danh_sach_danh_dau_tren_anh(tmp_path):
     src = _pdf(tmp_path / "a.pdf", 1)
-    assert render_page(src, 5, (300, 300)) is None
+    docx = tmp_path / "a.docx"
+    docx.write_bytes(b"")
+    box = ResultsBox()
+    box.set_results([(src, {"docx": str(docx), "pages": 1, "tables": 0, "page_lines": [(1, [
+        (10, 10, 100, 30, 0.2, "a"), (10, 40, 100, 60, 0.9, "b")])], "upscale": 1.0, "conf_threshold": 0.8})])
+    box.lines.setCurrentRow(1)
+    assert box.view.selected == 1
+
+
+def test_dong_theo_vung_cat_va_phong_to_quy_ve_trang_goc():
+    # cắt từ (100, 200) rồi phóng to 2 lần: dòng ở (20, 40) trong ảnh đã xử lý nằm ở (110, 220) trên trang
+    assert to_source(20, 40, (100, 200, 500, 600), 2.0) == (110.0, 220.0)
+    assert to_source(20, 40, None, 1.0) == (20.0, 40.0)
+
+
+def test_khung_keo_chuot_kep_trong_trang_va_bo_khung_nho():
+    assert drag_rect((30, 40), (10, 20), 100, 100) == (10, 20, 30, 40)     # kéo ngược chiều vẫn đúng
+    assert drag_rect((-5, 50), (200, 90), 100, 100) == (0, 50, 100, 90)    # kẹp trong trang
+    assert drag_rect((10, 10), (12, 12), 100, 100) is None                 # quá nhỏ, bỏ qua
+
+
+def test_anh_trang_ngoai_so_trang_tra_none(tmp_path):
+    src = _pdf(tmp_path / "a.pdf", 1)
+    assert source_image(src, 5) is None
+    got = source_image(src, 1)
+    assert got is not None and abs(got[1] - 300 * 200 / 72) <= 1   # render ở 200 dpi như pipeline (pdfium làm tròn)
 
 
 def test_ket_qua_rong_tat_nut(tmp_path):
     box = ResultsBox()
     box.set_results([])
     assert not box.btn_docx.isEnabled() and not box.btn_find.isEnabled()
+
+
+def test_vung_cat_trong_o_nhap_khop_khung_tren_anh(tmp_path, store):
+    src = _pdf(tmp_path / "a.pdf", 1)
+    w = gui_qt.MainWindow()
+    w.ocr._add([src])
+    w.ocr.crop.setText("10,20,300,400")
+    assert w.ocr.crop_view.crop == (10, 20, 300, 400)   # ô nhập vẽ thành khung
+    w.ocr.crop_view.cropChanged.emit(5, 6, 50, 60)      # kéo chuột ghi ngược vào ô nhập
+    assert w.ocr.crop.text() == "5,6,50,60"
+    assert w.ocr.options()["crop"] == (5, 6, 50, 60)
+    w.close()
 
 
 def test_mo_hinh_ai_dung_trang_thai_san_co(tmp_path):

@@ -6,17 +6,18 @@
 """
 from __future__ import annotations
 
+import functools
 import logging
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QImage, QPalette, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QImage, QPalette
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QGroupBox, QHBoxLayout, QLabel, QMenu, QMessageBox, QProgressBar,
-    QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QAbstractItemView, QCheckBox, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu,
+    QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import gpupack, textview
+from . import gpupack
 from . import ui_logic as L
 
 log = logging.getLogger("ocrnhat.gui")
@@ -26,33 +27,165 @@ FONT_SIZES = {"Nhỏ": 9, "Vừa": 10, "Lớn": 12}
 THEMES = ("sáng", "tối")
 
 
-# ---------- kết quả và xem trước ----------
+# ---------- ảnh trang, vùng cắt và rà soát ----------
 
-def render_page(src: Path, pno: int, box: tuple[int, int]) -> QPixmap | None:
-    """Ảnh trang nguồn (PDF hoặc ảnh) vừa khung box. None nếu không đọc được."""
+SCAN_DPI = 200   # phải khớp pipeline.iter_pages: vùng cắt tính theo pixel ở 200 dpi (PDF) hoặc ảnh gốc
+
+
+@functools.lru_cache(maxsize=8)
+def _source_bytes(src: str, pno: int) -> tuple[bytes, int, int] | None:
+    """Trang nguồn ở đúng hệ tọa độ của pipeline (PDF render ở SCAN_DPI, ảnh giữ nguyên). Có cache nhỏ."""
     try:
-        if src.suffix.lower() == ".pdf":
+        if src.lower().endswith(".pdf"):
             import pypdfium2 as pdfium
-            doc = pdfium.PdfDocument(str(src))
+            doc = pdfium.PdfDocument(src)
             if pno > len(doc):
                 return None
-            page = doc[pno - 1]
-            scale = min(box[0] / page.get_width(), box[1] / page.get_height())
-            pil = page.render(scale=scale).to_pil().convert("RGB")
+            pil = doc[pno - 1].render(scale=SCAN_DPI / 72).to_pil().convert("RGB")
         else:
             from PIL import Image
             pil = Image.open(src).convert("RGB")
-            pil.thumbnail(box)
-        data = pil.tobytes("raw", "RGB")
-        img = QImage(data, pil.width, pil.height, 3 * pil.width, QImage.Format.Format_RGB888).copy()
-        return QPixmap.fromImage(img)
+        return pil.tobytes("raw", "RGB"), pil.width, pil.height
     except Exception:
-        log.exception("Không vẽ được bản xem trước %s", src)
+        log.exception("Không đọc được trang %s", src)
         return None
 
 
+def source_image(src: Path, pno: int) -> tuple[QImage, int, int] | None:
+    got = _source_bytes(str(src), pno)
+    if got is None:
+        return None
+    data, w, h = got
+    return QImage(data, w, h, 3 * w, QImage.Format.Format_RGB888).copy(), w, h
+
+
+def to_source(x: float, y: float, crop, upscale: float) -> tuple[float, float]:
+    """Tọa độ dòng trong ảnh đã cắt/phóng to (pipeline) -> tọa độ trang nguồn."""
+    ox, oy = (crop[0], crop[1]) if crop else (0, 0)
+    up = upscale or 1.0
+    return ox + x / up, oy + y / up
+
+
+def drag_rect(p0: tuple[float, float], p1: tuple[float, float], full_w: int, full_h: int) -> tuple[int, int, int, int] | None:
+    """Khung kéo chuột (tọa độ trang nguồn) -> (x0, y0, x1, y1) đã kẹp trong trang; None nếu quá nhỏ."""
+    x0, x1 = sorted((min(max(p0[0], 0), full_w), min(max(p1[0], 0), full_w)))
+    y0, y1 = sorted((min(max(p0[1], 0), full_h), min(max(p1[1], 0), full_h)))
+    rect = (int(x0), int(y0), int(x1), int(y1))
+    return rect if rect[2] - rect[0] >= 4 and rect[3] - rect[1] >= 4 else None
+
+
+class PageView(QWidget):
+    """Ảnh trang nguồn. mode 'crop': kéo chuột để chọn vùng đọc. mode 'view': vẽ khung các dòng,
+    dòng độ tin cậy thấp tô đỏ; bấm vào khung để chọn dòng (phát lineClicked)."""
+    cropChanged = Signal(int, int, int, int)
+    lineClicked = Signal(int)
+
+    def __init__(self, mode: str = "view", min_size: tuple[int, int] = (360, 300)):
+        super().__init__()
+        self.mode = mode
+        self.image: QImage | None = None
+        self.full = (0, 0)
+        self.lines: list[tuple[float, float, float, float, float, str]] = []   # hệ trang nguồn
+        self.thr = 0.8
+        self.selected = -1
+        self.crop: tuple[int, int, int, int] | None = None
+        self._drag: tuple[tuple[float, float], tuple[float, float]] | None = None
+        self.setMinimumSize(*min_size)
+        self.setStyleSheet("background: #808080;")
+
+    def set_image(self, img: QImage | None, w: int = 0, h: int = 0):
+        self.image, self.full = img, (w, h)
+        self.update()
+
+    def set_lines(self, lines, thr: float):
+        self.lines, self.thr, self.selected = lines, thr, -1
+        self.update()
+
+    def select(self, idx: int):
+        self.selected = idx
+        self.update()
+
+    def set_crop(self, rect):
+        self.crop = rect
+        self.update()
+
+    def _layout(self) -> tuple[float, float, float]:
+        """(lề trái, lề trên, tỷ lệ hiển thị) để ảnh vừa khung và căn giữa."""
+        w, h = self.full
+        if not w or not h:
+            return 0.0, 0.0, 1.0
+        sc = min(self.width() / w, self.height() / h)
+        return (self.width() - w * sc) / 2, (self.height() - h * sc) / 2, sc
+
+    def _to_page(self, pos) -> tuple[float, float]:
+        ox, oy, sc = self._layout()
+        return (pos.x() - ox) / sc, (pos.y() - oy) / sc
+
+    def paintEvent(self, _e):
+        from PySide6.QtGui import QPainter, QPen, QColor
+        from PySide6.QtCore import QRectF
+        p = QPainter(self)
+        if self.image is None:
+            p.setPen(QColor("#EEEEEE"))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Chưa có ảnh trang để xem.")
+            return
+        ox, oy, sc = self._layout()
+        w, h = self.full
+        p.drawImage(QRectF(ox, oy, w * sc, h * sc), self.image)
+        if self.mode == "view":
+            for i, (x0, y0, x1, y1, conf, _t) in enumerate(self.lines):
+                low = conf < self.thr
+                if not low and i != self.selected:
+                    continue
+                color = QColor("#D00000") if low else QColor("#1F6FEB")
+                p.setPen(QPen(color, 3 if i == self.selected else 2))
+                p.drawRect(QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc))
+        rect = self.crop
+        if self._drag is not None:
+            r = drag_rect(*self._drag, w, h)
+            rect = r or rect
+        if rect and self.mode == "crop":
+            x0, y0, x1, y1 = rect
+            p.setPen(QPen(QColor("#F2A03D"), 3))
+            p.drawRect(QRectF(ox + x0 * sc, oy + y0 * sc, (x1 - x0) * sc, (y1 - y0) * sc))
+        p.end()
+
+    def mousePressEvent(self, e):
+        if self.image is None:
+            return
+        pt = self._to_page(e.position())
+        if self.mode == "crop":
+            self._drag = (pt, pt)
+            self.update()
+        else:
+            hit = -1
+            best = None
+            for i, (x0, y0, x1, y1, _c, _t) in enumerate(self.lines):
+                if x0 <= pt[0] <= x1 and y0 <= pt[1] <= y1:
+                    area = (x1 - x0) * (y1 - y0)
+                    if best is None or area < best:
+                        best, hit = area, i
+            self.selected = hit
+            self.update()
+            self.lineClicked.emit(hit)
+
+    def mouseMoveEvent(self, e):
+        if self.mode == "crop" and self._drag is not None:
+            self._drag = (self._drag[0], self._to_page(e.position()))
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        if self.mode == "crop" and self._drag is not None:
+            rect = drag_rect(self._drag[0], self._to_page(e.position()), *self.full)
+            self._drag = None
+            if rect:
+                self.crop = rect
+                self.cropChanged.emit(*rect)
+            self.update()
+
+
 class ResultsBox(QGroupBox):
-    """Kết quả các file vừa OCR: bảng, nút mở, Tìm nhanh, xem trước trang (ảnh và chữ)."""
+    """Kết quả các file vừa OCR: bảng, nút mở, Tìm nhanh, rà soát từng trang (ảnh có khung dòng + danh sách dòng)."""
 
     def __init__(self):
         super().__init__("Kết quả")
@@ -78,35 +211,39 @@ class ResultsBox(QGroupBox):
         self.btn_prev = QPushButton("◀")
         self.btn_next = QPushButton("▶")
         self.page_info = QLabel("")
+        self.only_low = QCheckBox("Chỉ dòng nghi ngờ")
         nav = QHBoxLayout()
         nav.addWidget(QLabel("Trang:"))
         for w in (self.btn_prev, self.page, self.btn_next, self.page_info):
             nav.addWidget(w)
         nav.addStretch(1)
-        self.image = QLabel("Chọn một kết quả để xem trước.")
-        self.image.setMinimumSize(360, 300)
-        self.image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image.setStyleSheet("border: 1px solid palette(mid);")
-        self.text = QTextEdit()
-        self.text.setReadOnly(True)
-        self.text.setMinimumHeight(300)
+        nav.addWidget(self.only_low)
+        self.view = PageView(mode="view", min_size=(380, 420))
+        self.lines = QListWidget()
+        self.lines.setMinimumWidth(320)
+        self.lines.setToolTip("Bấm một dòng để xem vị trí trên ảnh. Dòng đỏ là độ tin cậy thấp.")
         preview = QHBoxLayout()
-        preview.addWidget(self.image)
-        preview.addWidget(self.text, 1)
+        preview.addWidget(self.view, 1)
+        preview.addWidget(self.lines, 1)
         root = QVBoxLayout(self)
         root.addWidget(self.table)
         root.addLayout(bar)
         root.addLayout(nav)
         root.addLayout(preview)
+        self._row_to_line: list[int] = []
         self.set_enabled_actions(False)
         self.table.itemSelectionChanged.connect(self.refresh_preview)
         self.page.valueChanged.connect(lambda _: self.refresh_preview())
+        self.only_low.toggled.connect(lambda _: self._fill_lines())
         self.btn_prev.clicked.connect(lambda: self.page.setValue(max(1, self.page.value() - 1)))
         self.btn_next.clicked.connect(lambda: self.page.setValue(self.page.value() + 1))
         self.btn_docx.clicked.connect(lambda: self._open("docx"))
         self.btn_dir.clicked.connect(lambda: self._open("dir"))
         self.btn_review.clicked.connect(lambda: self._open("review"))
         self.btn_find.clicked.connect(self.find_output)
+        self.lines.currentRowChanged.connect(self._on_row)
+        self.view.lineClicked.connect(self._on_view_line)
+        self._line_data: list = []
 
     def set_enabled_actions(self, on: bool):
         for b in (self.btn_docx, self.btn_dir, self.btn_find):
@@ -165,25 +302,30 @@ class ResultsBox(QGroupBox):
         item = self._selected()
         pno = self.page.value()
         if not item:
-            self.image.setText("Chọn một kết quả để xem trước.")
-            self.image.setPixmap(QPixmap())
-            self.text.clear()
+            self.view.set_image(None)
+            self.lines.clear()
             self.page_info.setText("")
             return
         src, r = item
-        pix = render_page(src, pno, (360, 300))
-        if pix is None:
-            self.image.setPixmap(QPixmap())
-            self.image.setText("Không vẽ được trang này.")
+        got = source_image(src, pno)
+        if got is None:
+            self.view.set_image(None)
         else:
-            self.image.setPixmap(pix)
-        txt_path = Path(r["docx"]).with_suffix(".txt")
-        if txt_path.exists():
-            text = textview.page_text(txt_path.read_text(encoding="utf-8"), pno)
-            self.text.setPlainText(text if text is not None else "Không có chữ cho trang này.")
-            self.page_info.setText("")
+            self.view.set_image(got[0], got[1], got[2])
+        entries = next((lines for n, lines in r.get("page_lines", []) if n == pno), None)
+        crop, up, thr = r.get("crop"), r.get("upscale") or 1.0, r.get("conf_threshold", 0.8)
+        if entries is None:
+            self._line_data = []
+            self.view.set_lines([], thr)
         else:
-            self.text.setPlainText("Không có file .txt. Bật “Ghi kèm file .txt” rồi chạy lại để xem chữ ở đây.")
+            self._line_data = []
+            for x, y, x1, y1, conf, text in entries:
+                sx0, sy0 = to_source(x, y, crop, up)
+                sx1, sy1 = to_source(x1, y1, crop, up)
+                self._line_data.append((sx0, sy0, sx1, sy1, conf, text))
+            self.view.set_lines(self._line_data, thr)
+        self._fill_lines()
+        self.view.thr = thr
         if src.suffix.lower() == ".pdf":
             try:
                 import pypdfium2 as pdfium
@@ -192,6 +334,35 @@ class ResultsBox(QGroupBox):
                 self.page_info.setText("")
         else:
             self.page_info.setText("1 ảnh")
+
+    def _fill_lines(self):
+        """Danh sách dòng của trang; dòng đỏ là độ tin cậy thấp. Có thể lọc chỉ hiện dòng nghi ngờ."""
+        thr = self.view.thr
+        self.lines.blockSignals(True)
+        self.lines.clear()
+        self._row_to_line = []
+        for i, (_x0, _y0, _x1, _y1, conf, text) in enumerate(self._line_data):
+            low = conf < thr
+            if self.only_low.isChecked() and not low:
+                continue
+            item = QListWidgetItem(f"{conf:.2f}  {text}")
+            if low:
+                item.setForeground(QColor("#D00000"))
+            self.lines.addItem(item)
+            self._row_to_line.append(i)
+        if not self._line_data:
+            self.lines.addItem(QListWidgetItem("Không có dữ liệu dòng cho trang này."))
+        self.lines.blockSignals(False)
+
+    def _on_row(self, row: int):
+        if 0 <= row < len(self._row_to_line):
+            self.view.select(self._row_to_line[row])
+
+    def _on_view_line(self, idx: int):
+        if idx in self._row_to_line:
+            self.lines.blockSignals(True)
+            self.lines.setCurrentRow(self._row_to_line.index(idx))
+            self.lines.blockSignals(False)
 
 
 # ---------- mô hình AI ----------

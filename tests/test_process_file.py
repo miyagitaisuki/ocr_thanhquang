@@ -108,3 +108,15 @@ def test_ngon_ngu_khac_tieng_nhat_chi_cho_chandra(fake_engine, pdf, tmp_path):
     import pytest as _pt
     with _pt.raises(ValueError, match="chandra"):
         pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False, engine="ndlocr", lang="all")
+
+
+def test_ket_qua_co_toa_do_dong_de_ra_soat(fake_engine, pdf, tmp_path):
+    """Bản Qt rà soát trong cửa sổ xem trước: kết quả phải kèm tọa độ dòng, vùng cắt, phóng to và ngưỡng."""
+    r = pipeline.process_file(pdf, tmp_path / "out", 200, None, device="cpu", use_cache=False,
+                              crop=(10, 20, 500, 600), upscale=2.0, conf_threshold=0.7)
+    assert r["crop"] == (10, 20, 500, 600) and r["upscale"] == 2.0 and r["conf_threshold"] == 0.7
+    (page_no, lines), = r["page_lines"]
+    assert page_no == 1
+    x, y, x1, y1, conf, text = lines[0]
+    assert text == "東京です" and conf == pytest.approx(0.9)
+    assert x1 > x and y1 > y

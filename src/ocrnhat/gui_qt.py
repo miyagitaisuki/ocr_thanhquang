@@ -13,13 +13,13 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton, QSplitter,
-    QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
+    QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from . import gpu, gpupack, pipeline
 from . import ui_logic as L
 from .cli import collect
-from .gui_qt_extra import ModelBox, ResultsBox, build_view_menu, apply_view
+from .gui_qt_extra import ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
 from .gui_qt_pdf import MergeSection, SplitSection, ToolsSection
 
 gpupack.activate()   # trước khi đọc find_spec('chandra')
@@ -177,6 +177,25 @@ class OcrPage(QWidget):
                               ("Đọc bảng chữ kana (thử nghiệm)", self.kana)):
             agrid.addWidget(QLabel(label))
             agrid.addWidget(widget)
+        # chọn vùng đọc: kéo chuột trên ảnh một trang mẫu; ô "Chỉ đọc một vùng" luôn khớp với khung đã chọn
+        self.crop_src = QComboBox()
+        self.crop_page = QSpinBox()
+        self.crop_page.setRange(1, 9999)
+        self.btn_crop_clear = QPushButton("Bỏ vùng chọn")
+        crow = QHBoxLayout()
+        for w in (QLabel("File mẫu"), self.crop_src, QLabel("Trang"), self.crop_page, self.btn_crop_clear):
+            crow.addWidget(w)
+        self.crop_view = PageView(mode="crop", min_size=(360, 300))
+        self.crop_hint = QLabel("Kéo chuột trên ảnh để chọn vùng. Vùng này áp dụng cho mọi trang của mọi file trong danh sách.")
+        self.crop_hint.setWordWrap(True)
+        agrid.addLayout(crow)
+        agrid.addWidget(self.crop_view)
+        agrid.addWidget(self.crop_hint)
+        self.crop_view.cropChanged.connect(lambda *r: self.crop.setText(",".join(map(str, r))))
+        self.crop.textChanged.connect(self._sync_crop_view)
+        self.crop_src.currentIndexChanged.connect(lambda _=0: self._load_crop_page())
+        self.crop_page.valueChanged.connect(lambda _=0: self._load_crop_page())
+        self.btn_crop_clear.clicked.connect(lambda: self.crop.setText(""))
         agrid.addWidget(self.cell_reocr)
         agrid.addWidget(self.use_cache)
         agrid.addWidget(self.review)
@@ -282,6 +301,32 @@ class OcrPage(QWidget):
     def _refresh_count(self):
         n = len(self.files)
         self.count.setText(f"{n} file" if n else "Chưa có file nào")
+        if hasattr(self, "crop_src"):
+            self._refresh_crop_files()
+
+    def _refresh_crop_files(self):
+        cur = self.crop_src.currentData()
+        self.crop_src.blockSignals(True)
+        self.crop_src.clear()
+        for f in self.files:
+            self.crop_src.addItem(f.name, str(f))
+        idx = self.crop_src.findData(cur) if cur else -1
+        self.crop_src.setCurrentIndex(idx if idx >= 0 else (0 if self.files else -1))
+        self.crop_src.blockSignals(False)
+        self._load_crop_page()
+
+    def _load_crop_page(self):
+        path = self.crop_src.currentData()
+        got = source_image(Path(path), self.crop_page.value()) if path else None
+        self.crop_view.set_image(got[0], got[1], got[2]) if got else self.crop_view.set_image(None)
+        self._sync_crop_view()
+
+    def _sync_crop_view(self):
+        try:
+            rect = pipeline.parse_crop(self.crop.text())
+        except ValueError:
+            rect = None
+        self.crop_view.set_crop(rect)
 
     def pick_out(self):
         d = QFileDialog.getExistingDirectory(self, "Chọn thư mục lưu kết quả")
