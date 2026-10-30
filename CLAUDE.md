@@ -30,6 +30,7 @@ Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 - Console Windows dùng cp1252: luôn `reconfigure(encoding="utf-8")` khi in tiếng Nhật/Việt.
 - `gh workflow run` dùng GraphQL bị chặn: dùng `gh api -X POST repos/.../actions/workflows/build-exe.yml/dispatches -f ref=main`.
 - Số khoanh tròn ①②③ trong cột đầu bảng bị engine đọc thành '(1', '19', 'O1'; nhận dạng lại ô không ổn định nên `layout._fix_circled` ánh xạ theo thứ tự hàng, chỉ khi cả cột là mã ngắn và có ô mở ngoặc.
+- Bảng dày (trang 10, sổ tay): NDLOCR chỉ trả 11/~40 dòng chữ trong bảng. `layout._reocr_cells` nhận dạng lại cả ô trống có nét chữ (ô rộng ≥100 px, dòng conf ≥0,1). Trên 136 trang chỉ trang 10 đổi so với main; bảng vẫn còn lỗi nhận dạng ký tự (稟議書→實識書, 依頼状→依頼依, 請求状 đảo chữ).
 - Engine có thể đọc chữ hai ô liền kề thành một dòng xuyên qua đường kẻ; bảng thử tổng hợp trong smoke test chỉ kiểm tra đường ống, không kiểm tra nội dung ô.
 
 - Ảnh chụp màn hình/chữ nhỏ: `--crop x0,y0,x1,y1` cắt vùng trang trước OCR, `--upscale 2` phóng to. Trang 38 (ảnh chụp điện thoại 1290x2796): không có hai tùy chọn này chỉ ra được tiêu đề; có thì đọc được 17 dòng (độ tin cậy 0,65–0,94). Ruby/furigana chưa được giữ trong trường hợp này. Chưa có trong GUI. Khóa cache đã gồm crop/upscale.

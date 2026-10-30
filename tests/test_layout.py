@@ -73,3 +73,24 @@ def test_parse_pages():
     assert parse_pages("") is None
     assert parse_pages("1-3,5") == [1, 2, 3, 5]
     assert parse_pages(" 8 ") == [8]
+
+
+def test_o_trong_co_net_chu_duoc_nhan_dang_lai():
+    """Engine bỏ sót chữ trong bảng dày: ô trống có nét chữ phải được nhận dạng lại từ ảnh cắt."""
+    from ocrnhat.model import Page as _Page
+    img = _grid_image()
+    img[320:380, 520:700] = 0            # nét chữ đậm trong ô (r1, c1) — không có dòng nào của engine
+    lines = [_line("社外文書", 130, 110, 1)]   # chỉ một dòng, các ô khác trống
+    page = Page(1000, 600, [Block("table", 100, 100, 800, 400, lines)])
+    crops = []
+
+    def reocr(crop):
+        crops.append(crop.shape)
+        return _Page(crop.shape[1], crop.shape[0], [Block("text", 0, 0, 10, 10, [_line("依頼状", 40, 40, 1)])])
+
+    items = build_page(page, img, reocr)
+    t = next(i for i in items if isinstance(i, Table))
+    got = {(c.r, c.c): c.text for c in t.cells}
+    assert got[(1, 1)] == "依頼状"      # ô có nét chữ được nhận dạng lại
+    assert crops                          # đã gọi engine với ảnh cắt
+    assert got[(0, 0)] == "社外文書"     # dòng gốc giữ nguyên
