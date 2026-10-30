@@ -42,6 +42,7 @@ PRESETS = {   # mẫu tài liệu: đặt sẵn một số tùy chọn; các ô 
     "Chỉ văn bản (không bảng)": dict(upscale="1", cell_reocr=False),
 }
 INPUT_W = 34   # độ rộng thống nhất của mọi ô nhập và danh sách chọn
+BTN_W = 300    # chiều rộng chung (px) của các nút tải model và cài gói
 INPUT_PX = 330  # độ rộng tối thiểu (px) của cột ô nhập, khớp INPUT_W
 SETTINGS = gpupack.pack_dir().parent / "settings.json"
 LOG_FILE = gpupack.pack_dir().parent / "logs" / "app.log"
@@ -77,6 +78,144 @@ def _pick_font() -> str | None:
         if f in fams:
             return f
     return None
+
+
+def _hex(c: str) -> tuple:
+    return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _mix(a: str, b: str, t: float) -> str:
+    """Trộn màu a về phía b (t = 0..1)."""
+    return "#%02X%02X%02X" % tuple(round(x + (y - x) * t) for x, y in zip(_hex(a), _hex(b)))
+
+
+def _lum(c: str) -> float:
+    r, g, b = _hex(c)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def _parent_bg(widget) -> str:
+    """Màu nền của khung chứa gần nhất, để nút khớp nền (ttk không cho đọc trực tiếp)."""
+    style = ttk.Style()
+    w = widget
+    while w is not None:
+        cls = w.winfo_class()
+        if cls in ("TFrame", "TLabelframe"):
+            bg = style.lookup(str(w.cget("style")) or cls, "background")
+        elif cls in ("Frame", "Canvas", "Tk", "Toplevel"):
+            bg = w.cget("background")
+        else:
+            bg = ""
+        if bg:
+            return bg
+        w = w.master
+    return "#F4F5F7"
+
+
+class GradientButton(tk.Canvas):
+    """Nút chức năng có gradient dọc (ttk không hỗ trợ gradient). API giống ttk.Button: text, command, state, style.
+
+    style "Run.TButton" -> xanh lá (Chạy OCR), "Accent.TButton" -> xanh dương, còn lại trung tính theo nền.
+    width (px) đặt chiều rộng cố định; không đặt thì theo độ dài chữ.
+    """
+
+    VARIANTS = {"run": ("#34B25C", "#1B5E20", "#FFFFFF"), "accent": ("#5B9BFF", "#1F6FEB", "#FFFFFF")}
+    HEIGHT = 32
+
+    def __init__(self, master, text: str = "", command=None, state: str = "normal", style: str = "",
+                 width: int | None = None, **_):
+        self._bg = _parent_bg(master)
+        super().__init__(master, height=self.HEIGHT, highlightthickness=0, bd=0, bg=self._bg, cursor="hand2")
+        self._text, self._command, self._state = text, command, state
+        self._variant = "run" if style.startswith("Run") else "accent" if style.startswith("Accent") else "neutral"
+        self._font = tkfont.nametofont("TkDefaultFont")
+        self._fixed_w = width
+        self._hover = self._down = False
+        self._apply_width()
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self._draw()
+
+    def _apply_width(self):
+        tk.Canvas.configure(self, width=self._fixed_w or self._font.measure(self._text) + 36)
+
+    def _colors(self) -> tuple[str, str, str, str]:
+        """(đỉnh, đáy, chữ, viền) theo biến thể, trạng thái và nền."""
+        light = _lum(self._bg) > 128
+        if self._state == "disabled":
+            top, bot, fg = ("#D9DDE3", "#C5CAD2", "#8A919C") if light else ("#3D434C", "#30353C", "#6B7280")
+            return top, bot, fg, bot
+        if self._variant == "neutral":
+            top = _mix(self._bg, "#FFFFFF", 0.75 if light else 0.18)
+            bot = _mix(self._bg, "#000000", 0.14 if light else 0.35)
+            fg = "#1F2328" if light else "#E6E8EC"
+            border = "#B7BDC7" if light else "#4A515C"
+        else:
+            top, bot, fg = self.VARIANTS[self._variant]
+            border = _mix(bot, "#000000", 0.25)
+        if self._down:
+            top, bot = _mix(top, "#000000", 0.15), _mix(bot, "#000000", 0.15)
+        elif self._hover:
+            top, bot = _mix(top, "#FFFFFF", 0.12), _mix(bot, "#FFFFFF", 0.12)
+        return top, bot, fg, border
+
+    def _draw(self):
+        self.delete("all")
+        w, h = max(1, self.winfo_width()), max(1, self.winfo_height())
+        top, bot, fg, border = self._colors()
+        for y in range(h):
+            self.create_line(0, y, w, y, fill=_mix(top, bot, y / max(1, h - 1)))
+        self.create_rectangle(0, 0, w - 1, h - 1, outline=border)
+        self.create_text(w / 2, h / 2, text=self._text, fill=fg, font=self._font)
+
+    def configure(self, cnf=None, **kw):
+        kw = dict(cnf or {}, **kw)
+        if "text" in kw:
+            self._text = kw.pop("text")
+            if self._fixed_w is None:
+                self._apply_width()
+        if "state" in kw:
+            self._state = kw.pop("state")
+        if "command" in kw:
+            self._command = kw.pop("command")
+        if kw:
+            tk.Canvas.configure(self, **kw)
+        self._draw()
+
+    config = configure
+
+    def cget(self, key):
+        if key == "text":
+            return self._text
+        if key == "state":
+            return self._state
+        return tk.Canvas.cget(self, key)
+
+    def _on_enter(self, _e):
+        if self._state != "disabled":
+            self._hover = True
+            self._draw()
+
+    def _on_leave(self, _e):
+        self._hover = self._down = False
+        self._draw()
+
+    def _press(self, _e):
+        if self._state != "disabled":
+            self._down = True
+            self._draw()
+
+    def _release(self, _e):
+        if self._state == "disabled":
+            return
+        fire = self._down and self._hover
+        self._down = False
+        self._draw()
+        if fire and self._command:
+            self._command()
 
 
 class Tip:
@@ -251,11 +390,11 @@ class App(_Base):
         top.pack(side="top", fill="x")
         btns = ttk.Frame(top, style="Page.TFrame")
         btns.pack(fill="x")
-        self.btn = ttk.Button(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start)
+        self.btn = GradientButton(btns, text="▶  Chạy OCR", style="Run.TButton", command=self.start)
         self.btn.pack(side="left")
-        self.stop = ttk.Button(btns, text="Dừng", command=self.cancel.set, state="disabled")
+        self.stop = GradientButton(btns, text="Dừng", command=self.cancel.set, state="disabled")
         self.stop.pack(side="left", padx=8)
-        self.find = ttk.Button(btns, text="Tìm nhanh", command=self.find_output)
+        self.find = GradientButton(btns, text="Tìm nhanh", command=self.find_output)
         self.find.pack(side="left", padx=(0, 8))
         Tip(self.find, "Mở thư mục chứa file kết quả: kết quả đang chọn, không thì kết quả gần nhất, không thì thư mục lưu.")
         self.hw = tk.StringVar(value="Đang dò phần cứng…")
@@ -280,10 +419,10 @@ class App(_Base):
         src = self._card(self.tab_src, "Tài liệu nguồn")
         bar = ttk.Frame(src, style="Card.TFrame")
         bar.pack(fill="x", pady=(0, 8))
-        b_add = ttk.Button(bar, text="Thêm file…", command=self.add_files); b_add.pack(side="left")
-        b_dir = ttk.Button(bar, text="Thêm thư mục…", command=self.add_dir); b_dir.pack(side="left", padx=6)
-        b_del = ttk.Button(bar, text="Xóa mục đã chọn", command=self.remove_selected); b_del.pack(side="left")
-        b_clr = ttk.Button(bar, text="Xóa danh sách", command=self.clear); b_clr.pack(side="left", padx=6)
+        b_add = GradientButton(bar, text="Thêm file…", command=self.add_files); b_add.pack(side="left")
+        b_dir = GradientButton(bar, text="Thêm thư mục…", command=self.add_dir); b_dir.pack(side="left", padx=6)
+        b_del = GradientButton(bar, text="Xóa mục đã chọn", command=self.remove_selected); b_del.pack(side="left")
+        b_clr = GradientButton(bar, text="Xóa danh sách", command=self.clear); b_clr.pack(side="left", padx=6)
         Tip(b_add, "Chọn một hoặc nhiều file PDF hoặc ảnh (PNG, JPG, TIFF...). Phím tắt: Ctrl+O.")
         Tip(b_dir, "Lấy tất cả PDF và ảnh trong một thư mục.")
         Tip(b_del, "Bỏ file đang chọn khỏi danh sách (phím Delete). File gốc không bị xóa.")
@@ -314,7 +453,7 @@ class App(_Base):
 
         out = self._card(self.tab_src, "Đầu ra")
         self._row(out, 0, "Thư mục lưu", ttk.Entry(out, textvariable=self._var("out", ""), width=INPUT_W))
-        b_out = ttk.Button(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
+        b_out = GradientButton(out, text="Chọn…", command=self.pick_out); b_out.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=4)
         Tip(b_out, "Chọn thư mục để lưu file kết quả. Để trống = thư mục chứa file gốc.")
         ttk.Label(out, text="Để trống = cạnh file gốc. Tên file: OCR_tên_không_dấu_trang_đầu_trang_cuối.", style="Hint.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._row(out, 1, "Trang", ttk.Entry(out, textvariable=self._var("pages", ""), width=INPUT_W))
@@ -362,7 +501,7 @@ class App(_Base):
         self._sync_lang()
 
         # mục Nâng cao: thu gọn, ít dùng
-        self.adv_btn = ttk.Button(self.tab_proc, text="▸ Nâng cao", command=self._toggle_adv)
+        self.adv_btn = GradientButton(self.tab_proc, text="▸ Nâng cao", command=self._toggle_adv)
         self.adv_btn.pack(anchor="w", pady=(0, 8))
         self.adv = self._card(self.tab_proc, "Nâng cao")
         self.adv_outer = self.adv.master.master
@@ -390,7 +529,7 @@ class App(_Base):
         if not gpupack.installed():
             row = ttk.Frame(ai, style="Card.TFrame")
             row.pack(fill="x", pady=(0, 6))
-            self.pack_btn = ttk.Button(row, text="Cài gói GPU + Chandra (vài GB)", command=self.install_pack)
+            self.pack_btn = GradientButton(row, text="Cài gói GPU + Chandra (vài GB)", command=self.install_pack, width=BTN_W)
             self.pack_btn.pack(side="left")
             # thanh tiến trình chỉ hiện khi bắt đầu cài (xem install_pack)
             self.pack_pb = ttk.Progressbar(row, mode="indeterminate", length=220, style="Accent.Horizontal.TProgressbar")
@@ -403,7 +542,7 @@ class App(_Base):
             Tip(cb_l, "Trọng số Chandra theo OpenRAIL-M: miễn ngưỡng thương mại khi dùng cá nhân/nghiên cứu. Chi tiết trong NOTICE.md.")
             row = ttk.Frame(ai, style="Card.TFrame")
             row.pack(fill="x", pady=(6, 0))
-            self.dl_btn = ttk.Button(row, text="Tải model Chandra", command=self.download_chandra)
+            self.dl_btn = GradientButton(row, text="Tải model Chandra", command=self.download_chandra, width=BTN_W)
             self.dl_btn.pack(side="left")
             self.dl_pb = ttk.Progressbar(row, maximum=100, length=220, style="Accent.Horizontal.TProgressbar")
             self.dl_pb.pack(side="left", padx=10)
@@ -417,7 +556,7 @@ class App(_Base):
         row = ttk.Frame(parent, style="Card.TFrame")
         row.pack(fill="x", pady=(0, 6))
         need = not PaddleEngine.is_available()[0]
-        self.pm_btn = ttk.Button(row, text="Tải model OCR (PaddleOCR)", command=self.download_paddle,
+        self.pm_btn = GradientButton(row, text="Tải model OCR (PaddleOCR)", width=BTN_W, command=self.download_paddle,
                                  state="normal" if need else "disabled")
         self.pm_btn.pack(side="left")
         self.pm_spin = Spinner(row, size=20)
@@ -488,11 +627,11 @@ class App(_Base):
         self.res.bind("<<TreeviewSelect>>", lambda e: self._preview_refresh())
         bar = ttk.Frame(res, style="Card.TFrame")
         bar.pack(fill="x", pady=(8, 8))
-        self.b_docx = ttk.Button(bar, text="Mở file Word", command=lambda: self._open_result("docx"), state="disabled")
+        self.b_docx = GradientButton(bar, text="Mở file Word", command=lambda: self._open_result("docx"), state="disabled")
         self.b_docx.pack(side="left")
-        self.b_dir = ttk.Button(bar, text="Mở thư mục", command=lambda: self._open_result("dir"), state="disabled")
+        self.b_dir = GradientButton(bar, text="Mở thư mục", command=lambda: self._open_result("dir"), state="disabled")
         self.b_dir.pack(side="left", padx=6)
-        self.b_rev = ttk.Button(bar, text="Mở file rà soát", command=lambda: self._open_result("review"), state="disabled")
+        self.b_rev = GradientButton(bar, text="Mở file rà soát", command=lambda: self._open_result("review"), state="disabled")
         self.b_rev.pack(side="left")
 
         prev = self._card(self.tab_res, "Xem trước trang")
