@@ -449,12 +449,28 @@ def _is_kana_chart(block: Block, cells) -> bool:
     return rom >= 0.25 * len(cells)
 
 
-def _read_kana_chart(cells, ys, xs, img_rgb, kana_reader) -> None:
+def _split_tall_rows(edges: list[float], ratio: float = 1.7) -> list[float]:
+    """Hàng cao gấp đôi các hàng khác là hai hàng bị gộp (đường kẻ giữa chúng quá mờ): chia đều."""
+    h = np.diff(edges)
+    med = float(np.median(h))
+    out = [edges[0]]
+    for a, b in zip(edges[:-1], edges[1:]):
+        k = max(1, round((b - a) / med)) if (b - a) >= ratio * med else 1
+        for i in range(1, k + 1):
+            out.append(a + (b - a) * i / k)
+    return out
+
+
+def _read_kana_chart(block: Block, gray, ys, xs, img_rgb, kana_reader) -> list[Cell]:
+    """Đọc từng ô của bảng chữ kana: tách hàng bị gộp, rồi đọc mỗi ô bằng kana_reader."""
+    ys = _split_tall_rows(list(ys))
+    cells = [Cell(r, c) for r in range(len(ys) - 1) for c in range(len(xs) - 1)]
     for cell in cells:
         x0, y0, x1, y1 = _cell_box(cell, ys, xs)
         crop = img_rgb[int(y0):int(y1), int(x0):int(x1)]
         cell.text = kana_reader(np.ascontiguousarray(crop)) if crop.size else ""
         cell.conf = 1.0 if cell.text else 0.0
+    return cells, ys
 
 
 def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
@@ -464,8 +480,8 @@ def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
     if g:
         ys, xs, cells = _grid_cells(g)
         if kana_reader is not None and img_rgb is not None and _is_kana_chart(block, cells):
-            _read_kana_chart(cells, ys, xs, img_rgb, kana_reader)
-            return Table(len(ys) - 1, len(xs) - 1, cells, kana=True)
+            kcells, kys = _read_kana_chart(block, gray, ys, xs, img_rgb, kana_reader)
+            return Table(len(kys) - 1, len(xs) - 1, kcells, kana=True)
     if not ls: return None
     if g:
         if reocr is not None:

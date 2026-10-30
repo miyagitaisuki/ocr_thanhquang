@@ -74,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
         if r.get("suspect"):
             print(f"-> {r['suspect']}  ({r['suspect_lines']} dòng có chữ nghi ngờ)")
+        if r.get("kana_review"):
+            print(f"-> {r['kana_review']}  (rà soát ô kana)")
         if r["review"]:
             print(f"-> {r['review']}  ({r['low_conf']} mục độ tin cậy thấp)")
     return 0

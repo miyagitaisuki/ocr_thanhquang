@@ -149,7 +149,14 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
     from . import kana as _kana
-    kana_reader = _kana.read_cell if kana_ocr and _kana.available() else None   # thử nghiệm, cần tesseract + jpn
+    kana_reader = None   # thử nghiệm, cần tesseract + jpn; mỗi ô được ghi lại để xuất file rà soát
+    kana_log: list[tuple[int, np.ndarray, str]] = []
+    kana_pno = [0]
+    if kana_ocr and _kana.available():
+        def kana_reader(crop):
+            text = _kana.read_cell(crop)
+            kana_log.append((kana_pno[0], crop.copy(), text))
+            return text
 
     def reocr(crop):
         """Nhận dạng lại một ô bảng (engine của luồng gọi, lấy lười)."""
@@ -187,6 +194,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             fut = pending.pop(0)               # giữ thứ tự trang
             pno, page, img = fut.result()
             submit_next()
+            kana_pno[0] = pno
             items = build_page(page, img, reocr if cell_reocr else None, kana_reader)
             if suspect:
                 suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
@@ -213,6 +221,11 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
         from .review import write_review
         review_path = out_dir / f"{path.stem}_review.html"
         write_review(sections, review_path, path.name)
+    kana_review = None
+    if kana_log:
+        kana_review = out_dir / f"{path.stem}_kana_review.html"
+        _kana.write_review(kana_log, kana_review)
     return {"file": str(path), "pages": done, "tables": n_tables, "docx": str(docx_path),
+            "kana_review": str(kana_review) if kana_review else None,
             "review": str(review_path) if review_path else None, "low_conf": n_low,
             "suspect": str(suspect_path) if suspect_path else None, "suspect_lines": len(suspect_rows)}

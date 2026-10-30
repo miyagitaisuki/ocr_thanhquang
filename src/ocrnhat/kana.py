@@ -11,7 +11,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-_THRESH = 185               # nét kana xám khoảng 120–160 trên nền trắng; nền hồng và romaji sáng hơn
+_THRESH = 185               # nét kana xám khoảng 120–160 trên nền trắng
+_CHROMA = 40                # nét hồng của romaji có chroma cao hơn nhiều
 
 
 def available() -> bool:
@@ -25,8 +26,14 @@ def read_cell(cell_rgb: np.ndarray) -> str:
     crop = cell_rgb[8:h - 8, 8:max(9, int(0.5 * w))]
     if crop.size == 0:
         return ""
+    rgb = np.ascontiguousarray(crop).astype(np.int16)
     gray = cv2.cvtColor(np.ascontiguousarray(crop), cv2.COLOR_RGB2GRAY)
-    out = np.where(gray < _THRESH, 0, 255).astype(np.uint8)
+    chroma = rgb.max(axis=2) - rgb.min(axis=2)               # chữ kana gần xám; romaji màu hồng có chroma lớn
+    ink = (gray < _THRESH) & (chroma < _CHROMA)
+    # đường kẻ lưới lọt vào ô: cột/hàng có mật độ mực quá cao không phải chữ
+    ink[:, ink.mean(axis=0) > 0.6] = False
+    ink[ink.mean(axis=1) > 0.6, :] = False
+    out = np.where(ink, 0, 255).astype(np.uint8)
     out = cv2.resize(out, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     out = cv2.copyMakeBorder(out, 30, 30, 30, 30, cv2.BORDER_CONSTANT, value=255)
     with tempfile.TemporaryDirectory() as tmp:
@@ -35,8 +42,41 @@ def read_cell(cell_rgb: np.ndarray) -> str:
         res = subprocess.run(["tesseract", str(p), "stdout", "-l", "jpn", "--psm", "10"],
                              capture_output=True, text=True, timeout=20)
     text = "".join(ch for ch in res.stdout if ch.strip())
-    return text if _is_kana(text) else ""
+    return _SMALL_TO_FULL.get(text, text) if _is_kana(text) else ""
+
+
+# bảng gojūon không có kana nhỏ: 'ぁ' ở đây là 'あ' bị đọc nhỏ
+_SMALL_TO_FULL = {c: f for c, f in zip("ぁぃぅぇぉゃゅょァィゥェォャュョ", "あいうえおやゆよアイウエオヤユヨ")}
 
 
 def _is_kana(ch: str) -> bool:
     return len(ch) == 1 and (0x3040 <= ord(ch) <= 0x30FF)
+
+
+def write_review(records: list[tuple[int, np.ndarray, str]], out: Path) -> None:
+    """File rà soát HTML: ảnh từng ô kana cạnh chữ đã đọc, để đối chiếu với trang gốc."""
+    import base64
+    import html
+    import io
+
+    parts = []
+    for pno, crop, text in records:
+        buf = io.BytesIO()
+        Image.fromarray(np.ascontiguousarray(crop)).save(buf, format="PNG")
+        src = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+        shown = html.escape(text) if text else "∅"
+        cls = "ok" if text else "empty"
+        parts.append(f'<figure class="{cls}"><img src="{src}" alt="p{pno}"><figcaption>p.{pno} → <b>{shown}</b></figcaption></figure>')
+    page = (
+        "<!doctype html><html lang='vi'><head><meta charset='utf-8'><title>Rà soát bảng kana</title>"
+        "<style>body{font-family:sans-serif;margin:16px}"
+        ".grid{display:flex;flex-wrap:wrap;gap:10px}"
+        "figure{margin:0;width:150px;border:1px solid #ccc;padding:4px;background:#fff}"
+        "figure.empty{background:#fff4f4}img{width:100%;image-rendering:auto}"
+        "figcaption{font-size:14px}</style></head><body>"
+        "<h2>Rà soát bảng chữ kana (thử nghiệm)</h2>"
+        "<p>Ô có chữ đọc được hiện chữ sau mũi tên; ô nền đỏ nhạt là ô để trống (không chắc). "
+        "Đối chiếu từng ô với ảnh trang gốc.</p>"
+        f"<div class='grid'>{''.join(parts)}</div></body></html>"
+    )
+    out.write_text(page, encoding="utf-8")

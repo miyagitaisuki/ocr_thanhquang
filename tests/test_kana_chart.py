@@ -47,3 +47,21 @@ def test_khong_co_bo_doc_thi_khong_thanh_bang_kana():
     items = build_page(_page(img), img, None, None)
     tables = [i for i in items if hasattr(i, "cells")]
     assert not any(t.kana for t in tables)
+
+
+def test_hang_cao_gap_doi_duoc_tach():
+    from ocrnhat.layout import _split_tall_rows
+    ys = [0, 34, 104, 166, 237, 308, 441, 504, 567, 629]    # hàng 308→441 là hai hàng bị gộp
+    out = _split_tall_rows(ys)
+    assert len(out) == len(ys) + 1
+    assert all(b - a < 80 for a, b in zip(out[:-1], out[1:]))
+
+
+def test_file_ra_soat_co_anh_va_o_trong(tmp_path):
+    from ocrnhat.kana import write_review
+    crop = np.full((40, 60, 3), 255, np.uint8)
+    out = tmp_path / "rs.html"
+    write_review([(13, crop, "あ"), (13, crop, "")], out)
+    text = out.read_text(encoding="utf-8")
+    assert text.count("data:image/png;base64,") == 2
+    assert "p.13 → <b>あ</b>" in text and "∅" in text and 'class="empty"' in text
