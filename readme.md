@@ -42,7 +42,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - `scripts/`: `fetch_ndlocr.py` (tải engine), `smoke_test.py` (OCR ảnh mẫu, dựng bảng), `compare_engines.py` (đối chiếu với YomiToku, chỉ để so sánh, không đóng gói vì giấy phép CC BY-NC-SA).
 - `tests/`: pytest (`test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`).
 - `tests/data/pretest_sample.pdf`: sổ tay tiếng Nhật thương mại 4 trang, file mẫu chính cho các test và đo độ chính xác từ nay.
-- `.github/workflows/`: `test.yml` (mỗi push/PR), `build-exe.yml` (exe CPU), `build-exe-gpu.yml` (exe GPU, chạy thủ công).
+- `.github/workflows/`: `test.yml` (mỗi push/PR), `build-exe.yml` (exe CPU, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`), `build-exe-gpu.yml` (exe GPU, chạy thủ công).
 - `requirements.txt`: nguồn duy nhất của dependency. `pyproject.toml` đọc từ đó. Extra: `test`, `suspect`.
 - `.claude/agents/`: agent `developer` và `code-reviewer`.
 - `run_gui.py`: mở giao diện.
