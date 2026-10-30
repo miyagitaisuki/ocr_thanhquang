@@ -23,7 +23,7 @@ def read_cell(cell_rgb: np.ndarray) -> str:
     """Trả về đúng một ký tự kana, hoặc chuỗi rỗng nếu không chắc."""
     h, w = cell_rgb.shape[:2]
     # chữ kana nằm ở nửa trái ô, phía trên giữa; romaji hồng nằm bên phải
-    crop = cell_rgb[8:h - 8, 8:max(9, int(0.5 * w))]
+    crop = cell_rgb[8:h - 8, 14:max(15, int(0.5 * w))]
     if crop.size == 0:
         return ""
     rgb = np.ascontiguousarray(crop).astype(np.int16)
@@ -33,16 +33,26 @@ def read_cell(cell_rgb: np.ndarray) -> str:
     # đường kẻ lưới lọt vào ô: cột/hàng có mật độ mực quá cao không phải chữ
     ink[:, ink.mean(axis=0) > 0.6] = False
     ink[ink.mean(axis=1) > 0.6, :] = False
+    # thành phần mực chạm mép ảnh cắt là đường kẻ lọt vào ô, không phải chữ
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), connectivity=8)
+    h_, w_ = ink.shape
+    for i in range(1, n):
+        x, y, cw, ch, _a = stats[i]
+        if x == 0 or y == 0 or x + cw >= w_ or y + ch >= h_:
+            ink[lab == i] = False
     out = np.where(ink, 0, 255).astype(np.uint8)
     out = cv2.resize(out, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     out = cv2.copyMakeBorder(out, 30, 30, 30, 30, cv2.BORDER_CONSTANT, value=255)
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "cell.png"
         Image.fromarray(out).save(p)
-        res = subprocess.run(["tesseract", str(p), "stdout", "-l", "jpn", "--psm", "10"],
-                             capture_output=True, text=True, timeout=20)
-    text = "".join(ch for ch in res.stdout if ch.strip())
-    return _SMALL_TO_FULL.get(text, text) if _is_kana(text) else ""
+        for psm in ("10", "7"):   # chữ đơn trước; nếu không ra kana thì thử chế độ một dòng
+            res = subprocess.run(["tesseract", str(p), "stdout", "-l", "jpn", "--psm", psm],
+                                 capture_output=True, text=True, timeout=20)
+            text = "".join(ch for ch in res.stdout if ch.strip())
+            if _is_kana(text):
+                return _SMALL_TO_FULL.get(text, text)
+    return ""
 
 
 # bảng gojūon không có kana nhỏ: 'ぁ' ở đây là 'あ' bị đọc nhỏ
