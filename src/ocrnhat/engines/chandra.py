@@ -1,7 +1,8 @@
-"""Engine Chandra OCR 2 (datalab-to/chandra-ocr-2, VLM ~4-5B, cần GPU; trọng số OpenRAIL-M sửa đổi).
+"""Engine Chandra OCR 2 (datalab-to/chandra-ocr-2, VLM ~4-5B, cần GPU).
 
-Không nằm trong exe và không nằm trong requirements.txt: chỉ dùng khi máy đã cài `pip install chandra-ocr`
-(tùy chọn, xem readme). Mô hình chạy qua máy chủ vLLM (mặc định) hoặc HuggingFace cục bộ.
+Giấy phép: mã Apache-2.0; trọng số theo OpenRAIL-M sửa đổi (xem NOTICE.md). Trọng số không được đóng vào exe;
+máy người dùng tự cài `pip install ".[chandra]"` và mô hình được tải về lần đầu dùng.
+Mô hình chạy cục bộ bằng HuggingFace (mặc định) hoặc qua máy chủ vLLM (method="vllm")."
 
 Phần phân tích HTML của Chandra (`parse_chandra_html`) là hàm thuần, không cần model, được test trực tiếp.
 Chandra không trả tọa độ từng dòng: mỗi khối có bbox (hệ 0..1000); văn bản trong khối được chia đều theo chiều
@@ -127,7 +128,7 @@ class ChandraEngine(OcrEngine):
             return False, "chưa cài (pip install chandra-ocr)"
         return True, ""
 
-    def __init__(self, method: str = "vllm", **_):
+    def __init__(self, method: str = "hf", **_):
         ok, why = self.is_available()
         if not ok:
             raise RuntimeError(f"Engine Chandra {why}.")

@@ -60,8 +60,7 @@ class Tip:
 class App(_Base):
     DEV_LABELS = {"auto": "Tự động", "cpu": "CPU", "cuda": "GPU (NVIDIA)"}
     KANA_LABELS = {"": "Tắt", "template": "Mẫu IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
-    # chandra còn là placeholder (chưa cài đặt) nên không đưa lên giao diện; dòng lệnh vẫn có
-    ENGINES = ("auto", "ndlocr")
+    ENGINES = ("auto", "ndlocr", "chandra")
 
     def __init__(self):
         super().__init__()

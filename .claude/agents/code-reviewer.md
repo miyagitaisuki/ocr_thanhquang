@@ -18,7 +18,7 @@ Bạn là người rà soát mã cho dự án OCR-Nhat (OCR PDF/ảnh tiếng Nh
 - **Hệ tọa độ:** ảnh sau `--crop`/`--upscale` phải là ảnh duy nhất dùng cho OCR, dựng bảng và báo cáo rà soát; tọa độ `Line`/`Block` phải cùng hệ với ảnh đó.
 - **Cache (`cache.py`):** khóa cache phải gồm mọi yếu tố ảnh hưởng kết quả (file, dpi, crop, upscale, engine, phiên bản). Đổi định dạng `Page`/`Line` mà không đổi `_VER` là lỗi.
 - **Song song (`pipeline.py`):** thứ tự trang, cửa sổ trượt, hủy giữa chừng (`cancel`), an toàn luồng khi tạo engine và khi engine được dùng chung.
-- **Engine và thiết bị:** `engines/` phải giữ giao diện `OcrEngine`; `gpu.resolve_device` lùi về CPU có báo lý do; chỉ hỗ trợ NVIDIA (AMD đã bỏ, Chandra tạm dừng).
+- **Engine và thiết bị:** `engines/` phải giữ giao diện `OcrEngine`; `gpu.resolve_device` lùi về CPU có báo lý do; chỉ hỗ trợ NVIDIA (AMD đã bỏ). Chandra là engine tùy chọn; không đóng trọng số vào exe.
 - **Xuất Word (`docx_out.py`):** XML `w:ruby` hợp lệ, ô gộp, font Yu Mincho, không làm hỏng file mở bằng Word.
 - **CI (`.github/workflows/*.yml`):** YAML hợp lệ (tên step chứa `: ` phải đặt trong dấu nháy), thứ tự cài `onnxruntime` / `onnxruntime-gpu`, bước kiểm tra exe.
 - Chạy trên Windows: đường dẫn, `creationflags`, không dùng lệnh chỉ có trên Linux trong mã chạy trong exe.
