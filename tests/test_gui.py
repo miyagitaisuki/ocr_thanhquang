@@ -100,18 +100,18 @@ def test_worker_xu_ly_tung_file_va_ghi_loi_rieng(window, monkeypatch, tmp_path):
 
 
 def test_responsive_cua_so_hep(window):
-    from PySide6.QtWidgets import QBoxLayout
+    from PySide6.QtCore import Qt
     window.show()
     window.resize(1180, 800)
     app.processEvents()
     app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
     assert window.side.width() == 228
-    assert window.ocr.root_layout.direction() == QBoxLayout.Direction.LeftToRight
+    assert window.ocr.splitter.orientation() == Qt.Orientation.Horizontal
     window.resize(800, 700)
     app.processEvents()
     app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
-    assert window.side.width() < 120 and window.nav.item(1).text() == "Tách"
-    assert window.ocr.root_layout.direction() == QBoxLayout.Direction.TopToBottom
+    assert window.side.width() < 120 and window.nav.item(1).text() == "Tách\nPDF"
+    assert window.ocr.splitter.orientation() == Qt.Orientation.Vertical
     window.resize(1180, 800)
     app.processEvents()
     app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
@@ -149,3 +149,29 @@ def test_o_nhap_co_ten_truy_cap(window):
                if not isinstance(w.parentWidget(), QSpinBox)]
     missing = [type(w).__name__ for w in widgets if w not in hidden and not w.accessibleName()]
     assert missing == []
+
+
+def test_dung_o_header_bat_theo_trang_thai(window):
+    """Nút Dừng nằm trên header, bật khi OCR đang chạy và tắt khi xong."""
+    window._on_ocr_busy(True)
+    assert window.stop_btn.isEnabled() and not window.run_btn.isEnabled()
+    window._on_ocr_busy(False)
+    assert not window.stop_btn.isEnabled() and window.run_btn.isEnabled()
+
+
+def test_muc_file_co_ten_de_doc_va_goi_y_keo_tha_rut_gon(window, tmp_path):
+    f = tmp_path / "so_tay.pdf"
+    f.write_bytes(b"")
+    window.ocr._add([f])
+    assert window.ocr.listing.item(0).text() == "so_tay.pdf"
+    assert window.ocr.drop.text() == gui.DROP_HINT_SHORT
+    window.ocr.clear()
+    assert window.ocr.drop.text() == gui.DROP_HINT
+
+
+def test_mo_thu_muc_ket_qua_theo_luc_bat_dau(window, tmp_path):
+    """Đổi ô thư mục lưu khi đang chạy không làm nút mở nhầm thư mục."""
+    window.ocr._run_out = None
+    window.ocr._on_done("Xong. Đã xử lý 1 file.", [(tmp_path / "a.png", {"docx": "x"})])
+    assert window.ocr._out_dir == tmp_path
+    assert window.ocr.btn_open_out.isVisibleTo(window.ocr)

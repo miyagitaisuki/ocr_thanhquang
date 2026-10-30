@@ -58,6 +58,9 @@ QListWidget#nav:focus { border: 2px solid @accent@; }
 QListWidget#nav::item { padding: 12px 14px; margin: 2px 4px; border-radius: 12px; color: @nav_text@; font-weight: 600; border-left: 3px solid transparent; }
 QListWidget#nav::item:selected { background: @accent_soft@; color: @accent_dark@; border-left: 3px solid @accent@; }
 QListWidget#nav::item:hover:!selected { background: @hover@; }
+QListWidget#nav[compact="true"]::item { padding: 10px 2px; margin: 2px 2px; border-left: none; }
+QListWidget#nav[compact="true"]::item:selected { border-left: none; }
+QLabel#fileName { font-weight: 600; }
 QGroupBox { background: @card@; border: 1px solid @border@; border-radius: 16px; margin-top: 16px; padding: 14px 12px 12px 12px; font-weight: bold; }
 QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 14px; padding: 0 4px; }
 QLineEdit, QComboBox, QSpinBox { background: @field@; border: 1px solid @ctl_border@; border-radius: 12px; padding: 6px 10px; min-height: 22px; }

@@ -9,11 +9,11 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
-    QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QScrollArea, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from . import gpu, gpupack, pipeline
@@ -28,8 +28,12 @@ gpupack.activate()   # trước khi đọc find_spec('chandra')
 log = logging.getLogger("ocrnhat.gui")
 
 SECTIONS = ("OCR", "Tách PDF", "Ghép PDF", "Công cụ khác")
-SECTIONS_SHORT = ("OCR", "Tách", "Ghép", "Khác")   # thanh bên thu gọn khi cửa sổ hẹp
+SECTIONS_SHORT = ("OCR", "Tách\nPDF", "Ghép\nPDF", "Công cụ\nkhác")   # thanh bên thu gọn khi cửa sổ hẹp (hai dòng)
 NARROW_WINDOW = 980    # dưới mức này (px): thanh bên chỉ còn nhãn ngắn và cột cấu hình xuống dưới danh sách file
+SIDEBAR_W, SIDEBAR_W_COMPACT = 228, 96          # chiều rộng thanh bên (px), bình thường và thu gọn
+RIGHT_MIN_W, RIGHT_MAX_W = 300, 560             # cột cấu hình: kéo được trong khoảng này (px)
+DROP_HINT = "Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file” (Ctrl+O)"
+DROP_HINT_SHORT = "Kéo thả thêm file vào đây · Ctrl+O để chọn file"
 ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("paddle", "ocr_vi")
 FILE_FILTER = "PDF / ảnh (*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
 PRESETS = {   # mẫu tài liệu: đặt sẵn độ phóng to và đọc bảng; các ô khác giữ nguyên
@@ -128,7 +132,7 @@ class FileRow(QWidget):
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         texts = QVBoxLayout()
         name = QLabel(path.name)
-        name.setStyleSheet("font-weight: 600;")
+        name.setObjectName("fileName")
         where = QLabel(str(path.parent))
         where.setObjectName("hint")
         texts.addWidget(name)
@@ -163,9 +167,12 @@ class OcrPage(QWidget):
     # ---------- bố cục ----------
 
     def _build(self):
-        root = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)   # đổi chiều khi cửa sổ hẹp (MainWindow.resizeEvent)
-        root.setSpacing(16)
-        self.root_layout = root
+        root = QVBoxLayout(self)
+        # hai cột ngăn bằng tay kéo được; cửa sổ hẹp thì đổi thành xếp dọc (set_narrow)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(12)
+        root.addWidget(self.splitter)
 
         # cột trái: danh sách file, xem trước vùng chọn, kết quả
         left = QVBoxLayout()
@@ -181,7 +188,7 @@ class OcrPage(QWidget):
             bar.addWidget(b)
         bar.addStretch(1)
         fb.addLayout(bar)
-        drop = QLabel("Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file” (Ctrl+O)")
+        drop = QLabel(DROP_HINT)
         drop.setObjectName("dropzone")
         drop.setAlignment(Qt.AlignmentFlag.AlignCenter)
         drop.setMinimumHeight(44)
@@ -229,7 +236,10 @@ class OcrPage(QWidget):
         left.addWidget(self.preview_box, 1)
         self.results = ResultsBox()
         left.addWidget(self.results)
-        root.addLayout(left, 1)
+        left_col = QWidget()
+        left_col.setLayout(left)
+        self.splitter.addWidget(left_col)
+        self.splitter.setStretchFactor(0, 1)   # cột trái giãn theo cửa sổ, cột cấu hình giữ bề rộng khi kéo
 
         # cột phải: cấu hình, tùy chọn, tiến trình, mô hình AI
         right = QVBoxLayout()
@@ -264,12 +274,18 @@ class OcrPage(QWidget):
         cg.addLayout(out_row)
         right.addWidget(cfg)
 
+        # cấu hình cơ bản: thêm file .txt vào khối cấu hình (cg); phần còn lại thu gọn trong "Tùy chọn nâng cao"
         opt = QGroupBox("Tùy chọn nâng cao")
-        og = QVBoxLayout(opt)
+        opt.setCheckable(True)
+        opt.setChecked(False)
+        opt_body = QWidget()
+        og = QVBoxLayout(opt_body)
+        QVBoxLayout(opt).addWidget(opt_body)
         self.txt = QCheckBox("Ghi kèm file .txt")
+        cg.addWidget(self.txt)
         self.marker = QCheckBox("Ghi số trang gốc 【原本 p.N】")
         self.ruby = QCheckBox("Giữ chữ phiên âm kana trên chữ Hán (ruby)")
-        for c in (self.txt, self.marker, self.ruby):
+        for c in (self.marker, self.ruby):
             og.addWidget(c)
         self.merge = QComboBox()
         for key, label in L.MERGE_LABELS.items():
@@ -320,6 +336,8 @@ class OcrPage(QWidget):
         self.advanced = adv
         adv_body.setVisible(False)
         adv.toggled.connect(adv_body.setVisible)
+        opt_body.setVisible(False)
+        opt.toggled.connect(opt_body.setVisible)
         right.addWidget(opt)
 
         run_box = QGroupBox("Tiến trình")
@@ -336,25 +354,26 @@ class OcrPage(QWidget):
         self.banner.setVisible(False)
         self.btn_log = QPushButton("Mở thư mục nhật ký")
         self.btn_log.setVisible(False)
-        self.btn_stop = QPushButton("Dừng")
-        self.btn_stop.setObjectName("dangerBtn")
-        self.btn_stop.setEnabled(False)
+        self.btn_open_out = QPushButton("Mở thư mục kết quả")
+        self.btn_open_out.setVisible(False)
+        self.btn_open_out.clicked.connect(self._open_out_dir)
         rb.addWidget(self.progress)
         rb.addWidget(self.status)
         rb.addWidget(self.banner)
+        rb.addWidget(self.btn_open_out)
         rb.addWidget(self.btn_log)
-        rb.addWidget(self.btn_stop)
-        right.addWidget(run_box)
+        right.insertWidget(0, run_box)   # tiến trình lên đầu cột: thấy ngay khi chạy, không cần cuộn
 
         self.models = ModelBox(chandra_available="chandra" in ENGINES)
         right.addWidget(self.models)
         right.addStretch(1)
         right_col = QWidget()
         right_col.setLayout(right)
-        right_col.setMinimumWidth(300)   # co giãn 300–420 px; cửa sổ hẹp thì xuống dưới (MainWindow.resizeEvent)
-        right_col.setMaximumWidth(420)
+        right_col.setMinimumWidth(RIGHT_MIN_W)   # cửa sổ hẹp thì xuống dưới (MainWindow.resizeEvent)
+        right_col.setMaximumWidth(RIGHT_MAX_W)
         self.right_col = right_col
-        root.addWidget(right_col)
+        self.splitter.addWidget(right_col)
+        self.splitter.setStretchFactor(1, 0)
         self.btn_log.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(L.LOG_FILE.parent))))
 
         self.btn_add.clicked.connect(self.add_files)
@@ -363,7 +382,6 @@ class OcrPage(QWidget):
         self.btn_clear.clicked.connect(self.clear)
         self.btn_out.clicked.connect(self.pick_out)
         self.listing.dropped.connect(self._add_dropped)
-        self.btn_stop.clicked.connect(self.request_stop)
         self.engine.currentIndexChanged.connect(self._sync_lang)
         self.preset.currentIndexChanged.connect(self._apply_preset)
         self.listing.currentRowChanged.connect(self._sync_crop_src)
@@ -380,10 +398,10 @@ class OcrPage(QWidget):
     def set_narrow(self, narrow: bool):
         """Cửa sổ hẹp: cột cấu hình xuống dưới danh sách file. Quyết định theo cửa sổ vì bề rộng tối thiểu của trang
         (khi xếp ngang) lớn hơn vùng nhìn nên không đo được từ chính trang."""
-        wanted = QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
-        if self.root_layout.direction() != wanted:
-            self.root_layout.setDirection(wanted)
-            self.right_col.setMaximumWidth(16777215 if narrow else 420)
+        wanted = Qt.Orientation.Vertical if narrow else Qt.Orientation.Horizontal
+        if self.splitter.orientation() != wanted:
+            self.splitter.setOrientation(wanted)
+            self.right_col.setMaximumWidth(16777215 if narrow else RIGHT_MAX_W)
 
     def _apply_preset(self, _i: int = 0):
         p = PRESETS[self.preset.currentText()]
@@ -428,7 +446,7 @@ class OcrPage(QWidget):
                 dup += 1
                 continue
             self.files.append(f)
-            item = QListWidgetItem()
+            item = QListWidgetItem(f.name)   # tên trên mục để trình đọc màn hình đọc được (widget con che chữ này)
             item.setSizeHint(QSize(0, 70))
             self.listing.addItem(item)
             self.listing.setItemWidget(item, FileRow(f))
@@ -459,7 +477,7 @@ class OcrPage(QWidget):
     def _refresh_count(self):
         n = len(self.files)
         self.files_box.setTitle(f"Danh sách file ({n})")
-        self.drop.setVisible(n == 0)
+        self.drop.setText(DROP_HINT if n == 0 else DROP_HINT_SHORT)   # gợi ý kéo thả luôn hiện, chỉ rút gọn
         if hasattr(self, "crop_src"):
             self._refresh_crop_files()
 
@@ -584,9 +602,11 @@ class OcrPage(QWidget):
         self.progress.setValue(0)
         self.banner.setVisible(False)
         self.btn_log.setVisible(False)
+        self.btn_open_out.setVisible(False)
         self._set_running(True)
         out = self.out.text().strip()
-        self.worker = OcrWorker(list(self.files), Path(out) if out else None, pages, opts)
+        self._run_out = Path(out) if out else None   # chốt lúc bắt đầu: người dùng đổi ô khi đang chạy không ảnh hưởng
+        self.worker = OcrWorker(list(self.files), self._run_out, pages, opts)
         self.worker.progress.connect(self._on_progress)
         self.worker.file_state.connect(self._set_file_state)
         self.worker.finished_ok.connect(self._on_done)
@@ -596,6 +616,10 @@ class OcrPage(QWidget):
         if self.worker and self.worker.isRunning():
             self.worker.cancel_requested = True
             self.status.setText("Đang dừng… chờ trang hiện tại đọc xong.")
+
+    def _open_out_dir(self):
+        if self._out_dir is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._out_dir)))
 
     def _on_progress(self, d: int, t: int, m: str):
         self.progress.setValue(int(100 * d / max(1, t)))
@@ -610,12 +634,14 @@ class OcrPage(QWidget):
         self.banner.style().polish(self.banner)
         self.banner.setText(("⚠ " if failed else "✔ ") + msg)
         self.banner.setVisible(True)
+        QAccessible.updateAccessibility(QAccessibleEvent(self.banner, QAccessible.Event.Alert))   # báo kết quả cho trình đọc màn hình
+        self._out_dir = self._run_out or (outputs[0][0].parent if outputs else None)
+        self.btn_open_out.setVisible(bool(outputs) and self._out_dir is not None)
         self.btn_log.setVisible(failed)
         self.progress.setValue(100)
         self._set_running(False)
 
     def _set_running(self, on: bool):
-        self.btn_stop.setEnabled(on)
         self.models.setEnabled(not on)
         self.busy_changed.emit(on)
 
@@ -625,6 +651,8 @@ class OcrPage(QWidget):
     # ---------- nhớ tùy chọn ----------
 
     _SAVED = ("txt", "marker", "ruby", "cell_reocr", "use_cache", "upscale", "crop", "pages", "out")
+    _out_dir: Path | None = None   # thư mục kết quả của lần chạy gần nhất (nút "Mở thư mục kết quả")
+    _run_out: Path | None = None   # thư mục lưu chốt khi bấm chạy
 
     _COMBOS = ("engine", "device", "merge", "kana", "lang", "dpi")   # lưu theo khóa, không theo nhãn
 
@@ -671,7 +699,7 @@ class MainWindow(QMainWindow):
         # thanh bên: logo, bốn mục, trạng thái hệ thống
         side = QWidget()
         side.setObjectName("sidebar")
-        side.setFixedWidth(228)
+        side.setFixedWidth(SIDEBAR_W)
         self.side = side
         sl = QVBoxLayout(side)
         sl.setContentsMargins(16, 18, 16, 16)
@@ -727,6 +755,12 @@ class MainWindow(QMainWindow):
         self.run_btn.setObjectName("runBtn")
         self.run_btn.setToolTip("Bắt đầu xử lý (Ctrl+R hoặc F5)")
         self.run_btn.setAccessibleName("Bắt đầu xử lý")
+        # Dừng nằm cạnh nút chạy trên header (chỉ mục OCR), bật khi đang chạy
+        self.stop_btn = QPushButton("■  Dừng")
+        self.stop_btn.setObjectName("dangerBtn")
+        self.stop_btn.setToolTip("Dừng sau trang hiện tại (Esc)")
+        self.stop_btn.setAccessibleName("Dừng xử lý")
+        self.stop_btn.setEnabled(False)
         head = QHBoxLayout()
         head.addWidget(self.page_title)
         self.file_badge = QLabel("")
@@ -734,6 +768,7 @@ class MainWindow(QMainWindow):
         self.file_badge.setVisible(False)   # hiện khi có file (xem _refresh_sys_status)
         head.addWidget(self.file_badge)
         head.addStretch(1)
+        head.addWidget(self.stop_btn)
         head.addWidget(self.run_btn)
         self.stack = QStackedWidget()
         self.ocr = OcrPage(self.settings)
@@ -767,7 +802,8 @@ class MainWindow(QMainWindow):
         add_soft_shadows(central)   # bóng mềm cho các thẻ sau khi đã dựng xong
 
         self.run_btn.clicked.connect(self.ocr.start)
-        self.ocr.busy_changed.connect(lambda on: self.run_btn.setEnabled(not on))
+        self.stop_btn.clicked.connect(self._stop_here)
+        self.ocr.busy_changed.connect(self._on_ocr_busy)
         self.nav.currentRowChanged.connect(self._show_section)
         self.nav.setCurrentRow(0)
         self._status_timer = QTimer(self)
@@ -799,6 +835,7 @@ class MainWindow(QMainWindow):
         if self.ocr.busy() and self.stack.currentIndex() == 0:
             if QMessageBox.question(self, "Dừng OCR", "Dừng sau trang hiện tại? Các trang đã đọc vẫn được lưu.") == QMessageBox.StandardButton.Yes:
                 self.ocr.request_stop()
+                self.stop_btn.setEnabled(False)   # đã yêu cầu dừng; bật lại khi OCR kết thúc (busy_changed)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -807,20 +844,28 @@ class MainWindow(QMainWindow):
         if compact == self._compact:
             return
         self._compact = compact
-        self.side.setFixedWidth(96 if compact else 228)
-        self.nav.setStyleSheet("QListWidget#nav::item { padding: 12px 2px; margin: 2px 2px; border-left: none; }" if compact else "")
+        self.side.setFixedWidth(SIDEBAR_W_COMPACT if compact else SIDEBAR_W)
+        self.nav.setProperty("compact", compact)   # kiểu thu gọn nằm trong gui_style (QListWidget#nav[compact="true"])
+        self.nav.style().unpolish(self.nav)
+        self.nav.style().polish(self.nav)
         align = Qt.AlignmentFlag.AlignCenter if compact else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         self.side_foot.setVisible(not compact)
         for w in self.brand_texts:
             w.setVisible(not compact)
         for i in range(self.nav.count()):
             self.nav.item(i).setText(SECTIONS_SHORT[i] if compact else SECTIONS[i])
+            self.nav.item(i).setSizeHint(QSize(0, 58 if compact else 46))   # nhãn thu gọn hai dòng cần cao hơn
             self.nav.item(i).setTextAlignment(align)
 
     def _show_section(self, row: int):
         self.stack.setCurrentIndex(row)
         self.page_title.setText(SECTION_TITLES[row])
         self.run_btn.setVisible(row == 0)
+        self.stop_btn.setVisible(row == 0)
+
+    def _on_ocr_busy(self, on: bool):
+        self.run_btn.setEnabled(not on)
+        self.stop_btn.setEnabled(on)
 
     def _refresh_sys_status(self):
         busy = bool(self._busy_pages())
