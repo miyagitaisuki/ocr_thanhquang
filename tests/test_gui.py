@@ -100,18 +100,18 @@ def test_worker_xu_ly_tung_file_va_ghi_loi_rieng(window, monkeypatch, tmp_path):
 
 
 def test_responsive_cua_so_hep(window):
-    from PySide6.QtWidgets import QBoxLayout
+    from PySide6.QtCore import Qt
     window.show()
     window.resize(1180, 800)
     app.processEvents()
     app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
     assert window.side.width() == 228
-    assert window.ocr.root_layout.direction() == QBoxLayout.Direction.LeftToRight
+    assert window.ocr.splitter.orientation() == Qt.Orientation.Horizontal
     window.resize(800, 700)
     app.processEvents()
     app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng
     assert window.side.width() < 120 and window.nav.item(1).text() == "Tách\nPDF"
-    assert window.ocr.root_layout.direction() == QBoxLayout.Direction.TopToBottom
+    assert window.ocr.splitter.orientation() == Qt.Orientation.Vertical
     window.resize(1180, 800)
     app.processEvents()
     app.processEvents()   # bố cục trong QScrollArea cần thêm một vòng

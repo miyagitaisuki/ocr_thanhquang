@@ -61,13 +61,13 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 ## Trạng thái hiện tại
 - Nhánh làm việc: `claude/tender-mayer-745l94`.
 - Giao diện: chỉ còn PySide6 (`gui.py`, `run_gui.py`). Tkinter đã bỏ hoàn toàn (`gui.py`, `widgets.py`, `textview.py` cũ đã xóa; không còn `tkinterdnd2`). Exe chính `OCR-Nhat.exe` đóng gói PySide6; bộ cài `OCR-Nhat-setup.exe` giữ tên cũ.
-- Mục OCR: danh sách file (kéo-thả, Ctrl+O), xem trước và chọn vùng đọc (`--crop`, nhiều vùng cách bằng `;`, DPI 150/200/300); "Loại tài liệu" đặt sẵn độ phóng to và đọc bảng (Sổ tay/sách, Ảnh chụp điện thoại, Chỉ văn bản; không lưu, đặt lại mỗi lần mở); cấu hình công cụ/ngôn ngữ/phần cứng; tùy chọn nâng cao thu gọn; tiến trình, Dừng; kết quả với xem trước có khung dòng, Tìm nhanh; khối mô hình AI (tải PaddleOCR/VietOCR/Chandra, cài gói GPU, chạy nền). Ngưỡng nghi ngờ có chữ gợi ý hiển thị sẵn (không chỉ tooltip).
+- Mục OCR: danh sách file (kéo-thả, Ctrl+O), xem trước và chọn vùng đọc (`--crop`, nhiều vùng cách bằng `;`, DPI 150/200/300); "Loại tài liệu" đặt sẵn độ phóng to và đọc bảng (Sổ tay/sách, Ảnh chụp điện thoại, Chỉ văn bản; không lưu, đặt lại mỗi lần mở); cấu hình công cụ/ngôn ngữ/phần cứng; "Ghi kèm .txt" ở cấu hình; "Tùy chọn nâng cao" thu gọn (ghi số trang, ruby, cách ghép trang, trang); tiến trình, Dừng; kết quả với xem trước có khung dòng, Tìm nhanh; khối mô hình AI (tải PaddleOCR/VietOCR/Chandra, cài gói GPU, chạy nền). Ngưỡng nghi ngờ có chữ gợi ý hiển thị sẵn (không chỉ tooltip).
 - Ba mục PDF (Tách PDF, Ghép PDF, Công cụ khác) đầy đủ; xem chi tiết tính năng bên dưới.
 - Lưu tùy chọn trong `settings.json`: `qt_ocr`, `qt_pdf`, `qt_view`. Ghi khi đóng và khi bấm chạy.
 - Menu Hiển thị: giao diện sáng/tối, cỡ chữ (Nhỏ/Vừa/Lớn/Rất lớn), độ trong suốt 90–100% (dưới 90% chữ khó đọc nên không cho chọn). Áp dụng ngay, không cần khởi động lại.
 - Phím tắt: Ctrl+O (thêm file), Ctrl+R/F5 (chạy), Esc (dừng, có hỏi), Ctrl+1..4 (đổi mục), Delete (bỏ mục). Đóng cửa sổ khi đang chạy: hỏi, dừng, chờ luồng nền xong.
 - Bố cục mục OCR: nút **Dừng** nằm trên header cạnh "Bắt đầu xử lý" (bật khi đang chạy); khối "Tiến trình" ở đầu cột phải, có nút "Mở thư mục kết quả" khi xong. Gợi ý kéo thả luôn hiện (rút gọn khi đã có file). Tên file nằm trên mục danh sách (trình đọc màn hình đọc được).
-- Responsive: cửa sổ < 980 px thu gọn thanh bên (nhãn hai dòng: "Tách/PDF", "Ghép/PDF", "Công cụ/khác") và xếp cột cấu hình xuống dưới danh sách file; tối thiểu 760×560. Cột cấu hình co giãn 300–420 px. Hằng số: `SIDEBAR_W`, `SIDEBAR_W_COMPACT`, `RIGHT_MIN_W`, `RIGHT_MAX_W` trong `gui.py`.
+- Responsive: cửa sổ < 980 px thu gọn thanh bên (nhãn hai dòng: "Tách/PDF", "Ghép/PDF", "Công cụ/khác") và xếp cột cấu hình xuống dưới danh sách file; tối thiểu 760×560. Hai cột ngăn bằng `QSplitter` (kéo được, cột cấu hình 300–560 px); cửa sổ hẹp đổi sang xếp dọc. Hằng số: `SIDEBAR_W`, `SIDEBAR_W_COMPACT`, `RIGHT_MIN_W`, `RIGHT_MAX_W` trong `gui.py`.
 - Trợ năng: mọi ô nhập có `accessibleName` (test `tests/test_gui.py::test_o_nhap_co_ten_truy_cap`); màu đạt WCAG AA (`tests/test_gui_style.py`); dòng nghi ngờ có ⚠ và nét đứt, không chỉ dựa vào màu. Khi OCR xong hoặc lỗi, banner được phát sự kiện Alert (`QAccessibleEvent`) cho trình đọc màn hình; trạng thái đang chạy không phát liên tục.
 - Kiểm đã chạy: `pytest` 247 đạt, 2 bỏ qua (chưa có model); `python run_gui.py --selftest` đạt (Linux, offscreen, cần libEGL/libxkbcommon). Chưa kiểm trên Windows thật và chưa thử NVDA/Narrator.
 - Nhật ký lỗi: `%LOCALAPPDATA%\OCR-Nhat\logs\app.log`. Lỗi "pip thoát với mã 2" khi cài gói GPU: đầu ra pip ghi vào `%LOCALAPPDATA%\OCR-Nhat\gpu\install.log`.
@@ -80,7 +80,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - Đầu ra: mặc định ghi cạnh file gốc (CLI `-o` / ô "Thư mục lưu" để trống = thư mục gốc). Tên file: `OCR_<tên không dấu>_<trang đầu>_<trang cuối>.docx/.txt` (`pipeline.output_stem`, `ascii_name`). Cache `.cache` nằm trong thư mục đầu ra.
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 - Chưa kiểm trên Windows thật: giao diện PySide6, exe và bộ cài sau khi bỏ Tkinter (build chỉ chạy được trên GitHub Actions). Chưa thử trình đọc màn hình thật.
-- Chưa làm: GPU chạy thật trong exe (exe dùng onnxruntime CPU); tùy chọn Loại tài liệu chưa lưu; QSplitter cho cột cấu hình; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
+- Chưa làm: GPU chạy thật trong exe (exe dùng onnxruntime CPU); tùy chọn Loại tài liệu chưa lưu; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
 
 ## Lỗi và giới hạn đã biết
 - PaddleOCR/VietOCR: engine có thể bỏ khoảng trắng trong câu tiếng Anh (ví dụ "agreementis"); chữ dọc chưa hỗ trợ; dò dòng dùng cạnh dài tối đa 960 px nên ảnh rất lớn có thể mất chữ nhỏ.

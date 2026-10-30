@@ -12,8 +12,8 @@ from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
-    QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QScrollArea, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from . import gpu, gpupack, pipeline
@@ -31,7 +31,7 @@ SECTIONS = ("OCR", "Tách PDF", "Ghép PDF", "Công cụ khác")
 SECTIONS_SHORT = ("OCR", "Tách\nPDF", "Ghép\nPDF", "Công cụ\nkhác")   # thanh bên thu gọn khi cửa sổ hẹp (hai dòng)
 NARROW_WINDOW = 980    # dưới mức này (px): thanh bên chỉ còn nhãn ngắn và cột cấu hình xuống dưới danh sách file
 SIDEBAR_W, SIDEBAR_W_COMPACT = 228, 96          # chiều rộng thanh bên (px), bình thường và thu gọn
-RIGHT_MIN_W, RIGHT_MAX_W = 300, 420             # cột cấu hình co giãn (px)
+RIGHT_MIN_W, RIGHT_MAX_W = 300, 560             # cột cấu hình: kéo được trong khoảng này (px)
 DROP_HINT = "Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file” (Ctrl+O)"
 DROP_HINT_SHORT = "Kéo thả thêm file vào đây · Ctrl+O để chọn file"
 ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("paddle", "ocr_vi")
@@ -167,9 +167,12 @@ class OcrPage(QWidget):
     # ---------- bố cục ----------
 
     def _build(self):
-        root = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)   # đổi chiều khi cửa sổ hẹp (MainWindow.resizeEvent)
-        root.setSpacing(16)
-        self.root_layout = root
+        root = QVBoxLayout(self)
+        # hai cột ngăn bằng tay kéo được; cửa sổ hẹp thì đổi thành xếp dọc (set_narrow)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(12)
+        root.addWidget(self.splitter)
 
         # cột trái: danh sách file, xem trước vùng chọn, kết quả
         left = QVBoxLayout()
@@ -233,7 +236,10 @@ class OcrPage(QWidget):
         left.addWidget(self.preview_box, 1)
         self.results = ResultsBox()
         left.addWidget(self.results)
-        root.addLayout(left, 1)
+        left_col = QWidget()
+        left_col.setLayout(left)
+        self.splitter.addWidget(left_col)
+        self.splitter.setStretchFactor(0, 1)   # cột trái giãn theo cửa sổ, cột cấu hình giữ bề rộng khi kéo
 
         # cột phải: cấu hình, tùy chọn, tiến trình, mô hình AI
         right = QVBoxLayout()
@@ -268,12 +274,18 @@ class OcrPage(QWidget):
         cg.addLayout(out_row)
         right.addWidget(cfg)
 
+        # cấu hình cơ bản: thêm file .txt vào khối cấu hình (cg); phần còn lại thu gọn trong "Tùy chọn nâng cao"
         opt = QGroupBox("Tùy chọn nâng cao")
-        og = QVBoxLayout(opt)
+        opt.setCheckable(True)
+        opt.setChecked(False)
+        opt_body = QWidget()
+        og = QVBoxLayout(opt_body)
+        QVBoxLayout(opt).addWidget(opt_body)
         self.txt = QCheckBox("Ghi kèm file .txt")
+        cg.addWidget(self.txt)
         self.marker = QCheckBox("Ghi số trang gốc 【原本 p.N】")
         self.ruby = QCheckBox("Giữ chữ phiên âm kana trên chữ Hán (ruby)")
-        for c in (self.txt, self.marker, self.ruby):
+        for c in (self.marker, self.ruby):
             og.addWidget(c)
         self.merge = QComboBox()
         for key, label in L.MERGE_LABELS.items():
@@ -324,6 +336,8 @@ class OcrPage(QWidget):
         self.advanced = adv
         adv_body.setVisible(False)
         adv.toggled.connect(adv_body.setVisible)
+        opt_body.setVisible(False)
+        opt.toggled.connect(opt_body.setVisible)
         right.addWidget(opt)
 
         run_box = QGroupBox("Tiến trình")
@@ -355,10 +369,11 @@ class OcrPage(QWidget):
         right.addStretch(1)
         right_col = QWidget()
         right_col.setLayout(right)
-        right_col.setMinimumWidth(RIGHT_MIN_W)   # co giãn; cửa sổ hẹp thì xuống dưới (MainWindow.resizeEvent)
+        right_col.setMinimumWidth(RIGHT_MIN_W)   # cửa sổ hẹp thì xuống dưới (MainWindow.resizeEvent)
         right_col.setMaximumWidth(RIGHT_MAX_W)
         self.right_col = right_col
-        root.addWidget(right_col)
+        self.splitter.addWidget(right_col)
+        self.splitter.setStretchFactor(1, 0)
         self.btn_log.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(L.LOG_FILE.parent))))
 
         self.btn_add.clicked.connect(self.add_files)
@@ -383,9 +398,9 @@ class OcrPage(QWidget):
     def set_narrow(self, narrow: bool):
         """Cửa sổ hẹp: cột cấu hình xuống dưới danh sách file. Quyết định theo cửa sổ vì bề rộng tối thiểu của trang
         (khi xếp ngang) lớn hơn vùng nhìn nên không đo được từ chính trang."""
-        wanted = QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
-        if self.root_layout.direction() != wanted:
-            self.root_layout.setDirection(wanted)
+        wanted = Qt.Orientation.Vertical if narrow else Qt.Orientation.Horizontal
+        if self.splitter.orientation() != wanted:
+            self.splitter.setOrientation(wanted)
             self.right_col.setMaximumWidth(16777215 if narrow else RIGHT_MAX_W)
 
     def _apply_preset(self, _i: int = 0):
