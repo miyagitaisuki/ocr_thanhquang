@@ -480,7 +480,9 @@ def _cluster(vals: list[float], gap: float, min_size: int = 2) -> list[float]:
 def _axis(vals: list[float], gap: float) -> list[float]:
     """Các đường lưới trên một trục: mốc là cụm có ≥2 thành viên; khoảng cách đều theo bước trung vị.
     Cột/hàng bị thiếu (không có romaji nào) vẫn được sinh ra theo bước đều."""
-    anchors = _cluster(vals, gap, min_size=2)
+    anchors = _cluster(vals, gap, min_size=3)   # mỗi cột/hàng có 4–5 romaji; cặp nhiễu (ví dụ 'Ex', 'bl') không đủ
+    if len(anchors) < 2:
+        anchors = _cluster(vals, gap, min_size=2)
     if len(anchors) < 2:
         return anchors
     step = float(np.median(np.diff(anchors)))

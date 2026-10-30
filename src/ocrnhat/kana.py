@@ -19,11 +19,108 @@ def available() -> bool:
     return shutil.which("tesseract") is not None
 
 
+def _ink_mask(cell_rgb: np.ndarray) -> np.ndarray:
+    """Mặt nạ mực của chữ kana trong ô: nửa trái, nét xám không màu, bỏ đường kẻ chạm mép."""
+    h, w = cell_rgb.shape[:2]
+    crop = np.ascontiguousarray(cell_rgb[8:h - 8, 14:max(15, int(0.6 * w))])
+    gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+    rgb = crop.astype(np.int16)
+    ink = (gray < _THRESH) & ((rgb.max(axis=2) - rgb.min(axis=2)) < _CHROMA)
+    ink[:, ink.mean(axis=0) > 0.6] = False
+    ink[ink.mean(axis=1) > 0.6, :] = False
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), connectivity=8)
+    h_, w_ = ink.shape
+    for i in range(1, n):
+        x, y, cw, ch, _a = stats[i]
+        if x == 0 or y == 0 or x + cw >= w_ or y + ch >= h_ or cw <= 3 or ch <= 3:
+            ink[lab == i] = False   # chạm mép (đường kẻ) hoặc vạch mảnh: không phải nét chữ
+    return ink
+
+
+def _norm(mask: np.ndarray, size: int = 40) -> np.ndarray:
+    """Cắt theo hộp bao nét rồi đưa về ô vuông cố định (giữ tỷ lệ), để so khớp không phụ thuộc cỡ chữ."""
+    ys, xs = np.nonzero(mask)
+    if len(xs) == 0:
+        return np.zeros((size, size), np.float32)
+    box = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1].astype(np.uint8) * 255
+    h, w = box.shape
+    scale = (size - 4) / max(h, w)
+    small = cv2.resize(box, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+    out = np.zeros((size, size), np.uint8)
+    y0 = (size - small.shape[0]) // 2; x0 = (size - small.shape[1]) // 2
+    out[y0:y0 + small.shape[0], x0:x0 + small.shape[1]] = small
+    return (out > 127).astype(np.float32)
+
+
+_FONT_PATHS = ["/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf", "/usr/share/fonts/truetype/ipafont-gothic/ipag.ttf"]
+_TEMPLATES: dict[str, np.ndarray] | None = None
+_KANA_SET = [chr(c) for c in range(0x3041, 0x3097)] + [chr(c) for c in range(0x30A1, 0x30FB)]
+
+
+def font_available() -> bool:
+    return any(Path(f).is_file() for f in _FONT_PATHS)
+
+
+def _templates() -> dict[str, np.ndarray]:
+    global _TEMPLATES
+    if _TEMPLATES is None:
+        from PIL import ImageDraw, ImageFont
+        font = ImageFont.truetype(next(f for f in _FONT_PATHS if Path(f).is_file()), 96)
+        tpl = {}
+        for ch in _KANA_SET:
+            im = Image.new("L", (160, 160), 0)
+            ImageDraw.Draw(im).text((30, 20), ch, font=font, fill=255)
+            mask = np.array(im) > 127
+            tpl[ch] = _norm(mask)
+        _TEMPLATES = tpl
+    return _TEMPLATES
+
+
+def read_cell_template(cell_rgb: np.ndarray, min_corr: float = 0.6, min_margin: float = 0.02,
+                       charset: str = "hiragana") -> str:
+    """Đọc một ô kana bằng tương quan mềm với mẫu IPAGothic (làm mờ để chịu được khác biệt font).
+    Chỉ nhận khi tương quan đủ cao và tách biệt rõ với ký tự xếp thứ hai."""
+    mask = _ink_mask(cell_rgb)
+    if mask.sum() < 20:
+        return ""
+    q = _soft(_norm(mask))
+    q = q - q.mean()
+    qn = np.sqrt((q * q).sum()) + 1e-9
+    scores = []
+    for ch, t in _soft_templates().items():
+        if charset == "hiragana" and (not ("ぁ" <= ch <= "ゖ") or ch in _SMALL_KANA):
+            continue   # bảng chữ hiragana: không đưa katakana và kana nhỏ (ゕ…) vào so khớp
+        b = t - t.mean()
+        scores.append(((q * b).sum() / (qn * (np.sqrt((b * b).sum()) + 1e-9)), ch))
+    scores.sort(reverse=True)
+    (best, ch), (second, _) = scores[0], scores[1]
+    if best < min_corr or best - second < min_margin:
+        return ""
+    return _SMALL_TO_FULL.get(ch, ch)
+
+
+_SMALL_KANA = set("ぁぃぅぇぉゃゅょゎゕゖっ")
+
+
+def _soft(mask: np.ndarray, sigma: float = 1.5) -> np.ndarray:
+    return cv2.GaussianBlur(mask.astype(np.float32), (0, 0), sigma)
+
+
+_SOFT_TPL: dict[str, np.ndarray] | None = None
+
+
+def _soft_templates() -> dict[str, np.ndarray]:
+    global _SOFT_TPL
+    if _SOFT_TPL is None:
+        _SOFT_TPL = {ch: _soft(t) for ch, t in _templates().items()}
+    return _SOFT_TPL
+
+
 def read_cell(cell_rgb: np.ndarray) -> str:
     """Trả về đúng một ký tự kana, hoặc chuỗi rỗng nếu không chắc."""
     h, w = cell_rgb.shape[:2]
     # chữ kana nằm ở nửa trái ô, phía trên giữa; romaji hồng nằm bên phải
-    crop = cell_rgb[8:h - 8, 14:max(15, int(0.5 * w))]
+    crop = cell_rgb[8:h - 8, 14:max(15, int(0.6 * w))]
     if crop.size == 0:
         return ""
     rgb = np.ascontiguousarray(crop).astype(np.int16)

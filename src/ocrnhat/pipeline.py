@@ -128,7 +128,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
                  workers: int | None = None, cell_reocr: bool = True,
                  crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
                  suspect: bool = False, suspect_threshold: float = 0.0005,
-                 kana_ocr: bool = False) -> dict:
+                 kana_reader: str = "") -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -149,14 +149,20 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
     from . import kana as _kana
-    kana_reader = None   # thử nghiệm, cần tesseract + jpn; mỗi ô được ghi lại để xuất file rà soát
-    kana_log: list[tuple[int, np.ndarray, str]] = []
+    kana_log: list[tuple[int, np.ndarray, str]] = []   # thử nghiệm: mỗi ô kana được ghi lại để rà soát
     kana_pno = [0]
-    if kana_ocr and _kana.available():
-        def kana_reader(crop):
-            text = _kana.read_cell(crop)
+    read_one = None
+    if kana_reader == "tesseract" and _kana.available():
+        read_one = _kana.read_cell
+    elif kana_reader == "template" and _kana.font_available():
+        read_one = _kana.read_cell_template
+    if read_one is not None:
+        def kana_fn(crop):
+            text = read_one(crop)
             kana_log.append((kana_pno[0], crop.copy(), text))
             return text
+    else:
+        kana_fn = None
 
     def reocr(crop):
         """Nhận dạng lại một ô bảng (engine của luồng gọi, lấy lười)."""
@@ -195,7 +201,7 @@ def process_file(path: Path, out_dir: Path, dpi: int = 200, pages: list[int] | N
             pno, page, img = fut.result()
             submit_next()
             kana_pno[0] = pno
-            items = build_page(page, img, reocr if cell_reocr else None, kana_reader)
+            items = build_page(page, img, reocr if cell_reocr else None, kana_fn)
             if suspect:
                 suspect_rows.extend((pno, row) for row in _suspect_rows(items, suspect_threshold))
             if review:
