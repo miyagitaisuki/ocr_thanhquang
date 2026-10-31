@@ -87,7 +87,7 @@ def read_options(get: Callable[[str, Any], Any], dev_map: Mapping[str, str] | No
         write_txt=get("txt", True), page_marker=get("marker", True),
         lang=key_for(LANG_LABELS, get("lang", LANG_LABELS["ja"]), "ja"),
         device=key_for(dev_map, get("dev", dev_map["auto"]), "auto"),
-        ruby=get("ruby", False), review=get("review", False), conf_threshold=conf,
+        ruby=get("ruby", False), markdown=get("markdown", False), md_conf=conf, review=get("review", False), conf_threshold=conf,
         engine=engine_key(get("engine", ENGINE_LABELS["auto"])), crop=crop, upscale=upscale,
         merge_pages=get("merge", MERGE_LABELS[True]) == MERGE_LABELS[True],
         cell_reocr=get("cell_reocr", True), use_cache=get("use_cache", True), vi_fix=get("vi_fix", True),
