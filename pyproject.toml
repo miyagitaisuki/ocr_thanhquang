@@ -11,6 +11,8 @@ test = ["pytest"]
 qt = ["PySide6-Essentials>=6.7"]
 # dò chữ nghi ngờ (--suspect), thử nghiệm; không đóng gói vào exe
 suspect = ["torch", "transformers", "fugashi", "unidic-lite"]
+# engine yomitoku (--engine yomitoku), tùy chọn; giấy phép CC BY-NC-SA 4.0, không đóng gói vào exe
+yomitoku = ["yomitoku==0.15.1"]
 
 [project.scripts]
 ocrnhat = "ocrnhat.cli:main"

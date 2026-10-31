@@ -5,7 +5,7 @@ from .base import OcrEngine
 
 DEFAULT = "auto"      # tiếng Nhật -> ndlocr (GPU được dùng qua --device, không đổi engine)
 FALLBACK = "ndlocr"
-_NAMES = ("ndlocr", "paddle", "ocr_vi")   # paddle: tiếng Anh + Trung; ocr_vi: tiếng Việt
+_NAMES = ("ndlocr", "paddle", "ocr_vi", "yomitoku")   # paddle: tiếng Anh + Trung; ocr_vi: tiếng Việt; yomitoku: tiếng Nhật, tùy chọn (CC BY-NC-SA)
 
 
 def available() -> list[str]:
@@ -23,6 +23,9 @@ def _cls(name: str):
     if name == "ocr_vi":
         from .viet import VietnameseEngine
         return VietnameseEngine
+    if name == "yomitoku":
+        from .yomitoku import YomitokuEngine
+        return YomitokuEngine
     raise KeyError(name)
 
 
@@ -39,7 +42,7 @@ def resolve(name: str = DEFAULT) -> tuple[str, str]:
 
 
 # engine nào dùng được cho ngôn ngữ nào (lang của --lang); auto chọn engine mặc định của ngôn ngữ
-LANG_ENGINES = {"ja": ("ndlocr",), "en": ("paddle",), "zh": ("paddle",), "vi": ("ocr_vi",)}
+LANG_ENGINES = {"ja": ("ndlocr", "yomitoku"), "en": ("paddle",), "zh": ("paddle",), "vi": ("ocr_vi",)}
 DEFAULT_FOR_LANG = {"en": "paddle", "zh": "paddle", "vi": "ocr_vi"}
 
 
