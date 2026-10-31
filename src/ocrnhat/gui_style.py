@@ -63,10 +63,21 @@ QListWidget#nav[compact="true"]::item:selected { border-left: none; }
 QLabel#fileName { font-weight: 600; }
 QGroupBox { background: @card@; border: 1px solid @border@; border-radius: 16px; margin-top: 16px; padding: 14px 12px 12px 12px; font-weight: bold; }
 QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 14px; padding: 0 4px; }
+QGroupBox[collapsible="true"] { margin-top: 24px; }   /* tiêu đề có ô tích: nằm hẳn trên viền, không đè lên khung */
+QGroupBox::indicator { width: 16px; height: 16px; margin: 0 6px 0 0; border: 1px solid @ctl_border@; border-radius: 4px; background: @field@; }
+QGroupBox::indicator:checked { background: @accent@; border-color: @accent@; }
+QGroupBox::indicator:focus { border: 2px solid @accent@; }
 QLineEdit, QComboBox, QSpinBox { background: @field@; border: 1px solid @ctl_border@; border-radius: 12px; padding: 6px 10px; min-height: 22px; }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border: 2px solid @accent@; padding: 5px 9px; }
 QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled { border-color: @border@; color: @off_fg@; }
 QComboBox::drop-down { border: none; width: 22px; }
+QSpinBox::up-button, QSpinBox::down-button { subcontrol-origin: border; width: 20px; border: none; background: transparent; }
+QSpinBox::up-button { subcontrol-position: top right; border-top-right-radius: 12px; }
+QSpinBox::down-button { subcontrol-position: bottom right; border-bottom-right-radius: 12px; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: @hover@; }
+QSpinBox::up-arrow, QSpinBox::down-arrow { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; }
+QSpinBox::up-arrow { border-bottom: 5px solid @text@; }
+QSpinBox::down-arrow { border-top: 5px solid @text@; }
 QComboBox QAbstractItemView { background: @field@; border: 1px solid @ctl_border@; selection-background-color: @accent_soft@; selection-color: @accent_dark@; }
 QPushButton { background: @card@; border: 1px solid @ctl_border@; border-radius: 12px; padding: 6px 12px; }
 QPushButton:hover { background: @hover@; }

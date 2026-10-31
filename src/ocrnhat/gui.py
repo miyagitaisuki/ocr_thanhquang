@@ -277,7 +277,7 @@ class OcrPage(QWidget):
         for key, label in L.dev_labels(gpu.ort_cuda_available()).items():
             self.device.addItem(label, key)
         self.out = QLineEdit()
-        self.out.setPlaceholderText("Để trống = lưu cạnh file gốc")
+        self.out.setPlaceholderText("Trống = cạnh file gốc")
         self.btn_out = QPushButton("Chọn…")
         out_row = QHBoxLayout()
         out_row.addWidget(self.out, 1)
@@ -292,6 +292,7 @@ class OcrPage(QWidget):
         # cấu hình cơ bản: thêm file .txt vào khối cấu hình (cg); phần còn lại thu gọn trong "Tùy chọn nâng cao"
         opt = QGroupBox("Tùy chọn nâng cao")
         opt.setCheckable(True)
+        opt.setProperty("collapsible", True)
         opt.setChecked(False)
         opt_body = QWidget()
         og = QVBoxLayout(opt_body)
@@ -317,6 +318,7 @@ class OcrPage(QWidget):
         # chi tiết kỹ thuật: thu gọn, ẩn hẳn khi bỏ chọn
         adv = QGroupBox("Chi tiết kỹ thuật")
         adv.setCheckable(True)
+        adv.setProperty("collapsible", True)
         adv.setChecked(False)
         adv_body = QWidget()
         agrid = QVBoxLayout(adv_body)

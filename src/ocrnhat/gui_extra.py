@@ -474,6 +474,7 @@ class ModelBox(QGroupBox):
     def __init__(self, chandra_available: bool):
         super().__init__("Mô hình AI (tùy chọn)")
         self.setCheckable(True)
+        self.setProperty("collapsible", True)
         self.setChecked(False)
         self.worker: ModelWorker | None = None
         from .engines import models as mdl
