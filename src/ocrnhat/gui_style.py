@@ -101,6 +101,14 @@ QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; }
 QTableWidget { background: @field@; border: 1px solid @border@; border-radius: 12px; gridline-color: @border@; }
 QHeaderView::section { background: @card@; color: @muted@; border: none; border-bottom: 1px solid @border@; padding: 4px 6px; }
 QTextEdit { background: @field@; border: 1px solid @border@; border-radius: 12px; }
+QMenuBar { background: @card@; color: @text@; }
+QMenuBar::item { background: transparent; padding: 4px 10px; }
+QMenuBar::item:selected { background: @hover@; color: @text@; }
+QMenu { background: @card@; color: @text@; border: 1px solid @border@; padding: 4px; }
+QMenu::item { padding: 6px 24px 6px 16px; border-radius: 8px; }
+QMenu::item:selected { background: @accent_soft@; color: @accent_dark@; }
+QMenu::item:disabled { color: @off_fg@; }
+QMenu::separator { height: 1px; background: @border@; margin: 4px 8px; }
 """
 
 

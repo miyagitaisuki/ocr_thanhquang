@@ -103,6 +103,7 @@ class PdfFileList(QListWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("files")   # cùng kiểu khung với danh sách OCR (QListWidget#files trong gui_style)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)

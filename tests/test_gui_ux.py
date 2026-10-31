@@ -18,7 +18,7 @@ except ImportError:
 from PySide6.QtGui import QPalette  # noqa: E402
 
 from ocrnhat import gui, ui_logic as L  # noqa: E402
-from ocrnhat.gui_extra import _dark_palette  # noqa: E402
+from ocrnhat.gui_extra import _palette  # noqa: E402
 from ocrnhat.gui_style import PALETTES, contrast  # noqa: E402
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "ocrnhat"
@@ -76,9 +76,11 @@ def test_chu_phu_dat_tuong_phan_4_5_tren_moi_nen():
         assert contrast(t["off_fg"], t["off_bg"]) >= 4.5, theme
 
 
-def test_palette_toi_lay_tu_token_chung():
-    t = PALETTES["tối"]
-    p = _dark_palette()
+@pytest.mark.parametrize("theme", ["sáng", "tối"])
+def test_palette_lay_tu_token_chung_khong_phu_thuoc_he_dieu_hanh(theme):
+    # palette Qt phải khớp QSS của cùng giao diện, không lấy từ chế độ tối/sáng của Windows
+    t = PALETTES[theme]
+    p = _palette(theme)
     assert p.color(QPalette.ColorRole.Window).name() == t["page"].lower()
     assert p.color(QPalette.ColorRole.Base).name() == t["field"].lower()
     assert p.color(QPalette.ColorRole.Text).name() == t["text"].lower()
@@ -90,7 +92,7 @@ def test_khong_con_mau_cung_trong_mau_giao_dien():
     for name in ("gui.py", "gui_pdf.py"):
         assert not hex_re.search((SRC / name).read_text(encoding="utf-8")), name
     text = (SRC / "gui_extra.py").read_text(encoding="utf-8")
-    start = text.index("def _dark_palette")
+    start = text.index("def _palette")
     end = text.index("def apply_view")
     assert not hex_re.search(text[start:end])
     assert "QMessageBox.information" not in (SRC / "gui_pdf.py").read_text(encoding="utf-8")
