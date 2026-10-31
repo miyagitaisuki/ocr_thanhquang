@@ -145,9 +145,9 @@ def ascii_name(name: str) -> str:
 
 
 def output_stem(path: Path, pages: list[int] | None, total: int) -> str:
-    """Tiền tố file kết quả: OCR_<tên không dấu>_<trang đầu>_<trang cuối>."""
+    """Tiền tố file kết quả: ocr_<tên không dấu>_<trang đầu>_<trang cuối>."""
     nums = sorted(pages) if pages else [1, total]
-    return f"OCR_{ascii_name(Path(path).stem)}_{nums[0]}_{nums[-1]}"
+    return f"ocr_{ascii_name(Path(path).stem)}_{nums[0]}_{nums[-1]}"
 
 
 def default_out_dir(path: Path) -> Path:

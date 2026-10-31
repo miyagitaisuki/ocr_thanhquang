@@ -42,7 +42,7 @@ def test_label():
 def test_extract_single_file_keeps_order_and_dedupes(tmp_path):
     src = _make_pdf(tmp_path / "doc.pdf", 6)
     out = pe.extract_pages(src, "5-6, 2, 5", tmp_path / "out")
-    assert [p.name for p in out] == ["doc_trang_5-6_2.pdf"]
+    assert [p.name for p in out] == ["extract_doc_trang_5-6_2.pdf"]
     assert len(PdfReader(str(out[0])).pages) == 3
 
 
@@ -50,7 +50,7 @@ def test_extract_separate_files_per_group(tmp_path):
     src = _make_pdf(tmp_path / "doc.pdf", 6)
     opts = pe.ExtractOptions(separate=True)
     out = pe.extract_pages(src, "1, 3-4, 6-", tmp_path / "out", opts)
-    assert [p.name for p in out] == ["doc_trang_1.pdf", "doc_trang_3-4.pdf", "doc_trang_6.pdf"]
+    assert [p.name for p in out] == ["extract_doc_trang_1.pdf", "extract_doc_trang_3-4.pdf", "extract_doc_trang_6.pdf"]
     assert [len(PdfReader(str(p)).pages) for p in out] == [1, 2, 1]
 
 
@@ -59,11 +59,11 @@ def test_no_overwrite_adds_suffix_and_overwrite_replaces(tmp_path):
     out_dir = tmp_path / "out"
     first = pe.extract_pages(src, "1", out_dir)[0]
     second = pe.extract_pages(src, "1", out_dir)[0]
-    assert first.name == "doc_trang_1.pdf"
-    assert second.name == "doc_trang_1 (2).pdf"
+    assert first.name == "extract_doc_trang_1.pdf"
+    assert second.name == "extract_doc_trang_1 (2).pdf"
     again = pe.extract_pages(src, "1", out_dir, pe.ExtractOptions(overwrite=True))[0]
     assert again == first
-    assert not (out_dir / "doc_trang_1 (3).pdf").exists()
+    assert not (out_dir / "extract_doc_trang_1 (3).pdf").exists()
 
 
 def test_default_output_is_next_to_source(tmp_path):
@@ -102,13 +102,13 @@ def test_cli_reports_error_for_bad_pages(tmp_path, capsys):
 def test_cli_success(tmp_path, capsys):
     src = _make_pdf(tmp_path / "doc.pdf", 4)
     assert pe.main([str(src), "--pages", "1,3-", "--separate", "-o", str(tmp_path / "out")]) == 0
-    assert "doc_trang_1.pdf" in capsys.readouterr().out
+    assert "extract_doc_trang_1.pdf" in capsys.readouterr().out
 
 
 def test_split_by_pages(tmp_path):
     src = _make_pdf(tmp_path / "doc.pdf", 5)
     out = pe.split_pdf(src, "pages", 2, tmp_path / "out")
-    assert [p.name for p in out] == ["doc_phan_01.pdf", "doc_phan_02.pdf", "doc_phan_03.pdf"]
+    assert [p.name for p in out] == ["split_doc_phan_01.pdf", "split_doc_phan_02.pdf", "split_doc_phan_03.pdf"]
     assert [len(PdfReader(str(p)).pages) for p in out] == [2, 2, 1]
 
 
@@ -121,7 +121,7 @@ def test_split_by_pages_default_one_page_each(tmp_path):
 def test_split_by_bookmark_uses_top_level_marks(tmp_path):
     src = _make_pdf(tmp_path / "doc.pdf", 6, outline=[("Chương 1", 1), ("Chương 2", 4)])
     out = pe.split_pdf(src, "bookmark", None, tmp_path / "out")
-    assert [p.name for p in out] == ["doc_phan_dau.pdf", "doc_Chương 1.pdf", "doc_Chương 2.pdf"]
+    assert [p.name for p in out] == ["split_doc_phan_dau.pdf", "split_doc_Chương 1.pdf", "split_doc_Chương 2.pdf"]
     assert [len(PdfReader(str(p)).pages) for p in out] == [1, 3, 2]
     assert [o.title for o in PdfReader(str(out[1])).outline] == ["Chương 1"]
 
@@ -163,7 +163,7 @@ def test_merge_keeps_order_pages_and_bookmarks(tmp_path):
     b = _make_pdf(tmp_path / "b.pdf", 3)
     out = pe.merge_pdfs([b, a], "ghep", tmp_path / "out")
     r = PdfReader(str(out))
-    assert out.name == "ghep.pdf" and len(r.pages) == 5
+    assert out.name == "merge_ghep.pdf" and len(r.pages) == 5
     assert [o.title for o in r.outline if not isinstance(o, list)] == ["b", "a"]
 
 
@@ -178,7 +178,7 @@ def test_merge_overwrite_and_empty(tmp_path):
     a = _make_pdf(tmp_path / "a.pdf", 1)
     out1 = pe.merge_pdfs([a], "ghep", tmp_path / "out")
     out2 = pe.merge_pdfs([a], "ghep", tmp_path / "out")
-    assert out2.name == "ghep (2).pdf" and out1 != out2
+    assert out2.name == "merge_ghep (2).pdf" and out1 != out2
     assert pe.merge_pdfs([a], "ghep", tmp_path / "out", pe.ExtractOptions(overwrite=True)) == out1
     with pytest.raises(ValueError):
         pe.merge_pdfs([], "ghep", tmp_path / "out")
@@ -188,7 +188,7 @@ def test_cli_merge(tmp_path, capsys):
     a = _make_pdf(tmp_path / "a.pdf", 1)
     b = _make_pdf(tmp_path / "b.pdf", 2)
     assert pe.main([str(a), str(b), "--merge", "--name", "tong", "-o", str(tmp_path / "out")]) == 0
-    assert len(PdfReader(str(tmp_path / "out" / "tong.pdf")).pages) == 3
+    assert len(PdfReader(str(tmp_path / "out" / "merge_tong.pdf")).pages) == 3
 
 
 
@@ -247,5 +247,5 @@ def test_cli_interleave_and_insert(tmp_path):
     b = _make_pdf(tmp_path / "b.pdf", 2)
     assert pe.main([str(a), str(b), "--interleave", "--name", "xen", "-o", str(tmp_path / "out")]) == 0
     assert pe.main([str(a), str(b), "--insert", "--name", "chen", "-o", str(tmp_path / "out")]) == 0
-    assert len(PdfReader(str(tmp_path / "out" / "xen.pdf")).pages) == 4
-    assert len(PdfReader(str(tmp_path / "out" / "chen.pdf")).pages) == 4
+    assert len(PdfReader(str(tmp_path / "out" / "interleave_xen.pdf")).pages) == 4
+    assert len(PdfReader(str(tmp_path / "out" / "insert_chen.pdf")).pages) == 4

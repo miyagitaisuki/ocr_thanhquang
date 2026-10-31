@@ -1,4 +1,4 @@
-"""Tên file kết quả OCR_<tên không dấu>_<trang đầu>_<trang cuối> và thư mục mặc định cạnh file gốc. Không cần model."""
+"""Tên file kết quả ocr_<tên không dấu>_<trang đầu>_<trang cuối> và thư mục mặc định cạnh file gốc. Không cần model."""
 from pathlib import Path
 
 import pytest
@@ -20,9 +20,9 @@ def test_ten_khong_dau(name, want):
 
 def test_tien_to_theo_trang():
     p = Path("/x/Hợp đồng.pdf")
-    assert pipeline.output_stem(p, None, 12) == "OCR_Hop_dong_1_12"
-    assert pipeline.output_stem(p, [5, 3, 4], 12) == "OCR_Hop_dong_3_5"
-    assert pipeline.output_stem(Path("/x/anh.png"), None, 1) == "OCR_anh_1_1"
+    assert pipeline.output_stem(p, None, 12) == "ocr_Hop_dong_1_12"
+    assert pipeline.output_stem(p, [5, 3, 4], 12) == "ocr_Hop_dong_3_5"
+    assert pipeline.output_stem(Path("/x/anh.png"), None, 1) == "ocr_anh_1_1"
 
 
 def test_mac_dinh_canh_file_goc(tmp_path, monkeypatch):
@@ -49,4 +49,4 @@ def test_mac_dinh_canh_file_goc(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "_tls", __import__("threading").local())
     r = pipeline.process_file(pdf, None, 200, None, device="cpu", use_cache=False)
     assert Path(r["docx"]).parent == src
-    assert Path(r["docx"]).name == "OCR_Bao_cao_1_1.docx"
+    assert Path(r["docx"]).name == "ocr_Bao_cao_1_1.docx"

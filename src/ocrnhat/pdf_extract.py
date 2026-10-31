@@ -117,13 +117,13 @@ def _build(reader: PdfReader, pages: list[int], opts: ExtractOptions) -> PdfWrit
 
 
 def _write_groups(reader: PdfReader, src: Path, groups: list[tuple[str, list[int]]], out_dir: Path | None,
-                  opts: ExtractOptions) -> list[Path]:
-    """Ghi mỗi nhóm (hậu tố tên file, danh sách trang) thành một file trong out_dir."""
+                  opts: ExtractOptions, prefix: str) -> list[Path]:
+    """Ghi mỗi nhóm (hậu tố tên file, danh sách trang) thành một file trong out_dir, tên <prefix>_<tên gốc><hậu tố>."""
     out_dir = Path(out_dir) if out_dir else src.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     for suffix, pages in groups:
-        target = _target(out_dir, src.stem + suffix, opts.overwrite)
+        target = _target(out_dir, f"{prefix}_{src.stem}{suffix}", opts.overwrite)
         with open(target, "wb") as f:
             _build(reader, pages, opts).write(f)
         written.append(target)
@@ -144,7 +144,7 @@ def extract_pages(src: Path, spec: str, out_dir: Path | None = None, opts: Extra
     groups = parse_page_spec(spec, len(reader.pages))
     if not opts.separate:   # gộp mọi nhóm thành một file, bỏ trang trùng, giữ thứ tự nhập
         groups = [list(dict.fromkeys(p for g in groups for p in g))]
-    return _write_groups(reader, src, [(f"_trang_{_label(g)}", g) for g in groups], out_dir, opts)
+    return _write_groups(reader, src, [(f"_trang_{_label(g)}", g) for g in groups], out_dir, opts, "extract")
 
 
 def _safe_name(title: str) -> str:
@@ -225,7 +225,7 @@ def split_pdf(src: Path, mode: str, value: float | int | None = None, out_dir: P
         groups = _size_groups(reader, float(value) * 1024 * 1024, opts)
     else:
         raise ValueError(f"Kiểu tách không hợp lệ: {mode}")
-    return _write_groups(reader, src, groups, out_dir, opts)
+    return _write_groups(reader, src, groups, out_dir, opts, "split")
 
 
 def merge_pdfs(srcs: list[Path], name: str = "ghep", out_dir: Path | None = None,
@@ -249,7 +249,7 @@ def merge_pdfs(srcs: list[Path], name: str = "ghep", out_dir: Path | None = None
             page.compress_content_streams()
         writer.compress_identical_objects(remove_duplicates=True, remove_unreferenced=True)
     writer.pdf_header = f"%PDF-{opts.pdf_version}"
-    target = _target(out_dir, name, opts.overwrite)
+    target = _target(out_dir, f"merge_{name}", opts.overwrite)
     with open(target, "wb") as f:
         writer.write(f)
     return target
@@ -288,7 +288,7 @@ def interleave_pdfs(srcs: list[Path], name: str = "xen_ke", out_dir: Path | None
         for order in orders:
             if i < len(order):
                 writer.add_page(order[i])
-    return _finish(writer, name, Path(out_dir) if out_dir else srcs[0].parent, opts)
+    return _finish(writer, f"interleave_{name}", Path(out_dir) if out_dir else srcs[0].parent, opts)
 
 
 def insert_repeated(main: Path, insert: Path, name: str = "chen_trang", out_dir: Path | None = None,
@@ -310,7 +310,7 @@ def insert_repeated(main: Path, insert: Path, name: str = "chen_trang", out_dir:
         writer.add_page(page)
         if not before:
             writer.add_page(piece)
-    return _finish(writer, name, Path(out_dir) if out_dir else main.parent, opts)
+    return _finish(writer, f"insert_{name}", Path(out_dir) if out_dir else main.parent, opts)
 
 
 def _run_watch(a) -> int:
