@@ -13,7 +13,7 @@ from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
-    QScrollArea, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from . import gpu, gpupack, pipeline
@@ -118,6 +118,21 @@ def crops_text(rects) -> str:
     return ";".join(",".join(str(v) for v in r) for r in rects)
 
 
+class ElidedLabel(QLabel):
+    """Nhãn cắt bằng '…' theo bề ngang: không đẩy dòng rộng ra ngoài danh sách; rê chuột xem đủ."""
+
+    def __init__(self, text: str, mode=Qt.TextElideMode.ElideMiddle):
+        super().__init__()
+        self._full, self._mode = text, mode
+        self.setToolTip(text)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.setText(self.fontMetrics().elidedText(self._full, self._mode, max(self.width() - 2, 0)))
+
+
 class FileRow(QWidget):
     """Một dòng file trong danh sách: ô PDF/ảnh, tên, thư mục, nhãn trạng thái (pill)."""
     LABELS = {"wait": "Chờ xử lý", "run": "Đang xử lý", "done": "Xong", "stop": "Dừng", "error": "Lỗi"}
@@ -131,9 +146,9 @@ class FileRow(QWidget):
         icon.setFixedSize(44, 44)
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         texts = QVBoxLayout()
-        name = QLabel(path.name)
+        name = ElidedLabel(path.name)
         name.setObjectName("fileName")
-        where = QLabel(str(path.parent))
+        where = ElidedLabel(str(path.parent), Qt.TextElideMode.ElideLeft)
         where.setObjectName("hint")
         texts.addWidget(name)
         texts.addWidget(where)
@@ -458,7 +473,8 @@ class OcrPage(QWidget):
                 dup += 1
                 continue
             self.files.append(f)
-            item = QListWidgetItem(f.name)   # tên trên mục để trình đọc màn hình đọc được (widget con che chữ này)
+            item = QListWidgetItem()   # chữ hiển thị do FileRow vẽ; tên chỉ để trình đọc màn hình (không vẽ dưới widget)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, f.name)
             item.setSizeHint(QSize(0, 70))
             self.listing.addItem(item)
             self.listing.setItemWidget(item, FileRow(f))

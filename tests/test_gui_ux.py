@@ -96,3 +96,16 @@ def test_khong_con_mau_cung_trong_mau_giao_dien():
     end = text.index("def apply_view")
     assert not hex_re.search(text[start:end])
     assert "QMessageBox.information" not in (SRC / "gui_pdf.py").read_text(encoding="utf-8")
+
+
+def test_dong_file_dai_khong_day_rong_danh_sach(qtbot_app=None):
+    # tên và đường dẫn rất dài phải được cắt, không làm dòng rộng hơn danh sách (lỗi tràn chữ)
+    from pathlib import Path
+    from ocrnhat.gui import FileRow
+    row = FileRow(Path("C:/" + "rất_dài/" * 30 + "BÁO CÁO TÌNH HÌNH GIẢNG DẠY_Ishima.pdf"))
+    row.resize(300, 70)
+    row.show()
+    assert row.minimumSizeHint().width() < 300
+    names = row.findChildren(gui.ElidedLabel)
+    assert names and all("…" in lbl.text() for lbl in names)
+    row.close()
