@@ -163,7 +163,9 @@ def test_muc_file_co_ten_de_doc_va_goi_y_keo_tha_rut_gon(window, tmp_path):
     f = tmp_path / "so_tay.pdf"
     f.write_bytes(b"")
     window.ocr._add([f])
-    assert window.ocr.listing.item(0).text() == "so_tay.pdf"
+    from PySide6.QtCore import Qt
+    # tên hiển thị do FileRow vẽ; mục chỉ mang tên cho trình đọc màn hình (không vẽ chồng lên widget)
+    assert window.ocr.listing.item(0).data(Qt.ItemDataRole.AccessibleTextRole) == "so_tay.pdf"
     assert window.ocr.drop.text() == gui.DROP_HINT_SHORT
     window.ocr.clear()
     assert window.ocr.drop.text() == gui.DROP_HINT

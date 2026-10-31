@@ -12,15 +12,17 @@ import logging
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtCore import QThread, QUrl, Qt, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QProgressBar, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import pdf_extract as pe
 from . import pdf_ops
 from . import ui_logic as L
+from .gui_progress import AnimatedProgress
 from .gui_style import show_banner
 
 log = logging.getLogger("ocrnhat.gui")
@@ -103,6 +105,7 @@ class PdfFileList(QListWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("files")   # cùng kiểu khung với danh sách OCR (QListWidget#files trong gui_style)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -260,8 +263,7 @@ class PdfSection(QGroupBox):
         self.output = PdfOutputBox(with_bookmarks=True)
         self.tabs = QTabWidget()
         self.run_buttons: list[QPushButton] = []
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
+        self.progress = AnimatedProgress()
         self.status = QLabel("Thêm file PDF, chọn thao tác rồi bấm Thực hiện.")
         self.status.setWordWrap(True)
         self.title_label = QLabel(title)
@@ -292,12 +294,36 @@ class PdfSection(QGroupBox):
         self.fields[name] = widget
         return widget
 
-    def make_run(self, text: str, slot) -> QPushButton:
+    def make_run(self, text: str, slot) -> QWidget:
+        """Hàng nút dưới cùng của mỗi tab: Chạy (xanh), Dừng (đỏ, chỉ bấm được khi đang chạy), Mở thư mục kết quả (vàng)."""
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 0, 0, 0)
         btn = QPushButton(text)
         btn.setObjectName("runBtn")   # nút chính dùng cùng kiểu với mục OCR
         btn.clicked.connect(slot)
+        stop = QPushButton("■  Dừng")
+        stop.setObjectName("stopBtn")   # luôn đỏ; khi không chạy thì stop_running không làm gì
+        stop.clicked.connect(self.stop_running)
+        opened = QPushButton("Mở thư mục kết quả")
+        opened.setObjectName("openBtn")
+        opened.clicked.connect(self._open_folder)
+        h.addWidget(btn, 1)
+        h.addWidget(stop, 1)
+        h.addWidget(opened, 1)
         self.run_buttons.append(btn)
-        return btn
+        return row
+
+    def _open_folder(self):
+        """Mở thư mục lưu; chưa đặt thư mục lưu thì mở thư mục của file đầu tiên (đầu ra cạnh file gốc)."""
+        target = self.output.out()
+        if target is None:
+            files = self.files_box.files()
+            target = files[0].parent if files else None
+        if target is None or not target.is_dir():
+            self._problem("Chưa có thư mục kết quả. Thêm file hoặc chọn thư mục lưu trước.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def busy(self) -> bool:
         return bool(self.worker and self.worker.isRunning())
@@ -309,6 +335,7 @@ class PdfSection(QGroupBox):
     def _set_busy(self, busy: bool):
         for b in self.run_buttons:
             b.setEnabled(not busy)
+        self.progress.setActive(busy)
         self.files_box.setEnabled(not busy)
         self.output.setEnabled(not busy)
 
@@ -377,8 +404,8 @@ class SplitSection(PdfSection):
         g.addWidget(self.field("pages", QLineEdit()))
         self.separate = self.field("separate", QCheckBox("Một file riêng cho mỗi nhóm trang"))
         g.addWidget(self.separate)
-        g.addWidget(self.make_run("▶  Trích xuất", self.run_extract))
         g.addStretch(1)
+        g.addWidget(self.make_run("▶  Trích xuất", self.run_extract))
         self.tabs.addTab(ext, "Trích xuất trang")
 
         spl = QWidget()
@@ -390,8 +417,8 @@ class SplitSection(PdfSection):
         g.addWidget(self.split_mode)
         g.addWidget(QLabel("Số trang mỗi file, hoặc MB tối đa (không dùng với bookmark)"))
         g.addWidget(self.field("split_value", QLineEdit("1")))
-        g.addWidget(self.make_run("▶  Tách file", self.run_split))
         g.addStretch(1)
+        g.addWidget(self.make_run("▶  Tách file", self.run_split))
         self.tabs.addTab(spl, "Tách file")
 
     def run_extract(self):
@@ -431,8 +458,8 @@ class MergeSection(PdfSection):
         g = QVBoxLayout(mg)
         g.addWidget(QLabel("Ghép theo đúng thứ tự trong danh sách. Tên file kết quả:"))
         g.addWidget(self.field("merge_name", QLineEdit("ghep")))
-        g.addWidget(self.make_run("▶  Ghép file", self.run_merge))
         g.addStretch(1)
+        g.addWidget(self.make_run("▶  Ghép file", self.run_merge))
         self.tabs.addTab(mg, "Ghép nhiều file")
 
         iv = QWidget()
@@ -441,8 +468,8 @@ class MergeSection(PdfSection):
         g.addWidget(QLabel("Tên file kết quả"))
         g.addWidget(self.field("inter_name", QLineEdit("xen_ke")))
         g.addWidget(self.field("reverse", QCheckBox("Đảo thứ tự file thứ hai (scan mặt sau theo chiều ngược)")))
-        g.addWidget(self.make_run("▶  Ghép xen kẽ", self.run_interleave))
         g.addStretch(1)
+        g.addWidget(self.make_run("▶  Ghép xen kẽ", self.run_interleave))
         self.tabs.addTab(iv, "Ghép xen kẽ")
 
         rp = QWidget()
@@ -458,8 +485,8 @@ class MergeSection(PdfSection):
         g.addWidget(self.field("insert_before", QCheckBox("Chèn trước mỗi trang thay vì sau")))
         g.addWidget(QLabel("Tên file kết quả"))
         g.addWidget(self.field("rep_name", QLineEdit("chen_trang")))
-        g.addWidget(self.make_run("▶  Chèn trang", self.run_insert))
         g.addStretch(1)
+        g.addWidget(self.make_run("▶  Chèn trang", self.run_insert))
         self.tabs.addTab(rp, "Chèn trang lặp lại")
 
     def on_files_changed(self):
@@ -533,8 +560,8 @@ class ToolsSection(PdfSection):
         g.addWidget(self.angle)
         g.addWidget(QLabel("Trang cần xoay (ví dụ 2,5-7 · để trống = tất cả trang)"))
         g.addWidget(self.field("rot_pages", QLineEdit()))
-        g.addWidget(self.make_run("▶  Xoay trang", self.run_rotate))
         g.addStretch(1)
+        g.addWidget(self.make_run("▶  Xoay trang", self.run_rotate))
         self.tabs.addTab(rot, "Xoay trang")
 
         comp = QWidget()
@@ -544,8 +571,8 @@ class ToolsSection(PdfSection):
         g.addWidget(self.img)
         g.addWidget(QLabel("Chất lượng ảnh 1–95; thấp hơn = nhỏ hơn, ảnh kém nét hơn. Ảnh trong suốt giữ nguyên."))
         g.addWidget(self.field("quality", QLineEdit("75")))
-        g.addWidget(self.make_run("▶  Nén file", self.run_compress))
         g.addStretch(1)
+        g.addWidget(self.make_run("▶  Nén file", self.run_compress))
         self.tabs.addTab(comp, "Nén PDF")
 
         watch = QWidget()

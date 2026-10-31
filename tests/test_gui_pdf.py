@@ -65,7 +65,7 @@ def test_ghep_file_that(window, tmp_path):
     (tmp_path / "ra").mkdir()
     window.merge.run_merge()
     _wait(window.merge)
-    out = tmp_path / "ra" / "tong.pdf"
+    out = tmp_path / "ra" / "merge_tong.pdf"
     assert out.exists()
     assert len(PdfReader(str(out)).pages) == 5
     assert window.merge.status.text().startswith("Xong")

@@ -37,7 +37,7 @@ def rotate_pdf(src: Path, angle: int, pages: str = "", out_dir: Path | None = No
         writer.add_page(page)
         if i in chosen:
             writer.pages[-1].rotate(angle)
-    return _finish(writer, f"{src.stem}_xoay", Path(out_dir) if out_dir else src.parent, opts)
+    return _finish(writer, f"rotate_{src.stem}", Path(out_dir) if out_dir else src.parent, opts)
 
 
 def compress_pdf(src: Path, image_quality: int | None = 75, out_dir: Path | None = None,
@@ -59,7 +59,7 @@ def compress_pdf(src: Path, image_quality: int | None = 75, out_dir: Path | None
     writer.pdf_header = f"%PDF-{opts.pdf_version}"
     out_dir = Path(out_dir) if out_dir else src.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = _target(out_dir, f"{src.stem}_nen", opts.overwrite)
+    target = _target(out_dir, f"compress_{src.stem}", opts.overwrite)
     with open(target, "wb") as f:
         writer.write(f)
     return target

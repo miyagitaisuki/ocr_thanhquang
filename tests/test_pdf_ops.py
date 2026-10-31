@@ -27,7 +27,7 @@ def _rotations(path):
 def test_rotate_all_pages(tmp_path):
     src = _sized_pdf(tmp_path / "a.pdf", [1, 2, 3])
     out = pdf_ops.rotate_pdf(src, 90, "", tmp_path / "out")
-    assert out.name == "a_xoay.pdf"
+    assert out.name == "rotate_a.pdf"
     assert _rotations(out) == [90, 90, 90]
 
 
@@ -48,7 +48,7 @@ def test_rotate_rejects_bad_angle_and_range(tmp_path):
 def test_compress_lossless_keeps_pages(tmp_path):
     src = _sized_pdf(tmp_path / "a.pdf", [1, 2, 3])
     out = pdf_ops.compress_pdf(src, image_quality=None, out_dir=tmp_path / "out")
-    assert out.name == "a_nen.pdf"
+    assert out.name == "compress_a.pdf"
     assert len(PdfReader(str(out)).pages) == 3
 
 

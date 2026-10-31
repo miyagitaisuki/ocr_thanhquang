@@ -12,8 +12,8 @@ from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
-    QScrollArea, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
+    QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from . import gpu, gpupack, pipeline
@@ -22,6 +22,7 @@ from .cli import collect
 from .gui_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
 from .gui_style import APP_NAME, add_soft_shadows, show_banner, state_key
 from .gui_pdf import MergeSection, SplitSection, ToolsSection
+from .gui_progress import AnimatedProgress
 
 gpupack.activate()   # trước khi đọc find_spec('chandra')
 
@@ -118,6 +119,21 @@ def crops_text(rects) -> str:
     return ";".join(",".join(str(v) for v in r) for r in rects)
 
 
+class ElidedLabel(QLabel):
+    """Nhãn cắt bằng '…' theo bề ngang: không đẩy dòng rộng ra ngoài danh sách; rê chuột xem đủ."""
+
+    def __init__(self, text: str, mode=Qt.TextElideMode.ElideMiddle):
+        super().__init__()
+        self._full, self._mode = text, mode
+        self.setToolTip(text)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.setText(self.fontMetrics().elidedText(self._full, self._mode, max(self.width() - 2, 0)))
+
+
 class FileRow(QWidget):
     """Một dòng file trong danh sách: ô PDF/ảnh, tên, thư mục, nhãn trạng thái (pill)."""
     LABELS = {"wait": "Chờ xử lý", "run": "Đang xử lý", "done": "Xong", "stop": "Dừng", "error": "Lỗi"}
@@ -131,9 +147,9 @@ class FileRow(QWidget):
         icon.setFixedSize(44, 44)
         icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         texts = QVBoxLayout()
-        name = QLabel(path.name)
+        name = ElidedLabel(path.name)
         name.setObjectName("fileName")
-        where = QLabel(str(path.parent))
+        where = ElidedLabel(str(path.parent), Qt.TextElideMode.ElideLeft)
         where.setObjectName("hint")
         texts.addWidget(name)
         texts.addWidget(where)
@@ -262,7 +278,7 @@ class OcrPage(QWidget):
         for key, label in L.dev_labels(gpu.ort_cuda_available()).items():
             self.device.addItem(label, key)
         self.out = QLineEdit()
-        self.out.setPlaceholderText("Để trống = lưu cạnh file gốc")
+        self.out.setPlaceholderText("Trống = cạnh file gốc")
         self.btn_out = QPushButton("Chọn…")
         out_row = QHBoxLayout()
         out_row.addWidget(self.out, 1)
@@ -277,6 +293,7 @@ class OcrPage(QWidget):
         # cấu hình cơ bản: thêm file .txt vào khối cấu hình (cg); phần còn lại thu gọn trong "Tùy chọn nâng cao"
         opt = QGroupBox("Tùy chọn nâng cao")
         opt.setCheckable(True)
+        opt.setProperty("collapsible", True)
         opt.setChecked(False)
         opt_body = QWidget()
         og = QVBoxLayout(opt_body)
@@ -302,6 +319,7 @@ class OcrPage(QWidget):
         # chi tiết kỹ thuật: thu gọn, ẩn hẳn khi bỏ chọn
         adv = QGroupBox("Chi tiết kỹ thuật")
         adv.setCheckable(True)
+        adv.setProperty("collapsible", True)
         adv.setChecked(False)
         adv_body = QWidget()
         agrid = QVBoxLayout(adv_body)
@@ -344,9 +362,7 @@ class OcrPage(QWidget):
 
         run_box = QGroupBox("Tiến trình")
         rb = QVBoxLayout(run_box)
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setTextVisible(False)
+        self.progress = AnimatedProgress()
         self.progress.setAccessibleName("Tiến trình OCR")
         self.status = QLabel("Sẵn sàng.")
         self.status.setWordWrap(True)
@@ -458,7 +474,8 @@ class OcrPage(QWidget):
                 dup += 1
                 continue
             self.files.append(f)
-            item = QListWidgetItem(f.name)   # tên trên mục để trình đọc màn hình đọc được (widget con che chữ này)
+            item = QListWidgetItem()   # chữ hiển thị do FileRow vẽ; tên chỉ để trình đọc màn hình (không vẽ dưới widget)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, f.name)
             item.setSizeHint(QSize(0, 70))
             self.listing.addItem(item)
             self.listing.setItemWidget(item, FileRow(f))
@@ -612,6 +629,7 @@ class OcrPage(QWidget):
         for i in range(len(self.files)):
             self._set_file_state(i, "Chờ")
         self.progress.setValue(0)
+        self.progress.setActive(True)
         self.banner.setVisible(False)
         self.btn_log.setVisible(False)
         self.btn_open_out.setVisible(False)
@@ -649,6 +667,7 @@ class OcrPage(QWidget):
         self._out_dir = self._run_out or (outputs[0][0].parent if outputs else None)
         self.btn_open_out.setVisible(bool(outputs) and self._out_dir is not None)
         self.btn_log.setVisible(failed)
+        self.progress.setActive(False)
         self.progress.setValue(100)
         self._set_running(False)
 

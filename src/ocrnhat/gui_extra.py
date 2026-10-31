@@ -474,6 +474,7 @@ class ModelBox(QGroupBox):
     def __init__(self, chandra_available: bool):
         super().__init__("Mô hình AI (tùy chọn)")
         self.setCheckable(True)
+        self.setProperty("collapsible", True)
         self.setChecked(False)
         self.worker: ModelWorker | None = None
         from .engines import models as mdl
@@ -598,9 +599,10 @@ class ModelBox(QGroupBox):
 
 # ---------- hiển thị ----------
 
-def _dark_palette() -> QPalette:
-    """Palette Qt cho chế độ tối, lấy từ cùng bảng token với QSS (gui_style) để hai nơi không lệch nhau."""
-    t = PALETTES["tối"]
+def _palette(theme: str) -> QPalette:
+    """Palette Qt cho giao diện đã chọn, lấy từ cùng bảng token với QSS (gui_style) để hai nơi không lệch nhau.
+    Không dùng standardPalette của hệ điều hành: Windows chế độ tối làm menu, nền và ô danh sách tối, còn chữ QSS vẫn tối màu."""
+    t = PALETTES[theme]
     p = QPalette()
     tokens = {QPalette.ColorRole.Window: t["page"], QPalette.ColorRole.Base: t["field"],
               QPalette.ColorRole.AlternateBase: t["card"], QPalette.ColorRole.Text: t["text"],
@@ -619,7 +621,8 @@ def apply_view(app, theme: str, font_pt: int, alpha: int, window) -> None:
     from .gui_style import stylesheet
     qss = stylesheet(theme, font_pt)
     app.setStyle("Fusion")
-    app.setPalette(_dark_palette() if theme == "tối" else app.style().standardPalette())
+    app.setPalette(_palette(theme))
+    app.setProperty("ocr_theme", theme)   # thanh tiến trình tự vẽ, cần biết giao diện đang chọn
     if app.styleSheet() != qss:   # đặt lại QSS tốn ~0,5 s (vẽ lại mọi widget): chỉ làm khi đổi giao diện
         app.setStyleSheet(qss)
     font = QFont(app.font())
