@@ -17,11 +17,12 @@ File `.md` này là kết quả OCR (tiếng Nhật) tự động, KHÔNG phải
 Mục tiêu: sửa lỗi nhận dạng chữ để ra bản cuối đúng với tài liệu gốc.
 
 ## Ký hiệu đánh dấu
-- `<!-- p.N -->`: bắt đầu nội dung từ trang N của file gốc. Giữ nguyên hoặc xóa theo yêu cầu người dùng.
+- `<!-- trang N -->`: bắt đầu nội dung từ trang N của file gốc (đối chiếu với sách). Giữ nguyên.
 - `## Tiêu đề`: dòng được nhận là tiêu đề.
 - `- ` đầu dòng: mục liệt kê (ký hiệu đầu dòng của sách).
 - Đoạn cách nhau bằng dòng trống: mỗi đoạn là một khối văn bản liền mạch; các dòng ngắt cứng trong trang đã được gộp.
-- `⟦?văn bản⟧`: đoạn hoặc ô bảng có độ tin cậy OCR thấp. Kiểm tra kỹ các chữ này trước. Khi sửa xong thì BỎ cặp `⟦?` `⟧`.
+- `⟦?văn bản⟧`: đoạn hoặc ô bảng có độ tin cậy OCR thấp, cần đối chiếu bản gốc. Kiểm tra kỹ các chữ này trước.
+- Ký hiệu đặc thù khác (chỉ dùng khi bộ hướng dẫn đầy đủ `hieu_dinh/1_GEM_INSTRUCTIONS.md` yêu cầu): `⟦MẤT CHỮ⟧`, `⟦★?: …⟧`, `⟦FURIGANA lạc: …⟧`, `⟦THỨ TỰ?⟧`.
 - `{漢字|かんじ}`: ruby (furigana) gắn trên chữ Hán; chỉ có khi người dùng bật tùy chọn ruby.
 - Bảng dạng `| a | b |` (GFM): hàng đầu chỉ là hàng đầu tiên của bảng, chưa chắc là hàng tiêu đề; `\|` là dấu gạch đứng trong ô; `<br>` là xuống dòng trong ô.
 - `<!-- gộp ô: r2c1 2x3 -->`: ô gộp, hàng 2 cột 1 (đếm từ 1) trải 2 hàng × 3 cột; các ô bị gộp để trống.
@@ -82,7 +83,7 @@ def to_markdown(pages: list[tuple[int, list]], page_marker: bool = True, conf: f
     blocks: list[str] = []
     for pno, items in pages:
         if page_marker:
-            blocks.append(f"<!-- p.{pno} -->")
+            blocks.append(f"<!-- trang {pno} -->")
         for it in items:
             if isinstance(it, Table):
                 blocks.append(_table_md(it, conf))

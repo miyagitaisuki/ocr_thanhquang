@@ -21,6 +21,9 @@ def selftest() -> int:
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+    if "--gpu-worker" in sys.argv:   # tiến trình con chạy OCR GPU (gpu_pack.py), không mở giao diện
+        from ocrnhat.gpu_worker import main as gpu_worker_main
+        raise SystemExit(gpu_worker_main())
     if "--selftest" in sys.argv:
         sys.exit(selftest())
     if len(sys.argv) > 1:

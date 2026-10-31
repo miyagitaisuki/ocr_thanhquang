@@ -15,6 +15,8 @@ class Gpu:
     name: str
     vram_mb: int | None
     backend: str = "cuda"
+    driver: tuple[int, ...] | None = None   # phiên bản driver NVIDIA, ví dụ (581, 57)
+    cc: tuple[int, ...] | None = None       # compute capability, ví dụ (8, 6)
 
 
 def _nvidia_smi() -> str | None:
@@ -30,22 +32,47 @@ def _nvidia_smi() -> str | None:
     return None
 
 
+# Thử từ đầy đủ đến tối thiểu: driver cũ có thể không hỗ trợ compute_cap.
+_QUERIES = ("name,memory.total,driver_version,compute_cap", "name,memory.total,driver_version", "name,memory.total")
+
+
+def parse_version(text: str) -> tuple[int, ...] | None:
+    """'581.57' -> (581, 57); '8.6' -> (8, 6). Chuỗi không hợp lệ -> None."""
+    parts = (text or "").strip().split(".")
+    if not parts or not all(p.isdigit() for p in parts):
+        return None
+    return tuple(int(p) for p in parts)
+
+
+def _parse_rows(out: str, fields: list[str]) -> list[Gpu]:
+    gpus = []
+    for line in out.splitlines():
+        vals = [v.strip() for v in line.rsplit(",", len(fields) - 1)]
+        if len(vals) != len(fields) or not vals[0]:
+            continue
+        row = dict(zip(fields, vals))
+        mem = row.get("memory.total", "")
+        gpus.append(Gpu(
+            row["name"], int(mem) if mem.isdigit() else None,
+            driver=parse_version(row.get("driver_version", "")),
+            cc=parse_version(row.get("compute_cap", ""))))
+    return gpus
+
+
 def detect() -> list[Gpu]:
     exe = _nvidia_smi()
     if not exe:
         return []
-    try:
-        r = subprocess.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True, timeout=8,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except Exception:
-        return []
-    gpus = []
-    for line in (r.stdout if r.returncode == 0 else "").splitlines():
-        name, _, mem = line.partition(",")
-        if name.strip():
-            gpus.append(Gpu(name.strip(), int(mem) if mem.strip().isdigit() else None))
-    return gpus
+    for q in _QUERIES:
+        try:
+            r = subprocess.run([exe, f"--query-gpu={q}", "--format=csv,noheader,nounits"],
+                               capture_output=True, text=True, timeout=8,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception:
+            return []
+        if r.returncode == 0 and r.stdout.strip():
+            return _parse_rows(r.stdout, q.split(","))
+    return []
 
 
 DEVICES = ("auto", "cpu", "cuda")
@@ -80,16 +107,28 @@ def gpu_selectable() -> bool:
     return ort_cuda_available() or bool(detect())
 
 
+def pack_ready() -> bool:
+    """Gói GPU tải theo yêu cầu (nút "Bật GPU") đã cài. Xem gpu_pack.py."""
+    try:
+        from .gpu_pack import installed
+        return installed()
+    except Exception:
+        return False
+
+
 def resolve_device(pref: str = "auto") -> tuple[str, str]:
-    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). Yêu cầu cuda mà không dùng được thì lùi về cpu và nói rõ."""
+    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). "cuda" dùng được khi onnxruntime có CUDA sẵn hoặc đã cài gói GPU."""
     if pref == "cpu":
         return "cpu", "chọn CPU"
     ort_ok = ort_cuda_available()
+    pack = (not ort_ok) and pack_ready()
     if pref == "cuda":
         if ort_ok:
             return "cuda", "chọn GPU"
-        return "cpu", "đã chọn GPU nhưng onnxruntime không có CUDA (cần onnxruntime-gpu + CUDA/cuDNN); dùng CPU"
+        if pack:
+            return "cuda", "chọn GPU (gói GPU đã cài)"
+        return "cpu", "đã chọn GPU nhưng onnxruntime chưa có CUDA: bấm \"Bật GPU\" để tải gói CUDA; dùng CPU"
     gpus = detect()
-    if gpus and ort_ok:
-        return "cuda", f"tự động: {gpus[0].name}"
+    if gpus and (ort_ok or pack):
+        return "cuda", f"tự động: {gpus[0].name}" + ("" if ort_ok else " (gói GPU)")
     return "cpu", "tự động: " + ("có NVIDIA nhưng onnxruntime không có CUDA" if gpus else "không thấy GPU NVIDIA")

@@ -554,6 +554,78 @@ class ModelBox(QGroupBox):
         self._refresh_status()
 
 
+class GpuBox(QWidget):
+    """Nút "Bật GPU": tải gói CUDA/cuDNN theo yêu cầu (xem gpu_pack.py). Chỉ bật khi có card NVIDIA."""
+
+    def __init__(self):
+        super().__init__()
+        self.worker: ModelWorker | None = None
+        self._pack: str | None = None
+        self.btn = QPushButton("Bật GPU")
+        self.btn.setAccessibleName("Bật GPU (tải gói CUDA)")
+        self.bar = AnimatedProgress()
+        self.bar.setAccessibleName("Tiến trình tải gói GPU")
+        self.bar.setVisible(False)
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        self.status.setObjectName("hint")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(self.btn)
+        root.addWidget(self.bar)
+        root.addWidget(self.status)
+        self.btn.clicked.connect(self._start)
+        self.refresh()
+
+    def refresh(self) -> None:
+        from . import gpu_pack
+        ok, why = gpu_pack.supported()
+        if not ok:
+            self.btn.setText("Bật GPU")
+            self.btn.setEnabled(False)
+            self.status.setText(f"Không khả dụng: {why}.")
+        elif gpu_pack.installed():
+            self.btn.setText("GPU đã bật")
+            self.btn.setEnabled(False)
+            self.status.setText(f"Đã cài gói {gpu_pack.installed_pack()}. Chọn Phần cứng = GPU để dùng.")
+        else:
+            pid, why = gpu_pack.select_pack()
+            self._pack = pid
+            if pid is None:
+                self.btn.setText("Bật GPU")
+                self.btn.setEnabled(False)
+                self.status.setText(f"Không bật được GPU: {why}.")
+            else:
+                pk = gpu_pack.M.PACKS[pid]
+                self.btn.setText(f"Bật GPU ({pk['label']})")
+                self.btn.setEnabled(self.worker is None or not self.worker.isRunning())
+                gb = pk["total_bytes"] / 1e9
+                self.status.setText(f"{why}. Tải khoảng {gb:.1f} GB một lần.")
+
+    def _start(self) -> None:
+        from . import gpu_pack
+        self.btn.setEnabled(False)
+        self.bar.setVisible(True)
+        self.bar.setActive(True)
+        self.bar.setValue(0)
+        pid = self._pack
+        self.worker = ModelWorker(lambda rep: gpu_pack.install(pack=pid, progress=lambda text, frac: rep(text, frac)))
+        self.worker.progress.connect(self._on_progress)
+        self.worker.done.connect(self._on_done)
+        self.worker.start()
+
+    def _on_progress(self, text: str, frac: float) -> None:
+        self.status.setText(text)
+        if frac >= 0:
+            self.bar.setValue(int(100 * min(1.0, frac)))
+
+    def _on_done(self, ok: bool, msg: str) -> None:
+        self.bar.setVisible(False)
+        self.bar.setActive(False)
+        self.refresh()
+        self.status.setText(msg)   # sau refresh để không bị ghi đè
+
+
 # ---------- hiển thị ----------
 
 def _palette(theme: str) -> QPalette:

@@ -50,3 +50,17 @@ class Page:
     width: int
     height: int
     blocks: list[Block]
+
+
+def page_to_dict(p: Page) -> dict:
+    """Page -> dict thuần (JSON được). Dùng khi gửi kết quả OCR qua tiến trình con GPU."""
+    from dataclasses import asdict
+    return asdict(p)
+
+
+def page_from_dict(d: dict) -> Page:
+    return Page(
+        width=d["width"], height=d["height"],
+        blocks=[Block(kind=b["kind"], x=b["x"], y=b["y"], w=b["w"], h=b["h"],
+                      lines=[Line(**l) for l in b["lines"]], label=b.get("label", ""))
+                for b in d["blocks"]])

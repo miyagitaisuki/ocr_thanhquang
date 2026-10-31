@@ -51,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--md-conf", type=float, default=0.8, help="ngưỡng độ tin cậy để gắn ⟦?…⟧ trong file .md (mặc định 0.8)")
     ap.add_argument("--md-rules", nargs="?", const="-", default=None, metavar="FILE", help="xuất quy tắc đánh dấu Markdown (để dán vào chỉ dẫn LLM) ra FILE hoặc màn hình rồi thoát")
     ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
+    ap.add_argument("--gpu-install", action="store_true", help="tải và cài gói GPU (CUDA/cuDNN, ~1,3 GB) rồi thoát")
+    ap.add_argument("--gpu-status", action="store_true", help="cho biết gói GPU đã cài chưa rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
     a = ap.parse_args(argv)
     if a.md_rules is not None:
@@ -59,6 +61,18 @@ def main(argv: list[str] | None = None) -> int:
             print(RULES_MD)
         else:
             write_rules(Path(a.md_rules)); print(f"-> {a.md_rules}")
+        return 0
+    if a.gpu_status or a.gpu_install:
+        from . import gpu_pack
+        if a.gpu_install:
+            ok, why = gpu_pack.supported()
+            if not ok:
+                print(f"Không cài được: {why}")
+                return 1
+            print(gpu_pack.install(progress=lambda t, f: print(f"{t} ({max(0, int(100 * f))}%)", flush=True)))
+        pid, why = gpu_pack.select_pack()
+        print("Gói GPU đã cài:", gpu_pack.installed_pack() or "chưa có")
+        print("Gói phù hợp với máy này:", pid or f"không có ({why})")
         return 0
     if a.gpu_info:
         from . import gpu

@@ -23,7 +23,15 @@ def get_engine(name: str | None = None, device: str = "cpu"):
         cache = _tls.engines = {}
     key = (name, device)
     if key not in cache:
-        cache[key] = engines.create(name, device=device)
+        eng = None
+        if device == "cuda":
+            from .gpu import ort_cuda_available
+            if not ort_cuda_available():   # không có CUDA trong tiến trình này: thử gói GPU tải theo yêu cầu
+                from .gpu_pack import remote_engine_for
+                eng = remote_engine_for(name)
+                if eng is None:
+                    device = "cpu"          # gói không dùng được (chưa cài, lỗi, ngoài Windows): lùi về CPU
+        cache[key] = eng or engines.create(name, device=device)
     return cache[key]
 
 
