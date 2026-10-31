@@ -80,16 +80,28 @@ def gpu_selectable() -> bool:
     return ort_cuda_available() or bool(detect())
 
 
+def pack_ready() -> bool:
+    """Gói GPU tải theo yêu cầu (nút "Bật GPU") đã cài. Xem gpu_pack.py."""
+    try:
+        from .gpu_pack import installed
+        return installed()
+    except Exception:
+        return False
+
+
 def resolve_device(pref: str = "auto") -> tuple[str, str]:
-    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). Yêu cầu cuda mà không dùng được thì lùi về cpu và nói rõ."""
+    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). "cuda" dùng được khi onnxruntime có CUDA sẵn hoặc đã cài gói GPU."""
     if pref == "cpu":
         return "cpu", "chọn CPU"
     ort_ok = ort_cuda_available()
+    pack = (not ort_ok) and pack_ready()
     if pref == "cuda":
         if ort_ok:
             return "cuda", "chọn GPU"
-        return "cpu", "đã chọn GPU nhưng onnxruntime không có CUDA (cần onnxruntime-gpu + CUDA/cuDNN); dùng CPU"
+        if pack:
+            return "cuda", "chọn GPU (gói GPU đã cài)"
+        return "cpu", "đã chọn GPU nhưng onnxruntime chưa có CUDA: bấm \"Bật GPU\" để tải gói CUDA; dùng CPU"
     gpus = detect()
-    if gpus and ort_ok:
-        return "cuda", f"tự động: {gpus[0].name}"
+    if gpus and (ort_ok or pack):
+        return "cuda", f"tự động: {gpus[0].name}" + ("" if ort_ok else " (gói GPU)")
     return "cpu", "tự động: " + ("có NVIDIA nhưng onnxruntime không có CUDA" if gpus else "không thấy GPU NVIDIA")

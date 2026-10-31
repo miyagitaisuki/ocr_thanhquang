@@ -19,7 +19,7 @@ from . import gpu, pipeline
 from . import ui_logic as L
 from .cli import collect
 from .gui_about import SystemDialog, SysInfoWorker, build_help_menu
-from .gui_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
+from .gui_extra import SCAN_DPI, GpuBox, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
 from .gui_style import APP_NAME, add_soft_shadows, show_banner, state_key
 from .gui_pdf import MergeSection, SplitSection, ToolsSection
 from .gui_progress import AnimatedProgress
@@ -284,6 +284,8 @@ class OcrPage(QWidget):
         for label, widget in (("Công cụ OCR", self.engine), ("Ngôn ngữ", self.lang), ("Phần cứng", self.device)):
             cg.addWidget(labeled(label, widget))
             cg.addWidget(widget)
+        self.gpu_box = GpuBox()
+        cg.addWidget(self.gpu_box)
         cg.addWidget(labeled("Thư mục lưu", self.out))
         cg.addLayout(out_row)
         right.addWidget(cfg)

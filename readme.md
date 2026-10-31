@@ -42,6 +42,9 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `pdf_extract.py` | Công cụ PDF: trích xuất trang và tách file (pypdf): cú pháp `2,5-7,12-`, file riêng cho mỗi nhóm, ghi đè, nén, bỏ bookmark, phiên bản PDF. Lệnh `ocrnhat-pdf`. Các mục Tách PDF, Ghép PDF, Công cụ khác trong GUI. |
 | `markdown_out.py` | `--markdown` (opt-in, ô "Xuất Markdown…" trong Tùy chọn nâng cao): ghi `*.md` có đánh dấu theo quy tắc (`## ` tiêu đề, `- ` danh sách, bảng GFM, `<!-- trang N -->`, ô gộp, `⟦?…⟧` đoạn/ô độ tin cậy < `--md-conf`, ruby `{漢字|かんじ}`) để nhờ LLM hiệu đính. `RULES_MD` = quy tắc cho người dùng dán vào chỉ dẫn LLM; ghi `ocr_markdown_rules.md` cạnh file .md, hoặc `ocrnhat --md-rules [FILE]`. Độ tin cậy tính theo đoạn/ô, không theo từng chữ. Quy tắc cho phép LLM điền phỏng đoán hợp nghĩa vào `⟦?…⟧` (giữ cặp ký hiệu để người dùng đối chiếu). Chưa thử với LLM thật. |
 | `hieu_dinh/` | Bộ hiệu đính chuẩn dùng với Gem (Gemini) hoặc LLM khác: `1_GEM_INSTRUCTIONS.md` (prompt đầy đủ, nguyên tắc tối thượng: bảo toàn, cấm đoán, cấm lược; phân loại A/B/C; định dạng 3 phần), `4_MAU_HO_SO_SACH.md`, `2_GEM_KNOWLEDGE_vi_du_mau.md`, `0_HUONG_DAN_SU_DUNG.md`. `tools/chia_doan.py` (.docx/.txt -> đoạn có mã `Lxxxx`), `tools/kiem_tra_mat_chu.py` (so chữ gốc với câu trả lời của Gem: mất/thêm). |
+| `gpu_pack.py` | Gói GPU tải theo yêu cầu (nút "Bật GPU", `GpuBox` trong `gui_extra.py`): `install()` tải wheel ghim (onnxruntime-gpu 1.31.1 + nvidia-* cu13, ~1,3 GB), kiểm SHA-256, giải nén vào `%LOCALAPPDATA%\OCR-Nhat\gpu\site`, `probe()` thử nạp CUDA, `RemoteEngine` (OCR qua tiến trình con). Lệnh `ocrnhat --gpu-status`, `--gpu-install`. |
+| `gpu_worker.py` | Tiến trình con chạy OCR GPU: đưa `gpu\site` lên đầu `sys.path`, giao thức JSON qua stdin/stdout (`ping`, `ocr`). Exe gọi bằng `--gpu-worker` (`run_gui.py`). |
+| `gpu_manifest.py` | SINH TỰ ĐỘNG bởi `scripts/build_gpu_manifest.py` (phiên bản, URL, SHA-256 từ PyPI). Không sửa tay. |
 | `suspect.py` | `--suspect` (thử nghiệm, tắt mặc định): BERT tiếng Nhật đánh dấu ký tự nghi ngờ, không sửa văn bản. |
 | `appdir.py` | Thư mục dữ liệu app (`%LOCALAPPDATA%\OCR-Nhat`: settings.json, logs/). |
 | `gpu.py` | Dò GPU NVIDIA (nvidia-smi, có đường dẫn dự phòng NVSMI), `gpu_selectable()` (ô Phần cứng có mục GPU khi có card NVIDIA hoặc onnxruntime CUDA), `ensure_ort_cuda_libs()` (nạp CUDA cho onnxruntime-gpu trước khi tạo session), `resolve_device(pref)`: cuda chỉ khi onnxruntime nạp được CUDA. |
@@ -92,13 +95,14 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 - Chưa kiểm trên Windows thật: giao diện PySide6, exe và bộ cài sau khi bỏ Tkinter (build chỉ chạy được trên GitHub Actions). Chưa thử trình đọc màn hình thật.
 - `ocr_vi` đã chạy trên PDF scan thật (quyết định 1196/QĐ-ĐHQN, 43 trang, CPU ~11 s/trang, có cache). Hậu xử lý `vi_text.py` giảm âm tiết ngoài từ điển từ 4,5% xuống 3,8% trên tài liệu này (đo bằng từ điển pyvi, chưa có bản đối chiếu chuẩn). Vẫn còn: nhiễu dấu mộc in hoa (ví dụ "INTERSING"), "Căn cử" (cặp không đủ bằng chứng để sửa), lỗi nhận dạng chữ không phải dấu (ví dụ "đôi" → "đối" đã sửa, nhưng "thi"/"thì" lẫn trong ngữ cảnh chưa chắc).
-- Chưa làm: GPU chạy thật trong exe CPU (exe dùng onnxruntime CPU; xem "Hướng phát triển mới"); tùy chọn Loại tài liệu chưa lưu; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
+- Chưa kiểm: GPU chạy thật trên máy có card NVIDIA và exe đóng gói (xem "Hướng phát triển mới"); tùy chọn Loại tài liệu chưa lưu; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
 
 ## Hướng phát triển mới (chọn độ chính xác cao nhất)
-Chủ dự án chấp nhận đảo quyết định cũ: không còn "không tải gói GPU", và không còn ưu tiên exe gọn hay chạy offline. Trạng thái: **chưa triển khai**, mới là hướng đã chốt.
-- **Bật GPU theo yêu cầu.** Nút "Bật GPU" trong GUI: kiểm `nvidia-smi`; nếu có card NVIDIA thì tải gói GPU (onnxruntime-gpu + DLL CUDA/cuDNN) vào `%LOCALAPPDATA%\OCR-Nhat\gpu\`, có thanh tiến trình và kiểm SHA-256 (tái dùng `models.download_files`).
+Chủ dự án chấp nhận đảo quyết định cũ: không còn "không tải gói GPU", và không còn ưu tiên exe gọn hay chạy offline. Trạng thái: **đã triển khai, chưa kiểm trên máy Windows có GPU** (môi trường kiểm không có card NVIDIA; test không cần CUDA đều đạt, xem `tests/test_gpu_pack.py`).
+- **Bật GPU theo yêu cầu.** Nút "Bật GPU" trong GUI (dưới ô Phần cứng): chỉ bật khi thấy card NVIDIA và chạy Windows Python 3.12; tải gói GPU, kiểm SHA-256, cài vào `%LOCALAPPDATA%\OCR-Nhat\gpu\site`, rồi thử nạp CUDA. Gói ghim trong `gpu_manifest.py` (sinh từ `scripts/build_gpu_manifest.py`).
 - **Chạy qua tiến trình con.** Exe đóng gói onnxruntime CPU nên không nạp chung hai bản trong một tiến trình. Tiến trình con (`--gpu-worker`) thêm thư mục gói GPU vào `sys.path` và `os.add_dll_directory`, rồi OCR và trả kết quả. Nếu lỗi thì lùi về CPU và ghi log.
-- **Ghi nhớ lựa chọn** trong `settings.json`. Chưa đo kích thước gói; cần đo trước khi phát hành.
+- **Phần cứng "GPU (NVIDIA)"** dùng gói này khi onnxruntime trong tiến trình chính chưa có CUDA. Thiếu gói, lỗi, hoặc không phải Windows 3.12 thì lùi về CPU và ghi lý do.
+- **Rủi ro chưa kiểm:** trong exe, `onnxruntime.dll` của bản CPU đi kèm có thể được Windows nạp trước bản GPU. Cần thử trên Windows có GPU; nếu có, phương án là đóng gói bản CPU không kèm onnxruntime. Kích thước đĩa sau khi giải nén chưa đo.
 - **Độ chính xác là tiêu chí chọn engine và cấu hình.** Các đánh đổi tốc độ hay dung lượng chỉ xét khi không ảnh hưởng độ chính xác.
 
 ## Lỗi và giới hạn đã biết
