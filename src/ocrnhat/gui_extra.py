@@ -560,6 +560,7 @@ class GpuBox(QWidget):
     def __init__(self):
         super().__init__()
         self.worker: ModelWorker | None = None
+        self._pack: str | None = None
         self.btn = QPushButton("Bật GPU")
         self.btn.setAccessibleName("Bật GPU (tải gói CUDA)")
         self.bar = AnimatedProgress()
@@ -586,16 +587,20 @@ class GpuBox(QWidget):
         elif gpu_pack.installed():
             self.btn.setText("GPU đã bật")
             self.btn.setEnabled(False)
-            self.status.setText("Gói GPU đã cài. Chọn Phần cứng = GPU để dùng.")
-        elif not gpu_pack.nvidia_present():
-            self.btn.setText("Bật GPU")
-            self.btn.setEnabled(False)
-            self.status.setText("Không thấy card NVIDIA trên máy này.")
+            self.status.setText(f"Đã cài gói {gpu_pack.installed_pack()}. Chọn Phần cứng = GPU để dùng.")
         else:
-            self.btn.setText("Bật GPU")
-            self.btn.setEnabled(self.worker is None or not self.worker.isRunning())
-            gb = gpu_pack.M.TOTAL_BYTES / 1e9
-            self.status.setText(f"Tải khoảng {gb:.1f} GB (CUDA/cuDNN) một lần. Cần driver NVIDIA đủ mới cho CUDA 13.")
+            pid, why = gpu_pack.select_pack()
+            self._pack = pid
+            if pid is None:
+                self.btn.setText("Bật GPU")
+                self.btn.setEnabled(False)
+                self.status.setText(f"Không bật được GPU: {why}.")
+            else:
+                pk = gpu_pack.M.PACKS[pid]
+                self.btn.setText(f"Bật GPU ({pk['label']})")
+                self.btn.setEnabled(self.worker is None or not self.worker.isRunning())
+                gb = pk["total_bytes"] / 1e9
+                self.status.setText(f"{why}. Tải khoảng {gb:.1f} GB một lần.")
 
     def _start(self) -> None:
         from . import gpu_pack
@@ -603,7 +608,8 @@ class GpuBox(QWidget):
         self.bar.setVisible(True)
         self.bar.setActive(True)
         self.bar.setValue(0)
-        self.worker = ModelWorker(lambda rep: gpu_pack.install(progress=lambda text, frac: rep(text, frac)))
+        pid = self._pack
+        self.worker = ModelWorker(lambda rep: gpu_pack.install(pack=pid, progress=lambda text, frac: rep(text, frac)))
         self.worker.progress.connect(self._on_progress)
         self.worker.done.connect(self._on_done)
         self.worker.start()

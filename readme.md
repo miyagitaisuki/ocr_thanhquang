@@ -42,12 +42,12 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `pdf_extract.py` | Công cụ PDF: trích xuất trang và tách file (pypdf): cú pháp `2,5-7,12-`, file riêng cho mỗi nhóm, ghi đè, nén, bỏ bookmark, phiên bản PDF. Lệnh `ocrnhat-pdf`. Các mục Tách PDF, Ghép PDF, Công cụ khác trong GUI. |
 | `markdown_out.py` | `--markdown` (opt-in, ô "Xuất Markdown…" trong Tùy chọn nâng cao): ghi `*.md` có đánh dấu theo quy tắc (`## ` tiêu đề, `- ` danh sách, bảng GFM, `<!-- trang N -->`, ô gộp, `⟦?…⟧` đoạn/ô độ tin cậy < `--md-conf`, ruby `{漢字|かんじ}`) để nhờ LLM hiệu đính. `RULES_MD` = quy tắc cho người dùng dán vào chỉ dẫn LLM; ghi `ocr_markdown_rules.md` cạnh file .md, hoặc `ocrnhat --md-rules [FILE]`. Độ tin cậy tính theo đoạn/ô, không theo từng chữ. Quy tắc cho phép LLM điền phỏng đoán hợp nghĩa vào `⟦?…⟧` (giữ cặp ký hiệu để người dùng đối chiếu). Chưa thử với LLM thật. |
 | `hieu_dinh/` | Bộ hiệu đính chuẩn dùng với Gem (Gemini) hoặc LLM khác: `1_GEM_INSTRUCTIONS.md` (prompt đầy đủ, nguyên tắc tối thượng: bảo toàn, cấm đoán, cấm lược; phân loại A/B/C; định dạng 3 phần), `4_MAU_HO_SO_SACH.md`, `2_GEM_KNOWLEDGE_vi_du_mau.md`, `0_HUONG_DAN_SU_DUNG.md`. `tools/chia_doan.py` (.docx/.txt -> đoạn có mã `Lxxxx`), `tools/kiem_tra_mat_chu.py` (so chữ gốc với câu trả lời của Gem: mất/thêm). |
-| `gpu_pack.py` | Gói GPU tải theo yêu cầu (nút "Bật GPU", `GpuBox` trong `gui_extra.py`): `install()` tải wheel ghim (onnxruntime-gpu 1.31.1 + nvidia-* cu13, ~1,3 GB), kiểm SHA-256, giải nén vào `%LOCALAPPDATA%\OCR-Nhat\gpu\site`, `probe()` thử nạp CUDA, `RemoteEngine` (OCR qua tiến trình con). Lệnh `ocrnhat --gpu-status`, `--gpu-install`. |
+| `gpu_pack.py` | Gói GPU tải theo yêu cầu (nút "Bật GPU", `GpuBox` trong `gui_extra.py`). `select_pack()` chọn gói theo driver và compute capability của card (`cu13` trước, rồi `cu12`). `install(pack=…)` tải wheel ghim, kiểm SHA-256, giải nén vào `%LOCALAPPDATA%\OCR-Nhat\gpu\site`, ghi mã gói vào `installed.json`. `probe()` thử nạp CUDA. `RemoteEngine` chạy OCR trong tiến trình con. Lệnh `ocrnhat --gpu-status`, `--gpu-install`. |
 | `gpu_worker.py` | Tiến trình con chạy OCR GPU: đưa `gpu\site` lên đầu `sys.path`, giao thức JSON qua stdin/stdout (`ping`, `ocr`). Exe gọi bằng `--gpu-worker` (`run_gui.py`). |
-| `gpu_manifest.py` | SINH TỰ ĐỘNG bởi `scripts/build_gpu_manifest.py` (phiên bản, URL, SHA-256 từ PyPI). Không sửa tay. |
+| `gpu_manifest.py` | SINH TỰ ĐỘNG bởi `scripts/build_gpu_manifest.py`: `PACKS` gồm `min_driver`, `min_cc` và danh sách wheel (URL, SHA-256 từ PyPI). Không sửa tay. |
 | `suspect.py` | `--suspect` (thử nghiệm, tắt mặc định): BERT tiếng Nhật đánh dấu ký tự nghi ngờ, không sửa văn bản. |
 | `appdir.py` | Thư mục dữ liệu app (`%LOCALAPPDATA%\OCR-Nhat`: settings.json, logs/). |
-| `gpu.py` | Dò GPU NVIDIA (nvidia-smi, có đường dẫn dự phòng NVSMI), `gpu_selectable()` (ô Phần cứng có mục GPU khi có card NVIDIA hoặc onnxruntime CUDA), `ensure_ort_cuda_libs()` (nạp CUDA cho onnxruntime-gpu trước khi tạo session), `resolve_device(pref)`: cuda chỉ khi onnxruntime nạp được CUDA. |
+| `gpu.py` | Dò GPU NVIDIA qua `nvidia-smi` (tên, VRAM, driver, compute capability; tự lùi về truy vấn ít trường hơn nếu driver cũ). `parse_version()`, `gpu_selectable()`, `ort_cuda_available()`, `pack_ready()`, `resolve_device(pref)`: cuda khi onnxruntime có CUDA sẵn hoặc đã cài gói GPU. |
 | `cli.py` | Dòng lệnh `ocrnhat`. |
 | `gui.py` | Giao diện chính PySide6: thanh bên 4 mục (OCR, Tách PDF, Ghép PDF, Công cụ khác), mục OCR đầy đủ, nhớ tùy chọn (`qt_ocr`), phím tắt, thu gọn khi cửa sổ hẹp. |
 | `gui_pdf.py` | Ba mục Công cụ PDF: Tách PDF (trích xuất, tách file), Ghép PDF (ghép, xen kẽ, chèn trang lặp lại), Công cụ khác (xoay, nén, tự động theo thư mục). Danh sách kéo-thả sắp xếp được; chạy nền, hủy giữa các file; nhớ tùy chọn trong `qt_pdf`. Hàng nút dưới cùng mỗi tab: Chạy (xanh), Dừng (đỏ), Mở thư mục kết quả (vàng), ba nút cùng kích cỡ và co giãn theo cửa sổ. Thanh tiến trình động (`gui_progress.py`): phần trăm bên phải, tờ giấy minh hoạ bên trái, dải sáng khi đang chạy. |
@@ -98,10 +98,17 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - Chưa kiểm: GPU chạy thật trên máy có card NVIDIA và exe đóng gói (xem "Hướng phát triển mới"); tùy chọn Loại tài liệu chưa lưu; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
 
 ## Hướng phát triển mới (chọn độ chính xác cao nhất)
-Chủ dự án chấp nhận đảo quyết định cũ: không còn "không tải gói GPU", và không còn ưu tiên exe gọn hay chạy offline. Trạng thái: **đã triển khai, chưa kiểm trên máy Windows có GPU** (môi trường kiểm không có card NVIDIA; test không cần CUDA đều đạt, xem `tests/test_gpu_pack.py`).
-- **Bật GPU theo yêu cầu.** Nút "Bật GPU" trong GUI (dưới ô Phần cứng): chỉ bật khi thấy card NVIDIA và chạy Windows Python 3.12; tải gói GPU, kiểm SHA-256, cài vào `%LOCALAPPDATA%\OCR-Nhat\gpu\site`, rồi thử nạp CUDA. Gói ghim trong `gpu_manifest.py` (sinh từ `scripts/build_gpu_manifest.py`).
-- **Chạy qua tiến trình con.** Exe đóng gói onnxruntime CPU nên không nạp chung hai bản trong một tiến trình. Tiến trình con (`--gpu-worker`) thêm thư mục gói GPU vào `sys.path` và `os.add_dll_directory`, rồi OCR và trả kết quả. Nếu lỗi thì lùi về CPU và ghi log.
-- **Phần cứng "GPU (NVIDIA)"** dùng gói này khi onnxruntime trong tiến trình chính chưa có CUDA. Thiếu gói, lỗi, hoặc không phải Windows 3.12 thì lùi về CPU và ghi lý do.
+Chủ dự án chấp nhận đảo quyết định cũ: không còn "không tải gói GPU", và không còn ưu tiên exe gọn hay chạy offline. Trạng thái: **đã triển khai (hai gói cu12/cu13, chọn theo driver), chưa kiểm trên máy Windows có GPU** (môi trường kiểm không có card NVIDIA; test không cần CUDA đều đạt, xem `tests/test_gpu_pack.py`).
+- **Bật GPU theo yêu cầu.** Nút "Bật GPU" (dưới ô Phần cứng) hiện gói sẽ tải theo card, hoặc lý do không có gói. Chỉ chạy trên Windows Python 3.12.
+- **Chọn gói theo máy.** `select_pack()` đọc driver và compute capability của card đầu tiên, rồi chọn gói mới nhất đáp ứng được:
+
+| Gói | Bản CUDA | Driver tối thiểu | Compute tối thiểu | Dung lượng |
+|---|---|---|---|---|
+| `cu13` | 13.x (onnxruntime-gpu 1.31.1) | 580.0 (giả định) | 7.5 (chưa kiểm) | ~1,30 GB |
+| `cu12` | 12.9 (onnxruntime-gpu 1.22.0) | 576.2 (giả định) | 7.5 (giả định) | ~1,86 GB |
+
+- **Nguồn các ngưỡng.** Driver tối thiểu cu12 dựa trên bảng release notes CUDA 12.9 (Windows, GA 576.02, làm tròn lên 576.2). Với cu13, tài liệu NVIDIA chỉ đưa mức sàn họ 13.x là 580, không có số riêng cho Windows, nên đây là giả định. Compute 7.5 cho cu12 dựa trên commit build ORT CUDA 12.8 (có sm_75, sm_86); cu13 chưa kiểm. Các số này phải được xác nhận trên máy thật trước khi phát hành.
+- **Gói đã cài.** Đổi gói thì cài lại (thay thư mục `site`). Gỡ bằng `gpu_pack.remove()`.
 - **Rủi ro chưa kiểm:** trong exe, `onnxruntime.dll` của bản CPU đi kèm có thể được Windows nạp trước bản GPU. Cần thử trên Windows có GPU; nếu có, phương án là đóng gói bản CPU không kèm onnxruntime. Kích thước đĩa sau khi giải nén chưa đo.
 - **Độ chính xác là tiêu chí chọn engine và cấu hình.** Các đánh đổi tốc độ hay dung lượng chỉ xét khi không ảnh hưởng độ chính xác.
 

@@ -70,7 +70,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Không cài được: {why}")
                 return 1
             print(gpu_pack.install(progress=lambda t, f: print(f"{t} ({max(0, int(100 * f))}%)", flush=True)))
-        print("Gói GPU:", "đã cài" if gpu_pack.installed() else "chưa cài", f"(phiên bản {gpu_pack.M.PACK_VERSION})")
+        pid, why = gpu_pack.select_pack()
+        print("Gói GPU đã cài:", gpu_pack.installed_pack() or "chưa có")
+        print("Gói phù hợp với máy này:", pid or f"không có ({why})")
         return 0
     if a.gpu_info:
         from . import gpu

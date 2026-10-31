@@ -43,6 +43,39 @@ def _marker(base: Path | None = None) -> Path:
     return (base or base_dir()) / "installed.json"
 
 
+def _fmt(v: tuple[int, ...]) -> str:
+    return ".".join(str(x) for x in v)
+
+
+def select_pack(gpus=None) -> tuple[str | None, str]:
+    """Chọn gói GPU hợp với card đầu tiên: (mã gói hoặc None, lý do). Ưu tiên gói mới nhất đáp ứng được.
+
+    Điều kiện: driver >= min_driver và compute capability >= min_cc của gói (xem gpu_manifest.PACKS).
+    """
+    gpus = detect_gpus() if gpus is None else gpus
+    if not gpus:
+        return None, "không thấy card NVIDIA"
+    g = gpus[0]
+    if g.driver is None:
+        return None, f"{g.name}: không đọc được phiên bản driver"
+    if g.cc is None:
+        return None, f"{g.name}: không đọc được compute capability (driver quá cũ?)"
+    for pid in sorted(M.PACKS, reverse=True):   # "cu13" > "cu12": thử bản mới trước
+        pk = M.PACKS[pid]
+        if g.driver >= tuple(pk["min_driver"]) and g.cc >= tuple(pk["min_cc"]):
+            return pid, f"{g.name}: driver {_fmt(g.driver)}, compute {_fmt(g.cc)} → {pk['label']}"
+    need = min(M.PACKS.values(), key=lambda pk: pk["min_driver"])
+    if g.driver < tuple(need["min_driver"]):
+        return None, (f"{g.name}: driver {_fmt(g.driver)} thấp hơn mức tối thiểu "
+                      f"{_fmt(tuple(need['min_driver']))} ({need['label']})")
+    return None, f"{g.name}: compute {_fmt(g.cc)} thấp hơn mức tối thiểu {_fmt(tuple(need['min_cc']))}"
+
+
+def detect_gpus():
+    from . import gpu
+    return gpu.detect()
+
+
 def supported() -> tuple[bool, str]:
     """Gói GPU của bản này chỉ đóng cho Windows x64 Python 3.12 (khớp exe)."""
     if sys.platform != "win32":
@@ -52,12 +85,18 @@ def supported() -> tuple[bool, str]:
     return True, ""
 
 
-def installed(base: Path | None = None) -> bool:
+def installed_pack(base: Path | None = None) -> str | None:
+    """Mã gói đang cài (cu12/cu13) hoặc None."""
     try:
         info = json.loads(_marker(base).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    return info.get("version") == M.PACK_VERSION and site_dir(base).is_dir()
+        return None
+    pid = info.get("pack")
+    return pid if pid in M.PACKS and site_dir(base).is_dir() else None
+
+
+def installed(base: Path | None = None) -> bool:
+    return installed_pack(base) is not None
 
 
 def nvidia_present() -> bool:
@@ -74,12 +113,18 @@ def _safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
     zf.extractall(root)
 
 
-def install(progress=None, wheels=None, base: Path | None = None, check: bool = True) -> str:
+def install(progress=None, pack: str | None = None, wheels=None, base: Path | None = None,
+            check: bool = True) -> str:
     """Tải, kiểm SHA-256, giải nén gói GPU. progress(chữ, tỷ lệ 0..1; -1 = không rõ).
 
-    `wheels`/`base` để test. `check=True`: sau khi cài, thử nạp CUDA trong tiến trình con và báo kết quả.
+    pack: mã gói (cu12/cu13); None = chọn theo card (select_pack). `wheels`/`base` để test.
+    `check=True`: sau khi cài, thử nạp CUDA trong tiến trình con và báo kết quả.
     """
-    wheels = M.WHEELS if wheels is None else wheels
+    if wheels is None:
+        pack = pack or select_pack()[0]
+        if pack is None:
+            raise RuntimeError(select_pack()[1])
+        wheels = M.PACKS[pack]["wheels"]
     base = base or base_dir()
     base.mkdir(parents=True, exist_ok=True)
     wdir = base / "wheels"
@@ -102,8 +147,8 @@ def install(progress=None, wheels=None, base: Path | None = None, check: bool = 
     shutil.rmtree(site_dir(base), ignore_errors=True)
     staged.replace(site_dir(base))
     shutil.rmtree(wdir, ignore_errors=True)   # wheel đã giải nén, bỏ để tiết kiệm đĩa
-    _marker(base).write_text(json.dumps({"version": M.PACK_VERSION, "wheels": n}), encoding="utf-8")
-    msg = f"Đã cài gói GPU ({n} thành phần)."
+    _marker(base).write_text(json.dumps({"pack": pack, "wheels": n}), encoding="utf-8")
+    msg = f"Đã cài gói GPU {pack} ({n} thành phần)."
     if check:
         ok, providers = probe(base)
         msg += (" CUDA sẵn sàng." if ok else

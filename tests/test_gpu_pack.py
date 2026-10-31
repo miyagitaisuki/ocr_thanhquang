@@ -37,7 +37,7 @@ def _wheels(tmp: Path, extra: dict | None = None):
 def test_cai_tu_wheel_cuc_bo(tmp_path):
     seen = []
     msg = gpu_pack.install(progress=lambda t, f: seen.append((t, f)), wheels=_wheels(tmp_path),
-                           base=tmp_path / "gpu", check=False)
+                           base=tmp_path / "gpu", pack="cu12", check=False)
     assert "Đã cài" in msg
     assert gpu_pack.installed(tmp_path / "gpu")
     site = gpu_pack.site_dir(tmp_path / "gpu")
@@ -51,7 +51,7 @@ def test_sai_sha_thi_khong_cai(tmp_path):
     w = _wheels(tmp_path)
     bad = (w[0][0], w[0][1], "0" * 64, w[0][3])
     with pytest.raises(RuntimeError, match="SHA-256"):
-        gpu_pack.install(wheels=[bad, w[1]], base=tmp_path / "gpu", check=False)
+        gpu_pack.install(wheels=[bad, w[1]], base=tmp_path / "gpu", pack="cu12", check=False)
     assert not gpu_pack.installed(tmp_path / "gpu")
 
 
@@ -59,19 +59,19 @@ def test_duong_dan_lạ_bi_chan(tmp_path):
     evil = _wheel(tmp_path / "evil.whl", {"../../escape.txt": b"no"})
     base = tmp_path / "gpu"
     with pytest.raises(RuntimeError, match="đường dẫn lạ"):
-        gpu_pack.install(wheels=[evil], base=base, check=False)
+        gpu_pack.install(wheels=[evil], base=base, pack="cu12", check=False)
     assert not (tmp_path / "escape.txt").exists()
     assert not (base / "escape.txt").exists()
 
 
 def test_marker_sai_phien_ban_thi_chua_cai(tmp_path):
-    gpu_pack.install(wheels=_wheels(tmp_path), base=tmp_path / "gpu", check=False)
-    (tmp_path / "gpu" / "installed.json").write_text(json.dumps({"version": "cu-cũ"}), encoding="utf-8")
+    gpu_pack.install(wheels=_wheels(tmp_path), base=tmp_path / "gpu", pack="cu12", check=False)
+    (tmp_path / "gpu" / "installed.json").write_text(json.dumps({"pack": "cu-cũ"}), encoding="utf-8")
     assert not gpu_pack.installed(tmp_path / "gpu")
 
 
 def test_go_bo(tmp_path):
-    gpu_pack.install(wheels=_wheels(tmp_path), base=tmp_path / "gpu", check=False)
+    gpu_pack.install(wheels=_wheels(tmp_path), base=tmp_path / "gpu", pack="cu12", check=False)
     gpu_pack.remove(tmp_path / "gpu")
     assert not gpu_pack.installed(tmp_path / "gpu")
 
@@ -125,3 +125,49 @@ def test_remote_engine_qua_tien_trinh_con_that(tmp_path, monkeypatch):
 def test_chua_cai_thi_khong_co_engine_gpu(tmp_path, monkeypatch):
     monkeypatch.setattr(gpu_pack, "base_dir", lambda: tmp_path / "none")
     assert gpu_pack.remote_engine_for("ndlocr") is None
+
+
+def _g(driver, cc, name="RTX test"):
+    from ocrnhat.gpu import Gpu
+    return Gpu(name, 8192, driver=driver, cc=cc)
+
+
+def test_chon_goi_theo_driver_va_compute(monkeypatch):
+    # cu13 cần driver >= 580.0 và compute >= 7.5; cu12 cần driver >= 576.2
+    assert gpu_pack.select_pack([_g((581, 57), (8, 6))])[0] == "cu13"
+    assert gpu_pack.select_pack([_g((577, 10), (8, 6))])[0] == "cu12"   # driver đủ cu12, chưa đủ cu13
+    assert gpu_pack.select_pack([_g((570, 65), (8, 6))])[0] is None     # driver thấp hơn mọi gói
+    assert "driver" in gpu_pack.select_pack([_g((570, 65), (8, 6))])[1]
+    assert gpu_pack.select_pack([_g((581, 57), (6, 1))])[0] is None     # card đời cũ
+    assert "compute" in gpu_pack.select_pack([_g((581, 57), (6, 1))])[1]
+
+
+def test_khong_doc_duoc_driver_hoac_cc(monkeypatch):
+    assert gpu_pack.select_pack([_g(None, (8, 6))])[0] is None
+    assert gpu_pack.select_pack([_g((581, 57), None)])[0] is None
+    monkeypatch.setattr(gpu_pack, "detect_gpus", lambda: [])
+    assert gpu_pack.select_pack()[0] is None
+
+
+def test_parse_nvidia_smi_cac_muc_thieu(monkeypatch):
+    from ocrnhat import gpu
+    out = "NVIDIA GeForce RTX 3060 Laptop GPU, 6144, 581.57, 8.6\n"
+    g = gpu._parse_rows(out, ["name", "memory.total", "driver_version", "compute_cap"])[0]
+    assert (g.name, g.vram_mb, g.driver, g.cc) == ("NVIDIA GeForce RTX 3060 Laptop GPU", 6144, (581, 57), (8, 6))
+    g2 = gpu._parse_rows("RTX X, 4096, 560.10\n", ["name", "memory.total", "driver_version"])[0]
+    assert g2.cc is None and g2.driver == (560, 10)
+    assert gpu.parse_version("abc") is None
+
+
+def test_marker_luu_ma_goi(tmp_path):
+    gpu_pack.install(wheels=_wheels(tmp_path), pack="cu13", base=tmp_path / "gpu", check=False)
+    assert gpu_pack.installed_pack(tmp_path / "gpu") == "cu13"
+
+
+def test_manifest_hop_le():
+    from ocrnhat import gpu_manifest as M
+    assert set(M.PACKS) == {"cu12", "cu13"}
+    for pid, pk in M.PACKS.items():
+        assert pk["wheels"] and pk["total_bytes"] == sum(z for _, _, _, z in pk["wheels"])
+        for name, url, sha, size in pk["wheels"]:
+            assert len(sha) == 64 and url.startswith("https://files.pythonhosted.org/"), (pid, name)
