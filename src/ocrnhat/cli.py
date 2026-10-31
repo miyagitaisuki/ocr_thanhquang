@@ -51,7 +51,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--kana-reader", default="", choices=["", "tesseract", "template"], help="thử nghiệm: đọc ô bảng chữ kana bằng tesseract (cần lệnh tesseract + dữ liệu jpn) hoặc template (so khớp mẫu với IPAGothic); ô không chắc để trống, xuất file rà soát *_kana_review.html")
     ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
+    ap.add_argument("--check-gpu-pack", action="store_true", help="kiểm tra pip đóng gói sẵn có cài được gói GPU không rồi thoát (dùng trong CI)")
     a = ap.parse_args(argv)
+    if a.check_gpu_pack:
+        try:
+            gpupack.check_pip()
+        except Exception as e:
+            print(f"pip đóng gói lỗi: {e}")
+            return 1
+        print("pip đóng gói: OK")
+        return 0
     if a.gpu_info:
         from . import gpu
         for g in gpu.detect():

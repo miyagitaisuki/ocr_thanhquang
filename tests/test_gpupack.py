@@ -1,5 +1,6 @@
 """Gói GPU tùy chọn: chọn phiên bản cu126, đối số pip, trạng thái cài. Không tải mạng thật."""
 import io
+import sys
 from pathlib import Path
 
 from ocrnhat import gpupack
@@ -50,3 +51,29 @@ def test_co_du_thu_muc_nhung_thieu_dau_hieu_thi_chua_cai(monkeypatch, tmp_path):
     assert gpupack.installed() is False        # thiếu tệp đánh dấu: cài dở
     (tmp_path / gpupack.MARKER).write_text("ok", encoding="utf-8")
     assert gpupack.installed() is True
+
+
+def test_cai_that_bai_bao_loi_than_thien_va_ghi_log(monkeypatch, tmp_path):
+    monkeypatch.setattr(gpupack, "pack_dir", lambda: tmp_path)
+
+    def hong(): raise ImportError("distlib finder")
+    monkeypatch.setattr(gpupack, "check_pip", hong)
+    try:
+        gpupack.install(progress=lambda m: None)
+    except gpupack.PackError as e:
+        assert str(e) == gpupack.PACK_FAILED_MSG
+    else:
+        raise AssertionError("phải ném PackError")
+    log = (tmp_path / "install.log").read_text(encoding="utf-8")
+    assert "distlib finder" in log and not (tmp_path / gpupack.MARKER).exists()
+
+
+def test_exe_dong_goi_dang_ky_finder_cho_distlib(monkeypatch):
+    from pip._vendor.distlib import resources
+
+    fake = type("PyiFrozenImporter", (), {})()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(gpupack.importlib, "import_module", lambda name: type("M", (), {"__loader__": fake})())
+    monkeypatch.setattr(resources, "_finder_registry", dict(resources._finder_registry))
+    gpupack._register_frozen_finder()
+    assert resources._finder_registry[type(fake)] is resources.ResourceFinder
