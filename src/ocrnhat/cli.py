@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lang", default="ja", choices=["ja", "en", "zh", "vi", "all"], help="ja: tiếng Nhật (mặc định, NDLOCR/Chandra); en: tiếng Anh, zh: tiếng Trung (PaddleOCR); vi: tiếng Việt (VietOCR); all: mọi ngôn ngữ (chỉ Chandra)")
     ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--device", default="auto", choices=gpu_mod.DEVICES, help="auto | cpu | cuda (GPU NVIDIA, cần onnxruntime-gpu)")
+    ap.add_argument("--no-vi-fix", action="store_true", help="tắt hậu xử lý tiếng Việt (bỏ nhiễu dấu mộc, sửa dấu theo tần suất)")
     ap.add_argument("--no-cell-reocr", action="store_true", help="không nhận dạng lại các ô bảng có dòng vượt đường kẻ")
     ap.add_argument("--crop", default="", help="cắt vùng trang trước khi OCR: x0,y0,x1,y1 (pixel); nhiều vùng cách bằng \";\"")
     ap.add_argument("--upscale", type=float, default=1.0, help="phóng to ảnh trước khi OCR, ví dụ 2 cho ảnh chữ nhỏ")
@@ -74,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         r = pipeline.process_file(
             f, Path(a.out) if a.out else None, a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
-            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, lang=a.lang, merge_pages=not a.keep_pages, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, crop=crop, upscale=a.upscale, suspect=a.suspect, kana_reader=a.kana_reader,
+            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, lang=a.lang, merge_pages=not a.keep_pages, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, vi_fix=not a.no_vi_fix, crop=crop, upscale=a.upscale, suspect=a.suspect, kana_reader=a.kana_reader,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
         if r.get("suspect"):

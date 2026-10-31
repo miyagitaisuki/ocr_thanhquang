@@ -89,7 +89,7 @@ def read_options(get: Callable[[str, Any], Any], dev_map: Mapping[str, str] | No
         ruby=get("ruby", False), review=get("review", False), conf_threshold=conf,
         engine=engine_key(get("engine", ENGINE_LABELS["auto"])), crop=crop, upscale=upscale,
         merge_pages=get("merge", MERGE_LABELS[True]) == MERGE_LABELS[True],
-        cell_reocr=get("cell_reocr", True), use_cache=get("use_cache", True),
+        cell_reocr=get("cell_reocr", True), use_cache=get("use_cache", True), vi_fix=get("vi_fix", True),
         kana_reader=key_for(KANA_LABELS, get("kana", KANA_LABELS[""]), ""),
         dpi=int(get("dpi", "200")),
     )

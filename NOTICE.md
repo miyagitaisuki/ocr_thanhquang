@@ -32,6 +32,10 @@ Dùng kiến trúc và trọng số `vgg_seq2seq.pth` của **VietOCR** (pbcquoc
 - Chủ dự án xác nhận Apache-2.0 cho gói này. Ghi chú: file LICENSE trong gói ghi Apache-2.0, còn metadata ghi MIT.
 - Các file ONNX và từ điển được tải trong GUI (tab AI powered) từ chính repo này, kiểm SHA-256.
 
+## pyvi (hậu xử lý tiếng Việt, `src/ocrnhat/data/vi_words.txt`)
+
+Danh sách cụm âm tiết tiếng Việt lấy từ gói **pyvi** 0.1.1 (Viet-Trung Tran), giấy phép **MIT**: https://github.com/trungtv/pyvi (file `pyvi/models/words.txt` trong gói). Dùng để kiểm tra âm tiết hợp lệ khi sửa dấu của engine `ocr_vi`.
+
 ## PySide6 (giao diện chính, `OCR-Nhat.exe`)
 
 **PySide6** (Qt for Python) theo giấy phép **LGPL-3.0** (Qt Company / Qt Project). Dùng dạng thư viện động, không sửa Qt; người dùng có thể thay thế thư viện Qt trong thư mục exe. Gói dùng: PySide6-Essentials.

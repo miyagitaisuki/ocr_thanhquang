@@ -29,7 +29,7 @@ dependencies = { file = ["requirements.txt"] }
 where = ["src"]
 
 [tool.setuptools.package-data]
-ocrnhat = ["fonts/*"]
+ocrnhat = ["fonts/*", "data/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
