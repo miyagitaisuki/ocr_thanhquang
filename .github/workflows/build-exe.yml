@@ -58,5 +58,5 @@ jobs:
       # chỉ upload bộ cài; bản zip thư mục và bản CLI không còn được đóng gói
       - uses: actions/upload-artifact@v4
         with:
-          name: OCR-Nhat-setup
+          name: OCR-Nhat-clear
           path: installer_out/OCR-Nhat-setup.exe
