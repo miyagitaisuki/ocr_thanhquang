@@ -68,6 +68,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - Menu Hiển thị: giao diện sáng/tối, cỡ chữ (Nhỏ/Vừa/Lớn/Rất lớn), độ trong suốt 90–100% (dưới 90% chữ khó đọc nên không cho chọn). Áp dụng ngay, không cần khởi động lại.
 - Phím tắt: Ctrl+O (thêm file), Ctrl+R/F5 (chạy), Esc (dừng, có hỏi), Ctrl+1..4 (đổi mục), Delete (bỏ mục). Đóng cửa sổ khi đang chạy: hỏi, dừng, chờ luồng nền xong.
 - Bố cục mục OCR: nút **Dừng** nằm trên header cạnh "Bắt đầu xử lý" (bật khi đang chạy); khối "Tiến trình" ở đầu cột phải, có nút "Mở thư mục kết quả" khi xong. Gợi ý kéo thả luôn hiện (rút gọn khi đã có file). Tên file nằm trên mục danh sách (trình đọc màn hình đọc được).
+- Bố cục cột trái co được: nút Thêm/Bỏ và Mở kết quả xếp lưới 2×2, nhãn gợi ý xuống dòng, xem trước tối thiểu 200 px; cột phải giữ đủ chiều rộng nội dung (381 px ở cửa sổ 1180 px).
 - Responsive: cửa sổ < 980 px thu gọn thanh bên (nhãn hai dòng: "Tách/PDF", "Ghép/PDF", "Công cụ/khác") và xếp cột cấu hình xuống dưới danh sách file; tối thiểu 760×560. Hai cột ngăn bằng `QSplitter` (kéo được, cột cấu hình 300–560 px); cửa sổ hẹp đổi sang xếp dọc. Hằng số: `SIDEBAR_W`, `SIDEBAR_W_COMPACT`, `RIGHT_MIN_W`, `RIGHT_MAX_W` trong `gui.py`.
 - Lỗi nhập (OCR và mục PDF) hiện ngay trong banner của mục, không mở hộp thoại; con trỏ về ô bị lỗi (`gui_style.show_banner`). Hộp thoại chỉ còn cho xác nhận dừng/thoát.
 - Khi OCR đang chạy: khóa nút thêm/bỏ file, khối cấu hình và xem trước, có tooltip lý do (`OcrPage._locked_while_running`). Mục PDF khóa nút và danh sách như cũ.

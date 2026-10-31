@@ -11,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
     QScrollArea, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
@@ -178,18 +178,18 @@ class OcrPage(QWidget):
         left = QVBoxLayout()
         self.files_box = QGroupBox("Danh sách file (0)")
         fb = QVBoxLayout(self.files_box)
-        bar = QHBoxLayout()
+        bar = QGridLayout()   # lưới 2×2: hẹp thì các nút xếp hai hàng thay vì đẩy rộng cột
         self.btn_add = QPushButton("+ Thêm file")
         self.btn_dir = QPushButton("+ Thêm thư mục")
         self.btn_del = QPushButton("Bỏ mục đã chọn")
         self.btn_clear = QPushButton("Bỏ tất cả")
         self.btn_clear.setObjectName("dangerBtn")
-        for b in (self.btn_add, self.btn_dir, self.btn_del, self.btn_clear):
-            bar.addWidget(b)
-        bar.addStretch(1)
+        for i, b in enumerate((self.btn_add, self.btn_dir, self.btn_del, self.btn_clear)):
+            bar.addWidget(b, i // 2, i % 2)
         fb.addLayout(bar)
         drop = QLabel(DROP_HINT)
         drop.setObjectName("dropzone")
+        drop.setWordWrap(True)   # xuống dòng khi hẹp: không đẩy cả cột trái rộng ra
         drop.setAlignment(Qt.AlignmentFlag.AlignCenter)
         drop.setMinimumHeight(44)
         fb.addWidget(drop)

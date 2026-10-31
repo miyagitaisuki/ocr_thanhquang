@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QImage, QPalette
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu,
+    QAbstractItemView, QCheckBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu,
     QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -285,10 +285,9 @@ class ResultsBox(QGroupBox):
         self.btn_review = QPushButton("Mở file so sánh")
         self.btn_find = QPushButton("Tìm nhanh")
         self.btn_find.setToolTip("Mở thư mục của kết quả đang chọn, hoặc kết quả gần nhất.")
-        bar = QHBoxLayout()
-        for b in (self.btn_docx, self.btn_dir, self.btn_review, self.btn_find):
-            bar.addWidget(b)
-        bar.addStretch(1)
+        bar = QGridLayout()   # lưới 2×2: cột trái không bị đẩy rộng bởi một hàng nút dài
+        for i, b in enumerate((self.btn_docx, self.btn_dir, self.btn_review, self.btn_find)):
+            bar.addWidget(b, i // 2, i % 2)
         self.page = QSpinBox()
         self.page.setRange(1, 9999)
         self.page.setAccessibleName("Số trang xem trước")
@@ -301,10 +300,12 @@ class ResultsBox(QGroupBox):
         for w in (self.btn_prev, self.page, self.btn_next, self.page_info):
             nav.addWidget(w)
         nav.addStretch(1)
-        nav.addWidget(self.only_low)
-        self.view = PageView(mode="view", min_size=(300, 300))
+        filt = QHBoxLayout()
+        filt.addWidget(self.only_low)
+        filt.addStretch(1)
+        self.view = PageView(mode="view", min_size=(200, 200))
         self.lines = QListWidget()
-        self.lines.setMinimumWidth(260)
+        self.lines.setMinimumWidth(160)
         self.lines.setToolTip("Bấm một dòng để xem vị trí trên ảnh. Dòng đỏ là độ tin cậy thấp.")
         preview = QVBoxLayout()   # xếp dọc: ảnh trang trên, danh sách dòng dưới (không chiếm bề ngang)
         preview.addWidget(self.view, 1)
@@ -313,6 +314,7 @@ class ResultsBox(QGroupBox):
         root.addWidget(self.table)
         root.addLayout(bar)
         root.addLayout(nav)
+        root.addLayout(filt)
         root.addLayout(preview)
         self._row_to_line: list[int] = []
         self.set_enabled_actions(False)
