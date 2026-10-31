@@ -49,3 +49,29 @@ def test_bo_doan_rong_sau_loc_va_sua_o_bang():
     items = res[0][1]
     assert all(not (isinstance(i, Para) and not i.text.strip()) for i in items)
     assert isinstance(items[-1], Table)
+
+
+def test_tach_dieu_bi_gop_vao_doan():
+    paras = [Para(text="Trường Đại học Quy Nhơn Điều 2. Quyết định này có hiệu lực.")]
+    res = vi_text.correct_results([(1, paras)])
+    texts = [p.text for p in res[0][1]]
+    assert texts == ["Trường Đại học Quy Nhơn", "Điều 2. Quyết định này có hiệu lực."]
+
+
+def test_khong_tach_tham_chieu_dieu_trong_cau():
+    # "Điều 15 Quy chế" trong câu tham chiếu không có dấu chấm sau số, giữ nguyên
+    paras = [Para(text="theo Điều 15 Quy chế đào tạo, và Điều 5, 7 của quy định")]
+    res = vi_text.correct_results([(1, paras)])
+    assert len(res[0][1]) == 1
+
+
+def test_bo_day_chu_so_lap_tu_dau_mo():
+    assert "3 3 3" not in vi_text._drop_noise("nội dung 3 3 3 Thời hạn", _valid())
+    # dãy số thứ tự khác nhau (bảng) giữ nguyên
+    assert "1 2 3 4" in vi_text._drop_noise("cột 1 2 3 4 5", _valid())
+
+
+def test_tach_dieu_khi_thieu_khoang_trang_sau_dau_cham():
+    paras = [Para(text="bãi bỏ. Điều 9.In sao đề thi 1 Trưởng phòng")]
+    texts = [p.text for p in vi_text.correct_results([(1, paras)])[0][1]]
+    assert texts[-1].startswith("Điều 9.In")

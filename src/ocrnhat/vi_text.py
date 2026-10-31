@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import Counter, defaultdict
+from dataclasses import replace
 from functools import lru_cache
 from importlib import resources
 
@@ -16,6 +17,8 @@ from .layout import Para, Table
 
 _TOK = re.compile(r"^([^\w]*)([^\W\d_]+)([^\w]*)$")
 _SPLIT = re.compile(r"(\s+)")
+_ARTICLE = re.compile(r"\s+(?=Điều\s+\d+\.(?=\s|[^\W\d_]))")     # "Điều 2." bị gộp vào giữa đoạn trước
+_DIGIT_RUN = re.compile(r"(?<!\S)(\d)(?:\s+\1(?!\S)){2,}\s*")   # "3 3 3 3" từ dấu mộc
 MIN_COUNT = 3       # số lần tối thiểu cách viết thay thế phải xuất hiện
 RATIO = 4           # và phải nhiều hơn gấp RATIO lần cách viết gốc
 
@@ -57,6 +60,7 @@ def _tokens(text: str):
 
 
 def _drop_noise(text: str, valid: frozenset) -> str:
+    text = _DIGIT_RUN.sub("", text)
     out = []
     for part, m in _tokens(text):
         if m is None:
@@ -117,10 +121,24 @@ def _fix_text(text: str, bi: Counter, uni: Counter, lex) -> str:
     return "".join(part for part, _ in toks)
 
 
+def _split_articles(items: list) -> list:
+    """Tách đoạn body có "Điều N." ở giữa thành các đoạn riêng (mỗi Điều một đoạn)."""
+    out = []
+    for it in items:
+        if isinstance(it, Para) and it.kind == "body" and _ARTICLE.search(it.text):
+            for part in _ARTICLE.split(it.text):
+                if part.strip():
+                    out.append(replace(it, text=part.strip()))
+        else:
+            out.append(it)
+    return out
+
+
 def correct_results(results: list[tuple[int, list]]) -> list[tuple[int, list]]:
     """Áp dụng lên các mục Para và Table của mọi trang, trước khi ghi Word/txt."""
     lex = _lexicon()
     valid = lex[0]
+    results = [(pno, _split_articles(items)) for pno, items in results]
     paras = [i for _, items in results for i in items if isinstance(i, Para)]
     cells = [c for _, items in results for i in items if isinstance(i, Table) for c in i.cells]
     for p in paras:

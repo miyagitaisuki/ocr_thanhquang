@@ -285,7 +285,9 @@ class OcrPage(QWidget):
         cg.addWidget(self.txt)
         self.marker = QCheckBox("Ghi số trang gốc 【原本 p.N】")
         self.ruby = QCheckBox("Giữ chữ phiên âm kana trên chữ Hán (ruby)")
-        for c in (self.marker, self.ruby):
+        self.vi_fix = QCheckBox("Sửa dấu và bỏ nhiễu dấu mộc (chỉ tiếng Việt)")
+        self.vi_fix.setToolTip("Sửa dấu theo tần suất trong tài liệu và bỏ chữ rác từ dấu mộc. Tắt nếu muốn giữ nguyên chữ engine đọc.")
+        for c in (self.marker, self.ruby, self.vi_fix):
             og.addWidget(c)
         self.merge = QComboBox()
         for key, label in L.MERGE_LABELS.items():
@@ -383,6 +385,7 @@ class OcrPage(QWidget):
         self.btn_out.clicked.connect(self.pick_out)
         self.listing.dropped.connect(self._add_dropped)
         self.engine.currentIndexChanged.connect(self._sync_lang)
+        self.lang.currentIndexChanged.connect(self._sync_vi_fix)
         self.preset.currentIndexChanged.connect(self._apply_preset)
         self.listing.currentRowChanged.connect(self._sync_crop_src)
         self.btn_prev.clicked.connect(lambda: self.crop_page.setValue(self.crop_page.value() - 1))
@@ -426,6 +429,10 @@ class OcrPage(QWidget):
         idx = self.lang.findData(current) if current in allowed else 0
         self.lang.setCurrentIndex(idx)
         self.lang.blockSignals(False)
+        self._sync_vi_fix()
+
+    def _sync_vi_fix(self):
+        self.vi_fix.setVisible(self.lang.currentData() == "vi")
 
     # ---------- danh sách file ----------
 
@@ -571,7 +578,7 @@ class OcrPage(QWidget):
             "kana": L.KANA_LABELS[self.kana.currentData()],
             "txt": self.txt.isChecked(), "marker": self.marker.isChecked(), "ruby": self.ruby.isChecked(),
             "cell_reocr": self.cell_reocr.isChecked(), "use_cache": self.use_cache.isChecked(),
-            "review": self.review.isChecked(),
+            "review": self.review.isChecked(), "vi_fix": self.vi_fix.isChecked(),
         }
         return L.read_options(lambda name, default: vals.get(name, default), dev_map)
 
@@ -659,7 +666,7 @@ class OcrPage(QWidget):
 
     # ---------- nhớ tùy chọn ----------
 
-    _SAVED = ("txt", "marker", "ruby", "cell_reocr", "use_cache", "upscale", "crop", "pages", "out")
+    _SAVED = ("txt", "marker", "ruby", "vi_fix", "cell_reocr", "use_cache", "upscale", "crop", "pages", "out")
     _out_dir: Path | None = None   # thư mục kết quả của lần chạy gần nhất (nút "Mở thư mục kết quả")
     _run_out: Path | None = None   # thư mục lưu chốt khi bấm chạy
 

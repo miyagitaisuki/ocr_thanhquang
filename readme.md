@@ -35,7 +35,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `docx_out.py` | Xuất Word (font Yu Mincho, Heading, bảng, ruby) và txt. |
 | `cache.py` | Cache kết quả OCR theo hash file, dpi, crop/upscale, engine và version. Lưu ở `<out>/.cache`. |
 | `review.py` | `--review`: HTML đối chiếu ảnh trang với text, tô đỏ dòng độ tin cậy thấp. |
-| `vi_text.py` | Hậu xử lý engine `ocr_vi` (chỉ `--lang vi`, tắt bằng `--no-vi-fix`): bỏ nhiễu dấu mộc (chữ thường ≤3 ký tự không phải âm tiết, dãy số ≥5 chữ số), sửa dấu theo tần suất trong tài liệu, chỉ khi cách viết thay thế hợp lệ theo `data/vi_words.txt` (pyvi, MIT), xuất hiện ≥3 lần và gấp ≥4 lần cách viết gốc. Cụm đã có trong từ điển được giữ. |
+| `vi_text.py` | Hậu xử lý engine `ocr_vi` (chỉ `--lang vi`, tắt bằng `--no-vi-fix`): bỏ nhiễu dấu mộc (chữ thường ≤3 ký tự không phải âm tiết, dãy số ≥5 chữ số), sửa dấu theo tần suất trong tài liệu, chỉ khi cách viết thay thế hợp lệ theo `data/vi_words.txt` (pyvi, MIT), xuất hiện ≥3 lần và gấp ≥4 lần cách viết gốc. Cụm đã có trong từ điển được giữ. Tách đoạn có "Điều N." bị gộp giữa đoạn trước. Bỏ dãy chữ số lặp ("3 3 3"). Có ô "Sửa dấu và bỏ nhiễu dấu mộc" trong GUI (chỉ hiện khi chọn tiếng Việt). |
 | `pdf_ops.py` | Xoay trang, nén PDF và theo dõi thư mục (`watch_folder`, quét định kỳ, không dùng watchdog). |
 | `pdf_extract.py` | Công cụ PDF: trích xuất trang và tách file (pypdf): cú pháp `2,5-7,12-`, file riêng cho mỗi nhóm, ghi đè, nén, bỏ bookmark, phiên bản PDF. Lệnh `ocrnhat-pdf`. Các mục Tách PDF, Ghép PDF, Công cụ khác trong GUI. |
 | `suspect.py` | `--suspect` (thử nghiệm, tắt mặc định): BERT tiếng Nhật đánh dấu ký tự nghi ngờ, không sửa văn bản. |
@@ -83,7 +83,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - Đầu ra: mặc định ghi cạnh file gốc (CLI `-o` / ô "Thư mục lưu" để trống = thư mục gốc). Tên file: `OCR_<tên không dấu>_<trang đầu>_<trang cuối>.docx/.txt` (`pipeline.output_stem`, `ascii_name`). Cache `.cache` nằm trong thư mục đầu ra.
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 - Chưa kiểm trên Windows thật: giao diện PySide6, exe và bộ cài sau khi bỏ Tkinter (build chỉ chạy được trên GitHub Actions). Chưa thử trình đọc màn hình thật.
-- `ocr_vi` đã chạy trên PDF scan thật (quyết định 1196/QĐ-ĐHQN, 43 trang, CPU ~11 s/trang, có cache). Hậu xử lý `vi_text.py` giảm âm tiết ngoài từ điển từ 4,5% xuống 3,8% trên tài liệu này (đo bằng từ điển pyvi, chưa có bản đối chiếu chuẩn). Vẫn còn: nhiễu dấu mộc in hoa (ví dụ "INTERSING"), dãy "3 3 3", "Căn cử" (cặp không đủ bằng chứng), "Điều 1/Điều 2" gộp một đoạn. Hậu xử lý chưa có trong GUI.
+- `ocr_vi` đã chạy trên PDF scan thật (quyết định 1196/QĐ-ĐHQN, 43 trang, CPU ~11 s/trang, có cache). Hậu xử lý `vi_text.py` giảm âm tiết ngoài từ điển từ 4,5% xuống 3,8% trên tài liệu này (đo bằng từ điển pyvi, chưa có bản đối chiếu chuẩn). Vẫn còn: nhiễu dấu mộc in hoa (ví dụ "INTERSING"), "Căn cử" (cặp không đủ bằng chứng để sửa), lỗi nhận dạng chữ không phải dấu (ví dụ "đôi" → "đối" đã sửa, nhưng "thi"/"thì" lẫn trong ngữ cảnh chưa chắc).
 - Chưa làm: GPU chạy thật trong exe (exe dùng onnxruntime CPU); tùy chọn Loại tài liệu chưa lưu; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
 
 ## Lỗi và giới hạn đã biết
