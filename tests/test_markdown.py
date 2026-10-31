@@ -17,7 +17,7 @@ def _pages():
 
 def test_markdown_dau_hieu():
     md = to_markdown(_pages(), ruby=True)
-    assert md.startswith("<!-- p.3 -->")
+    assert md.startswith("<!-- trang 3 -->")
     assert "## 第一章" in md
     assert "\n\n本文です。\n\n" in md
     assert "⟦?怪しい文⟧" in md
@@ -29,7 +29,7 @@ def test_markdown_dau_hieu():
 
 def test_markdown_khong_ruby_va_khong_trang():
     md = to_markdown(_pages(), page_marker=False, conf=0.0)
-    assert "<!--" in md and "p.3" not in md
+    assert "<!--" in md and "trang 3" not in md
     assert "{漢字" not in md and "⟦?" not in md
 
 
