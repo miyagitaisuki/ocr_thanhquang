@@ -508,7 +508,9 @@ class ModelBox(QGroupBox):
 
         root.addWidget(self.bar)
         root.addWidget(self.status)
-        QVBoxLayout(self).addWidget(self.body)
+        wrap = QVBoxLayout(self)
+        wrap.setContentsMargins(0, 0, 0, 0)
+        wrap.addWidget(self.body)
         self.body.setVisible(False)
         self.toggled.connect(self.body.setVisible)
         self._refresh_status()
