@@ -18,11 +18,11 @@ from ocrnhat import gui_about
 def test_gioi_thieu_co_thong_tin_tac_gia_va_giay_phep():
     html = gui_about.ABOUT_HTML
     for text in ("Nguyễn Thanh Quang", "Đại học Quy Nhơn", "08686 08647", "nguyenthanhquang@qnu.edu.vn",
-                 "CC BY 4.0", "OpenRAIL-M", "LGPL-3.0"):
+                 "CC BY 4.0", "LGPL-3.0"):
         assert text in html
 
 
-def test_system_info_bao_card_nvidia_va_torch(monkeypatch):
+def test_system_info_bao_card_nvidia_va_onnxruntime(monkeypatch):
     from ocrnhat import gpu
     monkeypatch.setattr(gpu, "detect", lambda: [gpu.Gpu("NVIDIA GeForce RTX 3060", 12288)])
     monkeypatch.setattr(gpu, "ort_cuda_available", lambda: False)

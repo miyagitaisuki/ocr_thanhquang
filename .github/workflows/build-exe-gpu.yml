@@ -1,6 +1,6 @@
 name: Build Windows exe (GPU NVIDIA)
 # Bản riêng cho máy có card NVIDIA: dùng onnxruntime-gpu (CUDA). Bản CPU vẫn ở build-exe.yml.
-# Người dùng cần driver NVIDIA. Torch CUDA và Chandra KHÔNG đóng vào exe: app tải gói GPU khi người dùng bấm nút.
+# Người dùng cần driver NVIDIA. CUDA/cuDNN (gói nvidia-* của onnxruntime-gpu) đi kèm trong exe.
 on:
   workflow_dispatch:
 jobs:
@@ -36,7 +36,6 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
           --collect-all onnxruntime --collect-all docx --collect-all PySide6
-          --collect-all pip
           run_gui.py
       - name: Build exe (dòng lệnh GPU)
         run: >
@@ -46,11 +45,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
           --collect-all onnxruntime --collect-all docx --collect-all PySide6
-          --collect-all pip
           run_gui.py
-      - name: Kiểm tra pip đóng gói sẵn (người dùng bấm "Cài tăng tốc GPU")
-        shell: pwsh
-        run: ./dist/ocrnhat-cli-gpu/ocrnhat-cli-gpu.exe --check-gpu-pack
       - name: "Kiểm tra exe GPU (runner không có GPU: phải lùi về CPU và vẫn OCR đúng)"
         shell: pwsh
         run: |
@@ -61,7 +56,7 @@ jobs:
           $t = Get-Content $txt.FullName -Encoding UTF8 -Raw
           Write-Host $t
           if ($t -notmatch "日本語") { throw "exe GPU không OCR được" }
-      # không nén zip: bản GPU vài GB, upload-artifact tự nén; trọng số Chandra KHÔNG đóng vào (người dùng tải lần đầu)
+      # không nén zip: bản GPU vài GB, upload-artifact tự nén
       - uses: actions/upload-artifact@v4
         with:
           name: OCR-Nhat-GPU-windows

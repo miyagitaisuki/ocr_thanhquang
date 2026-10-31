@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import importlib.util
 import platform
 import sys
 
@@ -12,7 +11,7 @@ from PySide6.QtCore import QThread, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QMenu, QPlainTextEdit, QPushButton, QTextBrowser, QVBoxLayout
 
-from . import __version__, gpu, gpupack
+from . import __version__, gpu
 from . import ui_logic as L
 from .gui_style import APP_NAME
 
@@ -24,17 +23,16 @@ EMAIL = "nguyenthanhquang@qnu.edu.vn"
 # (thành phần, giấy phép, ghi chú); nội dung đầy đủ nằm trong NOTICE.md
 LICENSES = (
     ("NDLOCR-Lite (Thư viện Quốc hội Nhật Bản)", "CC BY 4.0", "engine đọc tiếng Nhật mặc định"),
-    ("Chandra OCR 2 (Datalab)", "mã Apache-2.0; trọng số OpenRAIL-M", "tùy chọn, tải riêng; dùng cá nhân/nghiên cứu, không thương mại khi vượt ngưỡng 2 triệu USD"),
     ("PaddleOCR PP-OCRv4", "Apache-2.0", "engine tiếng Anh, Trung"),
     ("VietOCR", "Apache-2.0", "engine tiếng Việt"),
     ("pyvi", "MIT", "từ điển hậu xử lý tiếng Việt"),
     ("PySide6 (Qt for Python)", "LGPL-3.0", "giao diện; dùng dạng thư viện động, không sửa Qt"),
     ("onnxruntime, python-docx, pip", "MIT", ""),
     ("OpenCV, pypdfium2, PyYAML", "Apache-2.0 / BSD-3-Clause", ""),
-    ("NumPy, torch, torchvision", "BSD-3-Clause", "torch chỉ có khi cài gói GPU"),
+    ("NumPy", "BSD-3-Clause", ""),
     ("Pillow", "MIT-CMU", ""),
     ("PyInstaller", "GPL-2.0+ có ngoại lệ đóng gói", "chỉ dùng để dựng exe"),
-    ("Thư viện CUDA của NVIDIA", "giấy phép NVIDIA", "kèm trong gói GPU tùy chọn"),
+    ("Thư viện CUDA của NVIDIA", "giấy phép NVIDIA", "kèm trong bản exe GPU"),
 )
 
 
@@ -51,13 +49,13 @@ Miễn phí, chạy offline. Phiên bản {__version__}.</p>
 Điện thoại: {PHONE}<br>Email: <a href="mailto:{EMAIL}">{EMAIL}</a></p>
 <h3>Giấy phép các thành phần</h3>
 <table cellpadding="4" cellspacing="0" border="0">{_licenses_rows()}</table>
-<p>Chi tiết đầy đủ và điều khoản của Chandra: xem <b>NOTICE.md</b> trong thư mục phần mềm.</p>
+<p>Chi tiết đầy đủ: xem <b>NOTICE.md</b> trong thư mục phần mềm.</p>
 """
 
 
 def system_info() -> list[str]:
     """Các dòng mô tả máy và trạng thái GPU, dùng cho hộp thoại Thông tin hệ thống và khi báo lỗi.
-    Import torch mất vài giây: gọi từ luồng nền (SysInfoWorker)."""
+    Gọi từ luồng nền (SysInfoWorker): dò GPU và nạp onnxruntime mất vài giây."""
     lines = [f"{APP_NAME} {__version__}",
              f"Hệ điều hành: {platform.platform()}",
              f"Python: {sys.version.split()[0]}{' (exe đóng gói)' if getattr(sys, 'frozen', False) else ''}"]
@@ -68,32 +66,10 @@ def system_info() -> list[str]:
     else:
         lines.append("Card NVIDIA: không thấy (nvidia-smi không chạy được; kiểm tra driver NVIDIA)")
     lines.append("onnxruntime CUDA (NDLOCR): " + ("có" if gpu.ort_cuda_available() else "không (bản CPU)"))
-    lines.append("Gói GPU (torch + Chandra): " + ("đã cài" if gpupack.installed() else "chưa cài")
-                 + f"  [{gpupack.pack_dir()}]")
-    if importlib.util.find_spec("torch") is None:
-        lines.append("torch: chưa có")
-    else:
-        try:
-            import torch
-            cuda = torch.cuda.is_available()
-            lines.append(f"torch {torch.__version__}: CUDA " + ("có, " + torch.cuda.get_device_name(0) if cuda else "không"))
-        except Exception as e:   # DLL CUDA thiếu: lỗi này giải thích vì sao Chandra không dùng được GPU
-            lines.append(f"torch: không nạp được ({type(e).__name__}: {e})")
-    if importlib.util.find_spec("chandra") is None:
-        lines.append("Chandra: chưa cài (bấm Cài tăng tốc GPU rồi khởi động lại)")
-    else:
-        try:
-            from .engines import chandra
-            ready = chandra.model_downloaded()
-        except Exception:
-            ready = False
-        lines.append("Chandra: đã cài; trọng số " + ("đã tải" if ready else "chưa tải"))
     from . import engines
     eng, why = engines.resolve("auto")
     lines.append(f"Công cụ tự động chọn: {eng} ({why})")
     lines.append(f"Thư mục nhật ký lỗi: {L.LOG_FILE.parent}")
-    if gpupack.log_file().is_file():
-        lines.append(f"Nhật ký cài gói GPU: {gpupack.log_file()}")
     return lines
 
 
@@ -130,7 +106,7 @@ class AboutDialog(QDialog):
 
 
 class SystemDialog(QDialog):
-    """Thông tin hệ thống: GPU, torch, Chandra, đường dẫn. Có nút sao chép để dán khi báo lỗi."""
+    """Thông tin hệ thống: GPU, onnxruntime CUDA, đường dẫn. Có nút sao chép để dán khi báo lỗi."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -155,7 +131,7 @@ class SystemDialog(QDialog):
         self.worker.start()
 
     def done(self, r):
-        self.worker.wait(15000)   # luồng nền còn import torch: đợi xong rồi mới hủy hộp thoại
+        self.worker.wait(15000)   # luồng nền còn dò GPU: đợi xong rồi mới hủy hộp thoại
         super().done(r)
 
 

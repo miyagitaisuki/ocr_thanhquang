@@ -63,7 +63,7 @@ def test_cache_doc_lai_dung_trang(tmp_path):
     c.put(1, page)
     assert c.get(1) == page
     # khác engine hoặc phiên bản thì không dùng lại cache cũ
-    assert PageCache(tmp_path / ".cache", "h", 200, "chandra", "v1").get(1) is None
+    assert PageCache(tmp_path / ".cache", "h", 200, "paddle", "v1").get(1) is None
 
 
 def test_file_hash_thay_doi_theo_noi_dung(tmp_path):

@@ -4,7 +4,6 @@ Logic không phụ thuộc giao diện nằm ở ui_logic.py; khuôn màu và ki
 """
 from __future__ import annotations
 
-import importlib.util
 import logging
 from pathlib import Path
 
@@ -16,7 +15,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import gpu, gpupack, pipeline
+from . import gpu, pipeline
 from . import ui_logic as L
 from .cli import collect
 from .gui_about import SystemDialog, SysInfoWorker, build_help_menu
@@ -24,8 +23,6 @@ from .gui_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, bui
 from .gui_style import APP_NAME, add_soft_shadows, show_banner, state_key
 from .gui_pdf import MergeSection, SplitSection, ToolsSection
 from .gui_progress import AnimatedProgress
-
-gpupack.activate()   # trước khi đọc find_spec('chandra')
 
 log = logging.getLogger("ocrnhat.gui")
 
@@ -36,7 +33,7 @@ SIDEBAR_W, SIDEBAR_W_COMPACT = 228, 96          # chiều rộng thanh bên (px)
 RIGHT_MIN_W, RIGHT_MAX_W = 300, 560             # cột cấu hình: kéo được trong khoảng này (px)
 DROP_HINT = "Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file” (Ctrl+O)"
 DROP_HINT_SHORT = "Kéo thả thêm file vào đây · Ctrl+O để chọn file"
-ENGINES = ("auto", "ndlocr") + (("chandra",) if importlib.util.find_spec("chandra") else ()) + ("paddle", "ocr_vi")
+ENGINES = ("auto", "ndlocr", "paddle", "ocr_vi")
 FILE_FILTER = "PDF / ảnh (*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
 PRESETS = {   # mẫu tài liệu: đặt sẵn độ phóng to và đọc bảng; các ô khác giữ nguyên
     "Sổ tay / sách (mặc định)": dict(upscale="1", cell_reocr=True),
@@ -383,7 +380,7 @@ class OcrPage(QWidget):
         rb.addWidget(self.btn_log)
         right.insertWidget(0, run_box)   # tiến trình lên đầu cột: thấy ngay khi chạy, không cần cuộn
 
-        self.models = ModelBox(chandra_available="chandra" in ENGINES)
+        self.models = ModelBox()
         right.addWidget(self.models)
         right.addStretch(1)
         right_col = QWidget()
@@ -749,7 +746,7 @@ class HardwareProbe(QThread):
             return
         g = max(gpus, key=lambda x: x.vram_mb or 0)
         vram = f" · {round(g.vram_mb / 1024)} GB" if g.vram_mb else ""
-        use = "GPU sẵn sàng" if gpupack.installed() else "bấm Mô hình AI để cài tăng tốc GPU"
+        use = "GPU dùng được cho OCR" if gpu.ort_cuda_available() else "chỉ dùng CPU (onnxruntime không có CUDA)"
         self.ready.emit(f"{g.name}{vram}\n{use}")
 
 
@@ -807,7 +804,7 @@ class MainWindow(QMainWindow):
 
         foot = ClickableFoot()
         foot.setObjectName("sideFoot")
-        foot.setToolTip("Bấm để xem thông tin hệ thống: GPU, torch, Chandra")
+        foot.setToolTip("Bấm để xem thông tin hệ thống: GPU, onnxruntime CUDA")
         foot.setAccessibleName("Trạng thái hệ thống. Bấm để xem chi tiết")
         foot.clicked.connect(lambda: SystemDialog(self).exec())
         fl = QVBoxLayout(foot)
@@ -986,6 +983,8 @@ class MainWindow(QMainWindow):
                     page.watcher = None
                 if page.worker is not None:
                     page.worker.wait(30000)
+        if self._hw_probe.isRunning():
+            self._hw_probe.wait(5000)   # dò GPU có thể còn chạy: đợi để không hủy luồng đang chạy
         self.ocr._save()
         self.split._save()
         self.merge._save()

@@ -9,3 +9,4 @@ smoke.png
 exe_out/
 .cache/
 models/
+.venv/

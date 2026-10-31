@@ -179,7 +179,7 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
     from . import engines
     engine, why = engines.resolve_for_lang(engine or engines.DEFAULT, lang)
     from .gpu import resolve_device
-    dev, dev_why = resolve_device(device, engine)
+    dev, dev_why = resolve_device(device)
     if progress:
         progress(0, total, f"Engine: {engine} ({why}); thiết bị: {dev} ({dev_why})")
     regions = normalize_regions(crop)
@@ -190,9 +190,7 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
         pre_tag += f"u{upscale:g}"
     cache = PageCache(out_dir / ".cache", file_hash(path), f"{dpi}{pre_tag}", engine, engines.engine_version(engine)) if use_cache else None
     n_workers = workers or default_workers(dev)
-    batch = engines.batch_size(engine)   # Chandra: số trang mỗi lần suy luận theo VRAM
-    if batch > 1 or engine == "chandra":
-        n_workers = 1                    # một bản model trên GPU; các trang gom thành nhóm
+    batch = 1   # số trang gom mỗi lần suy luận (engine không có batch: 1)
     from . import kana as _kana
     kana_log: list[tuple[int, np.ndarray, str]] = []   # thử nghiệm: mỗi ô kana được ghi lại để rà soát
     kana_pno = [0]

@@ -137,7 +137,7 @@ def _inside(l: Line, b: Block, m: float = 4) -> bool:
 
 class _Filter:
     def __init__(self, page: Page, lang: str = "ja"):
-        self.lang = lang   # ja: chỉ giữ tiếng Nhật (mặc định); khác: giữ mọi văn bản (chỉ Chandra)
+        self.lang = lang   # ja: chỉ giữ tiếng Nhật (mặc định); khác: giữ mọi văn bản (chưa có engine nào dùng)
         self.rubies = [b for b in page.blocks if b.kind == "ruby"]
         self.ruby: dict[int, list[tuple[float, float, str]]] = {}
         sizes = sorted(l.size for b in page.blocks if b.kind in ("text", "table") for l in b.lines

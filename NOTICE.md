@@ -6,20 +6,6 @@ phát hành theo giấy phép **CC BY 4.0** — https://github.com/ndl-lab/ndloc
 không sao chép vào repo này). Mô hình phát hiện bố cục dùng backbone DINOv3 chưng cất, xem
 giấy phép DINOv3 trong repo NDLOCR-Lite.
 
-## Chandra OCR 2 (engine tùy chọn, `--engine chandra`)
-
-Engine này dùng **Chandra OCR 2** của Datalab (`datalab-to/chandra-ocr-2`, gói `chandra-ocr`).
-- **Mã nguồn** gói `chandra-ocr`: Apache-2.0 — https://github.com/datalab-to/chandra
-- **Trọng số mô hình** theo giấy phép OpenRAIL-M sửa đổi (file LICENSE trên Hugging Face). Điều khoản chính:
-  - Không dùng cho mục đích thương mại khi doanh thu gộp năm trước vượt 2 triệu USD, hoặc tổng vốn/nợ đã huy động vượt 2 triệu USD. Không áp dụng cho sử dụng cá nhân hoặc nghiên cứu.
-  - Không dùng để cung cấp sản phẩm hoặc dịch vụ cạnh tranh với sản phẩm của Datalab.
-  - Phải ghi công Datalab, đưa link tới mô hình gốc, kèm bản giấy phép và nêu rõ thay đổi nếu có.
-  - Dẫn xuất (lượng tử hóa, tinh chỉnh) phải giữ cùng giấy phép.
-- Trọng số **không được đóng vào exe và không nằm trong repo**: người dùng tự cài `pip install ".[chandra]"`, mô hình tải về từ Hugging Face.
-- Nếu vượt ngưỡng hoặc cần dùng thương mại rộng hơn, phải xin giấy phép thương mại từ Datalab.
-- Gói GPU (tải khi người dùng bấm nút trong GUI, không đóng vào exe) gồm torch và torchvision (BSD-3, PyTorch), `chandra-ocr` (Apache-2.0) và các phụ thuộc. Trọng số Chandra vẫn tải riêng từ Hugging Face khi người dùng bấm, và người dùng phải chấp nhận điều khoản OpenRAIL-M của trọng số. Gói GPU có thể kèm thư viện CUDA của NVIDIA theo giấy phép của NVIDIA.
-- **Phạm vi sử dụng hiện tại: chỉ cá nhân chủ dự án, không phân phối.** Theo điều khoản, sử dụng cá nhân/nghiên cứu được miễn ngưỡng thương mại. Nếu chia sẻ exe, đưa cho người khác, hoặc dùng cho mục đích có doanh thu, phải xem lại điều khoản trên trước.
-
 ## PaddleOCR (engine `paddle`: tiếng Anh và tiếng Trung)
 
 Dùng mô hình PP-OCRv4 (dò dòng `ch_PP-OCRv4_det_infer`, nhận dạng `ch_PP-OCRv4_rec_infer`) và từ điển `ppocr_keys_v1.txt` của **PaddleOCR** (PaddlePaddle), giấy phép **Apache-2.0**: https://github.com/PaddlePaddle/PaddleOCR
@@ -45,7 +31,7 @@ Danh sách cụm âm tiết tiếng Việt lấy từ gói **pyvi** 0.1.1 (Viet-
 Bộ cài (exe CPU) chứa các thành phần sau. Mỗi thành phần theo giấy phép riêng; xem file LICENSE của dự án gốc.
 - **Python** và thư viện chuẩn (Python Software Foundation License).
 - **PyInstaller** (đóng gói exe; GPL-2.0-or-later với ngoại lệ cho phép đóng gói chương trình không phải GPL).
-- **pip** (MIT): dùng để cài gói GPU tùy chọn ngay trong app.
+- **Thư viện CUDA/cuDNN của NVIDIA** (gói `nvidia-*` của onnxruntime-gpu, chỉ trong bản exe GPU): theo giấy phép NVIDIA riêng.
 - **onnxruntime** (MIT), **OpenCV** (Apache-2.0), **pypdfium2** (Apache-2.0 / BSD-3-Clause), **python-docx** (MIT), **NumPy** (BSD-3-Clause), **Pillow** (MIT-CMU), **PyYAML**, **lxml**, **tqdm**, **networkx** (BSD).
 
 Công cụ **Inno Setup** chỉ dùng để tạo bộ cài trong CI, không đóng gói vào bộ cài.

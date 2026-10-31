@@ -10,19 +10,20 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from . import gpupack, pipeline
+from . import pipeline
+from .appdir import app_dir
 
-SETTINGS = gpupack.pack_dir().parent / "settings.json"   # dùng chung cho cả hai giao diện
-LOG_FILE = gpupack.pack_dir().parent / "logs" / "app.log"
+SETTINGS = app_dir() / "settings.json"   # dùng chung cho cả hai giao diện
+LOG_FILE = app_dir() / "logs" / "app.log"
 
 ENGINE_LABELS = {"auto": "Tự động (công cụ phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
-                 "chandra": "Tiếng Nhật – Chandra", "paddle": "Tiếng Anh, Trung – PaddleOCR",
+                 "paddle": "Tiếng Anh, Trung – PaddleOCR",
                  "ocr_vi": "Tiếng Việt – VietOCR"}
 LANG_LABELS = {"ja": "Tiếng Nhật", "en": "Tiếng Anh", "zh": "Tiếng Trung", "vi": "Tiếng Việt",
-               "all": "Mọi ngôn ngữ (cần Chandra)"}
+               }
 # ngôn ngữ được chọn cho từng engine (auto: mọi ngôn ngữ, engine tự chọn theo ngôn ngữ)
-ENGINE_LANGS = {"ndlocr": ("ja",), "chandra": ("ja", "en", "zh", "vi", "all"), "paddle": ("en", "zh"),
-                "ocr_vi": ("vi",), "auto": ("ja", "en", "zh", "vi", "all")}
+ENGINE_LANGS = {"ndlocr": ("ja",), "paddle": ("en", "zh"),
+                "ocr_vi": ("vi",), "auto": ("ja", "en", "zh", "vi")}
 KANA_LABELS = {"": "Tắt", "template": "Mẫu chữ IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
 MERGE_LABELS = {True: "Gộp trang (mặc định)", False: "Giữ nguyên trang"}
 
