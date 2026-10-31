@@ -39,6 +39,22 @@ ENGINES = ("auto", "ndlocr", "paddle", "ocr_vi", "yomitoku")   # yomitoku chỉ 
 def _yomitoku_installed() -> bool:
     from .engines.yomitoku import YomitokuEngine
     return YomitokuEngine.is_available()[0]
+
+
+def _collapsible(title: str, open_: bool = False):
+    """Khung thu gọn trong cột cấu hình: ô tích tiêu đề nằm trong khung trắng. Trả (khung, layout nội dung)."""
+    box = QGroupBox(title)
+    box.setCheckable(True)
+    box.setProperty("collapsible", True)
+    body = QWidget()
+    inner = QVBoxLayout(body)
+    wrap = QVBoxLayout(box)
+    wrap.setContentsMargins(0, 0, 0, 0)   # khung tự cao theo nội dung, không thêm đệm
+    wrap.addWidget(body)
+    box.setChecked(open_)
+    body.setVisible(open_)
+    box.toggled.connect(body.setVisible)
+    return box, inner
 FILE_FILTER = "PDF / ảnh (*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
 PRESETS = {   # mẫu tài liệu: đặt sẵn độ phóng to và đọc bảng; các ô khác giữ nguyên
     "Sổ tay / sách (mặc định)": dict(upscale="1", cell_reocr=True),
@@ -217,6 +233,16 @@ class OcrPage(QWidget):
         self.listing.setMinimumHeight(150)
         self.listing.setAccessibleName("Danh sách file cần OCR")
         fb.addWidget(self.listing)
+        # phạm vi xử lý: áp dụng cho các file trong danh sách
+        self.merge = QComboBox()
+        for key, label in L.MERGE_LABELS.items():
+            self.merge.addItem(label, key)
+        self.pages = QLineEdit()
+        self.pages.setPlaceholderText("ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)")
+        fb.addWidget(labeled("Cách ghép trang", self.merge))
+        fb.addWidget(self.merge)
+        fb.addWidget(labeled("Trang", self.pages))
+        fb.addWidget(self.pages)
         self.drop = drop
         left.addWidget(self.files_box)
 
@@ -291,52 +317,44 @@ class OcrPage(QWidget):
         for label, widget in (("Công cụ OCR", self.engine), ("Ngôn ngữ", self.lang), ("Phần cứng", self.device)):
             cg.addWidget(labeled(label, widget))
             cg.addWidget(widget)
-        self.gpu_box = GpuBox()
-        cg.addWidget(self.gpu_box)
-        cg.addWidget(labeled("Thư mục lưu", self.out))
-        cg.addLayout(out_row)
+        self.vi_fix = QCheckBox("Sửa dấu và bỏ nhiễu dấu mộc (chỉ tiếng Việt)")
+        self.vi_fix.setToolTip("Sửa dấu theo tần suất trong tài liệu và bỏ chữ rác từ dấu mộc. Tắt nếu muốn giữ nguyên chữ engine đọc.")
+        cg.addWidget(self.vi_fix)   # chỉ hiện khi chọn tiếng Việt (_sync_vi_fix)
         right.addWidget(cfg)
 
-        # cấu hình cơ bản: thêm file .txt vào khối cấu hình (cg); phần còn lại thu gọn trong "Tùy chọn nâng cao"
-        opt = QGroupBox("Tùy chọn nâng cao")
-        opt.setCheckable(True)
-        opt.setProperty("collapsible", True)
-        opt.setChecked(False)
-        opt_body = QWidget()
-        og = QVBoxLayout(opt_body)
-        wrap = QVBoxLayout(opt)
-        wrap.setContentsMargins(0, 0, 0, 0)   # khung thu gọn: không thêm đệm (khung tự cao theo nội dung)
-        wrap.addWidget(opt_body)
+        # đầu ra: mọi thứ liên quan tới file ghi ra (mở sẵn)
+        out_box, og = _collapsible("Đầu ra", open_=True)
         self.txt = QCheckBox("Ghi kèm file .txt")
-        cg.addWidget(self.txt)
         self.marker = QCheckBox("Ghi số trang gốc 【原本 p.N】")
         self.ruby = QCheckBox("Giữ chữ phiên âm kana trên chữ Hán (ruby)")
         self.markdown = QCheckBox("Xuất Markdown có đánh dấu để nhờ AI (LLM) hiệu đính (*.md)")
-        self.markdown.setToolTip("Ghi kèm file .md (tiêu đề, bảng, ⟦?…⟧ chỗ nghi ngờ) và ocr_markdown_rules.md để dán vào chỉ dẫn của LLM. Dùng chung ngưỡng nghi ngờ bên dưới.")
-        self.vi_fix = QCheckBox("Sửa dấu và bỏ nhiễu dấu mộc (chỉ tiếng Việt)")
-        self.vi_fix.setToolTip("Sửa dấu theo tần suất trong tài liệu và bỏ chữ rác từ dấu mộc. Tắt nếu muốn giữ nguyên chữ engine đọc.")
-        for c in (self.marker, self.ruby, self.markdown, self.vi_fix):
+        self.markdown.setToolTip("Ghi kèm file .md (tiêu đề, bảng, ⟦?…⟧ chỗ nghi ngờ) và ocr_markdown_rules.md để dán vào chỉ dẫn của LLM. Dùng chung ngưỡng nghi ngờ ở mục Kiểm tra.")
+        for c in (self.txt, self.marker, self.ruby, self.markdown):
             og.addWidget(c)
-        self.merge = QComboBox()
-        for key, label in L.MERGE_LABELS.items():
-            self.merge.addItem(label, key)
-        self.pages = QLineEdit()
-        self.pages.setPlaceholderText("ví dụ 1-5,8 · để trống = tất cả (chỉ áp dụng cho PDF)")
-        og.addWidget(labeled("Cách ghép trang", self.merge))
-        og.addWidget(self.merge)
-        og.addWidget(labeled("Trang", self.pages))
-        og.addWidget(self.pages)
+        self.kana = QComboBox()
+        for key, label in L.KANA_LABELS.items():
+            self.kana.addItem(label, key)
+        og.addWidget(labeled("Đọc bảng chữ kana (thử nghiệm)", self.kana))
+        og.addWidget(self.kana)
+        og.addWidget(labeled("Thư mục lưu", self.out))
+        og.addLayout(out_row)
+        right.addWidget(out_box)
 
-        # chi tiết kỹ thuật: thu gọn, ẩn hẳn khi bỏ chọn
-        adv = QGroupBox("Chi tiết kỹ thuật")
-        adv.setCheckable(True)
-        adv.setProperty("collapsible", True)
-        adv.setChecked(False)
-        adv_body = QWidget()
-        agrid = QVBoxLayout(adv_body)
-        wrap = QVBoxLayout(adv)
-        wrap.setContentsMargins(0, 0, 0, 0)
-        wrap.addWidget(adv_body)
+        # kiểm tra: file so sánh và ngưỡng nghi ngờ (dùng cho cả file so sánh và Markdown)
+        chk_box, ck = _collapsible("Kiểm tra")
+        self.review = QCheckBox("Tạo file so sánh để kiểm tra (*_review.html)")
+        self.conf = QLineEdit("0.8")
+        conf_hint = QLabel("Dòng có độ chắc chắn thấp hơn mức này được tô đỏ trong file so sánh (mặc định 0,8).")
+        conf_hint.setObjectName("hint")
+        conf_hint.setWordWrap(True)
+        ck.addWidget(self.review)
+        ck.addWidget(labeled("Ngưỡng nghi ngờ (file so sánh và Markdown)", self.conf))
+        ck.addWidget(self.conf)
+        ck.addWidget(conf_hint)
+        right.addWidget(chk_box)
+
+        # chi tiết kỹ thuật: một cấp, mặc định thu gọn (preset đặt sẵn phóng to và đọc lại ô bảng)
+        adv, agrid = _collapsible("Chi tiết kỹ thuật")
         self.upscale = QLineEdit("1")
         self.dpi = QComboBox()
         for value in (150, 200, 300):
@@ -345,33 +363,22 @@ class OcrPage(QWidget):
         self._dpi_prev = SCAN_DPI
         self.crop = QLineEdit()
         self.crop.setPlaceholderText("trái, trên, phải, dưới (pixel) · để trống = cả trang")
-        self.kana = QComboBox()
-        for key, label in L.KANA_LABELS.items():
-            self.kana.addItem(label, key)
         self.cell_reocr = QCheckBox("Đọc lại ô bảng bị lẫn đường kẻ")
         self.use_cache = QCheckBox("Nhớ kết quả đã đọc (chạy lại file cũ sẽ nhanh hơn)")
-        self.review = QCheckBox("Tạo file so sánh để kiểm tra (*_review.html)")
-        self.conf = QLineEdit("0.8")
-        conf_hint = QLabel("Dòng có độ chắc chắn thấp hơn mức này được tô đỏ trong file so sánh (mặc định 0,8).")
-        conf_hint.setObjectName("hint")
-        conf_hint.setWordWrap(True)
-        for label, widget in (("Độ phân giải (DPI)", self.dpi), ("Phóng to ảnh", self.upscale), ("Vùng đọc (x0,y0,x1,y1; nhiều vùng cách bằng ;)", self.crop),
-                              ("Đọc bảng chữ kana (thử nghiệm)", self.kana)):
+        for label, widget in (("Độ phân giải (DPI)", self.dpi), ("Phóng to ảnh", self.upscale),
+                              ("Vùng đọc (x0,y0,x1,y1; nhiều vùng cách bằng ;)", self.crop)):
             agrid.addWidget(labeled(label, widget))
             agrid.addWidget(widget)
         agrid.addWidget(self.cell_reocr)
         agrid.addWidget(self.use_cache)
-        agrid.addWidget(self.review)
-        agrid.addWidget(labeled("Ngưỡng nghi ngờ (file so sánh)", self.conf))
-        agrid.addWidget(self.conf)
-        agrid.addWidget(conf_hint)
-        og.addWidget(adv)
         self.advanced = adv
-        adv_body.setVisible(False)
-        adv.toggled.connect(adv_body.setVisible)
-        opt_body.setVisible(False)
-        opt.toggled.connect(opt_body.setVisible)
-        right.addWidget(opt)
+        right.addWidget(adv)
+
+        # cài đặt bổ sung: GPU (thao tác cài đặt, không phải tham số OCR); mô hình AI nằm ngay dưới
+        gpu_card, gk = _collapsible("GPU (NVIDIA)")
+        self.gpu_box = GpuBox()
+        gk.addWidget(self.gpu_box)
+        right.addWidget(gpu_card)
 
         run_box = QGroupBox("Tiến trình")
         rb = QVBoxLayout(run_box)
@@ -429,7 +436,7 @@ class OcrPage(QWidget):
         # đang OCR thì khóa các khối này (xem _set_running); xem trước vẫn xem được nhưng không đổi vùng cắt
         self._locked_while_running = [
             self.btn_add, self.btn_dir, self.btn_del, self.btn_clear, self.btn_out,
-            cfg, opt, self.preview_box,
+            cfg, out_box, chk_box, adv, gpu_card, self.merge, self.pages, self.preview_box,
         ]
 
     def set_narrow(self, narrow: bool):
