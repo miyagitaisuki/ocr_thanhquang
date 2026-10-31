@@ -30,6 +30,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `engines/ndlocr.py` | Bọc NDLOCR-Lite, đọc XML trang và ánh xạ loại khối (表組, ルビ, 柱, ノンブル…). |
 | `engines/paddle.py` | Engine `paddle` (tiếng Anh và tiếng Trung, dùng chung): PP-OCRv4 det + rec ONNX, CTC. Model: `scripts/fetch_models.py`. |
 | `engines/viet.py` | Engine `ocr_vi` (tiếng Việt): dò dòng PP-OCRv4 + VietOCR (seq2seq, ONNX int8, giải mã greedy). Model: `assets/vi-ocr/` (tải trong GUI). |
+| `engines/yomitoku.py` | Engine `yomitoku` (tiếng Nhật, tùy chọn, đối chiếu với NDLOCR): DBNet v2.1 + PARSeq v2 qua thư viện `yomitoku` 0.15.1. **CC BY-NC-SA 4.0**: không có trong requirements, không đóng gói vào exe; cài `pip install ".[yomitoku]"`. Chạy CPU rất chậm (~200 s/trang đo được). |
 | `engines/ocr_onnx.py` | Thành phần chung ONNX: hậu xử lý DB bằng OpenCV (không pyclipper), sắp thứ tự đọc, nắn phối cảnh, CTC, ghép Page. |
 | `engines/models.py` | Tìm và tải model: `OCRNHAT_MODELS`, `models/` cạnh exe/gốc repo, `%LOCALAPPDATA%\OCR-Nhat\models`. `download_paddle()` tải PaddleOCR có báo tiến độ, kiểm SHA-256 (GUI và `scripts/fetch_models.py` dùng chung). |
 | `pipeline.py` | `process_file`: OCR song song (ThreadPool, cửa sổ trượt, giữ thứ tự trang), cache, gọi layout, ghi file. |
@@ -60,7 +61,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 
 ## Thư mục và file khác
 - `scripts/`: `fetch_ndlocr.py` (tải engine), `fetch_models.py` (model PaddleOCR, kiểm SHA-256), `export_vi.py` (tạo lại `assets/vi-ocr/` từ VietOCR gốc, cần torch), `smoke_test.py` (OCR ảnh mẫu, dựng bảng), `compare_engines.py` (đối chiếu với YomiToku, chỉ để so sánh, không đóng gói vì giấy phép CC BY-NC-SA).
-- `tests/`: pytest (`test_vi_text` không cần model, `test_pdf_extract` (PDF tạo trong test), `test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`, `test_engines_lang` không cần model, `test_engines_models` chạy khi có `models/`, `test_ui_logic` không cần cửa sổ; `test_gui`, `test_gui_pdf`, `test_gui_extra`, `test_gui_style` cần PySide6 (offscreen; trên Linux cần libEGL, bỏ qua nếu thiếu)).
+- `tests/`: pytest (`test_vi_text` không cần model, `test_pdf_extract` (PDF tạo trong test), `test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`, `test_engines_lang` không cần model, `test_engine_yomitoku` không cần torch, `test_engines_models` chạy khi có `models/`, `test_ui_logic` không cần cửa sổ; `test_gui`, `test_gui_pdf`, `test_gui_extra`, `test_gui_style` cần PySide6 (offscreen; trên Linux cần libEGL, bỏ qua nếu thiếu)).
 - `tests/data/pretest_sample.pdf`: sổ tay tiếng Nhật thương mại 4 trang, file mẫu chính cho các test và đo độ chính xác từ nay.
 - `.github/workflows/`: `qt-windows.yml` (mỗi push: test giao diện Qt trên Windows, `run_gui.py --selftest`), `test.yml` (mỗi push/PR), `build-exe.yml` (exe chính `OCR-Nhat` bằng PySide6, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`; chạy thủ công), `build-exe-gpu.yml` (exe GPU: onnxruntime-gpu + CUDA/cuDNN qua gói nvidia-*; chạy thủ công). Ô Thiết bị chỉ có "GPU (NVIDIA)" khi onnxruntime nạp được CUDA. Quyết định cũ (không tải gói GPU) đã được đảo: xem "Hướng phát triển mới" bên dưới.
 - `requirements.txt`: nguồn duy nhất của dependency. `pyproject.toml` đọc từ đó. Extra: `test`, `suspect`.

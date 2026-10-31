@@ -12,6 +12,11 @@ Dùng mô hình PP-OCRv4 (dò dòng `ch_PP-OCRv4_det_infer`, nhận dạng `ch_P
 - File ONNX lấy từ Hugging Face `SWHL/RapidOCR` (đóng gói lại, Apache-2.0). Từ điển lấy từ mã nguồn PaddleOCR (nhánh release/2.7).
 - Model không đóng vào exe; `scripts/fetch_models.py` tải về `models/` và kiểm SHA-256.
 
+## YomiToku (engine `yomitoku`: tiếng Nhật, tùy chọn)
+- Thư viện: `yomitoku` 0.15.1 (Kotaro Kinoshita), giấy phép **CC BY-NC-SA 4.0**: chỉ phi thương mại, phải ghi công và chia sẻ lại theo cùng giấy phép.
+- Không đóng gói vào exe, không nằm trong `requirements.txt`; chỉ cài khi người dùng chủ động chọn `pip install ".[yomitoku]"` và `--engine yomitoku`.
+- Model tải từ Hugging Face khi chạy lần đầu.
+
 ## VietOCR (engine `ocr_vi`: tiếng Việt)
 
 Dùng kiến trúc và trọng số `vgg_seq2seq.pth` của **VietOCR** (pbcquoc/vietocr, phiên bản 0.3.13), giấy phép **Apache-2.0**, xuất sang ONNX int8 (`assets/vi-ocr/`, bằng `scripts/export_vi.py`).
