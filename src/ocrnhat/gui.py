@@ -33,7 +33,12 @@ SIDEBAR_W, SIDEBAR_W_COMPACT = 228, 96          # chiều rộng thanh bên (px)
 RIGHT_MIN_W, RIGHT_MAX_W = 300, 560             # cột cấu hình: kéo được trong khoảng này (px)
 DROP_HINT = "Kéo thả PDF, PNG, JPG, TIFF vào danh sách bên dưới, hoặc bấm “+ Thêm file” (Ctrl+O)"
 DROP_HINT_SHORT = "Kéo thả thêm file vào đây · Ctrl+O để chọn file"
-ENGINES = ("auto", "ndlocr", "paddle", "ocr_vi")
+ENGINES = ("auto", "ndlocr", "paddle", "ocr_vi", "yomitoku")   # yomitoku chỉ hiện khi đã cài (xem _yomitoku_installed)
+
+
+def _yomitoku_installed() -> bool:
+    from .engines.yomitoku import YomitokuEngine
+    return YomitokuEngine.is_available()[0]
 FILE_FILTER = "PDF / ảnh (*.pdf *.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)"
 PRESETS = {   # mẫu tài liệu: đặt sẵn độ phóng to và đọc bảng; các ô khác giữ nguyên
     "Sổ tay / sách (mặc định)": dict(upscale="1", cell_reocr=True),
@@ -272,6 +277,8 @@ class OcrPage(QWidget):
         self.lang = QComboBox()
         self.device = QComboBox()
         for key in ENGINES:
+            if key == "yomitoku" and not _yomitoku_installed():
+                continue   # CC BY-NC-SA: chỉ hiện khi người dùng tự cài yomitoku
             self.engine.addItem(L.ENGINE_LABELS[key], key)
         for key, label in L.dev_labels(gpu.gpu_selectable()).items():
             self.device.addItem(label, key)
@@ -602,8 +609,9 @@ class OcrPage(QWidget):
         return L.read_options(lambda name, default: vals.get(name, default), dev_map)
 
     def _engine_check(self, opts: dict) -> str | None:
-        from .engines import paddle, viet
-        return L.engine_problem(opts, {"paddle": paddle.PaddleEngine, "ocr_vi": viet.VietnameseEngine}.get)
+        from .engines import paddle, viet, yomitoku
+        return L.engine_problem(opts, {"paddle": paddle.PaddleEngine, "ocr_vi": viet.VietnameseEngine,
+                                       "yomitoku": yomitoku.YomitokuEngine}.get)
 
     # ---------- chạy ----------
 

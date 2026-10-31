@@ -30,7 +30,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `engines/ndlocr.py` | Bọc NDLOCR-Lite, đọc XML trang và ánh xạ loại khối (表組, ルビ, 柱, ノンブル…). |
 | `engines/paddle.py` | Engine `paddle` (tiếng Anh và tiếng Trung, dùng chung): PP-OCRv4 det + rec ONNX, CTC. Model: `scripts/fetch_models.py`. |
 | `engines/viet.py` | Engine `ocr_vi` (tiếng Việt): dò dòng PP-OCRv4 + VietOCR (seq2seq, ONNX int8, giải mã greedy). Model: `assets/vi-ocr/` (tải trong GUI). |
-| `engines/yomitoku.py` | Engine `yomitoku` (tiếng Nhật, tùy chọn, đối chiếu với NDLOCR): DBNet v2.1 + PARSeq v2 qua thư viện `yomitoku` 0.15.1. **CC BY-NC-SA 4.0**: không có trong requirements, không đóng gói vào exe; cài `pip install ".[yomitoku]"`. Chạy CPU rất chậm (~200 s/trang đo được). |
+| `engines/yomitoku.py` | Engine `yomitoku` (tiếng Nhật, tùy chọn, đối chiếu với NDLOCR): DBNet v2.1 + PARSeq v2 qua thư viện `yomitoku` 0.15.1. **CC BY-NC-SA 4.0**: không có trong requirements, không đóng gói vào exe; cài `pip install ".[yomitoku]"`. Chạy CPU rất chậm (~200 s/trang đo được). Trong GUI, mục "Tiếng Nhật – YomiToku (thử nghiệm, CC BY-NC-SA)" chỉ hiện khi đã cài `yomitoku` (`ui_logic.ENGINE_LABELS`, `gui._yomitoku_installed`); exe đóng gói không có mục này. |
 | `engines/ocr_onnx.py` | Thành phần chung ONNX: hậu xử lý DB bằng OpenCV (không pyclipper), sắp thứ tự đọc, nắn phối cảnh, CTC, ghép Page. |
 | `engines/models.py` | Tìm và tải model: `OCRNHAT_MODELS`, `models/` cạnh exe/gốc repo, `%LOCALAPPDATA%\OCR-Nhat\models`. `download_paddle()` tải PaddleOCR có báo tiến độ, kiểm SHA-256 (GUI và `scripts/fetch_models.py` dùng chung). |
 | `pipeline.py` | `process_file`: OCR song song (ThreadPool, cửa sổ trượt, giữ thứ tự trang), cache, gọi layout, ghi file. |

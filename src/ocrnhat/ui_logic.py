@@ -18,12 +18,13 @@ LOG_FILE = app_dir() / "logs" / "app.log"
 
 ENGINE_LABELS = {"auto": "Tự động (công cụ phù hợp)", "ndlocr": "Tiếng Nhật – NDLOCR",
                  "paddle": "Tiếng Anh, Trung – PaddleOCR",
-                 "ocr_vi": "Tiếng Việt – VietOCR"}
+                 "ocr_vi": "Tiếng Việt – VietOCR",
+                 "yomitoku": "Tiếng Nhật – YomiToku (thử nghiệm, CC BY-NC-SA)"}
 LANG_LABELS = {"ja": "Tiếng Nhật", "en": "Tiếng Anh", "zh": "Tiếng Trung", "vi": "Tiếng Việt",
                }
 # ngôn ngữ được chọn cho từng engine (auto: mọi ngôn ngữ, engine tự chọn theo ngôn ngữ)
 ENGINE_LANGS = {"ndlocr": ("ja",), "paddle": ("en", "zh"),
-                "ocr_vi": ("vi",), "auto": ("ja", "en", "zh", "vi")}
+                "ocr_vi": ("vi",), "yomitoku": ("ja",), "auto": ("ja", "en", "zh", "vi")}
 KANA_LABELS = {"": "Tắt", "template": "Mẫu chữ IPAGothic (thử nghiệm)", "tesseract": "Tesseract (thử nghiệm)"}
 MERGE_LABELS = {True: "Gộp trang (mặc định)", False: "Giữ nguyên trang"}
 
