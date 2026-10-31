@@ -59,7 +59,7 @@ def test_cai_that_bai_bao_loi_than_thien_va_ghi_log(monkeypatch, tmp_path):
     def hong(): raise ImportError("distlib finder")
     monkeypatch.setattr(gpupack, "check_pip", hong)
     try:
-        gpupack.install(progress=lambda m: None)
+        gpupack.install(progress=lambda m, f=-1: None)
     except gpupack.PackError as e:
         assert str(e) == gpupack.PACK_FAILED_MSG
     else:
@@ -77,3 +77,29 @@ def test_exe_dong_goi_dang_ky_finder_cho_distlib(monkeypatch):
     monkeypatch.setattr(resources, "_finder_registry", dict(resources._finder_registry))
     gpupack._register_frozen_finder()
     assert resources._finder_registry[type(fake)] is resources.ResourceFinder
+
+
+def test_pip_stream_bao_tien_do_theo_dong_collecting(tmp_path):
+    seen = []
+    with open(tmp_path / "log.txt", "w", encoding="utf-8") as f:
+        st = gpupack._PipStream(f, lambda text, frac: seen.append((text, frac)), tmp_path)
+        st.write("Collecting torch==1\nCollecting numpy\nUsing cached x\nCollec")
+        st.write("ting six\n")
+    fracs = [fr for _, fr in seen]
+    assert len(seen) == 3 and fracs == sorted(fracs) and 0.05 < fracs[0] < fracs[-1] < 0.4
+    assert "Collecting torch==1" in (tmp_path / "log.txt").read_text(encoding="utf-8")   # log đầy đủ, ghi ngay
+
+
+def test_install_bat_systemexit_va_xoa_marker_cu(monkeypatch, tmp_path):
+    monkeypatch.setattr(gpupack, "pack_dir", lambda: tmp_path)
+    (tmp_path / gpupack.MARKER).write_text("cu", encoding="utf-8")
+
+    def thoat(): raise SystemExit(2)
+    monkeypatch.setattr(gpupack, "check_pip", thoat)
+    try:
+        gpupack.install(progress=lambda m, f=-1: None)
+    except gpupack.PackError:
+        pass
+    else:
+        raise AssertionError("SystemExit của pip phải thành PackError, không làm chết luồng nền")
+    assert not (tmp_path / gpupack.MARKER).exists()   # cài dở không được coi là đã cài

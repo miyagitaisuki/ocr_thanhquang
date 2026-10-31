@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from . import gpupack
 from . import ui_logic as L
+from .gui_progress import AnimatedProgress
 from .gui_style import PALETTES
 
 log = logging.getLogger("ocrnhat.gui")
@@ -486,8 +487,8 @@ class ModelBox(QGroupBox):
         root = QVBoxLayout(self.body)
         self.status = QLabel("")
         self.status.setWordWrap(True)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 100)
+        self.bar = AnimatedProgress()   # cùng thanh với mục OCR: phần trăm thật + dải sáng khi đang chạy
+        self.bar.setAccessibleName("Tiến trình tải mô hình")
         self.bar.setVisible(False)
         self._specs = [
             ("paddle", "Tải PaddleOCR (tiếng Anh, Trung)",
@@ -554,10 +555,9 @@ class ModelBox(QGroupBox):
         self.chandra_btn.setEnabled(not busy)
         self.pack_btn.setEnabled(not busy)
         self.bar.setVisible(busy)
+        self.bar.setActive(busy)
         if busy:
-            self.bar.setRange(0, 0)   # chờ tiến trình đầu tiên
-        else:
-            self.bar.setRange(0, 100)
+            self.bar.setValue(0)   # luôn hiện phần trăm thật; không dùng thanh "không xác định" chỉ có hoạt họa
 
     def _start(self, fn, done_text: str):
         if self.busy():
@@ -571,9 +571,8 @@ class ModelBox(QGroupBox):
 
     def _on_progress(self, text: str, frac: float):
         self.status.setText(text)
-        if frac >= 0:
-            self.bar.setRange(0, 100)
-            self.bar.setValue(int(100 * frac))
+        if frac >= 0:   # -1/-2: chưa biết tỷ lệ, giữ giá trị cũ (chữ trạng thái vẫn đổi)
+            self.bar.setValue(int(100 * min(1.0, frac)))
 
     def _on_done(self, ok: bool, msg: str):
         self._set_busy(False)
@@ -585,15 +584,19 @@ class ModelBox(QGroupBox):
             QMessageBox.warning(self, "Chandra", "Hãy tick đồng ý điều khoản Chandra trước khi tải mô hình.")
             return
         from .engines.chandra import download_model
-        self._start(lambda rep: download_model(progress=lambda d, t: rep(
-            f"Đang tải Chandra: {d * 100 // max(1, t)}% ({d // 2**20} / {t // 2**20} MB)", d / max(1, t))),
+        def report(rep, d, t):
+            if t:
+                rep(f"Đang tải Chandra: {d * 100 // t}% ({d // 2**20} / {t // 2**20} MB)", d / t)
+            else:
+                rep(f"Đang tải Chandra: {d // 2**20} MB", -1)
+        self._start(lambda rep: download_model(progress=lambda d, t: report(rep, d, t)),
             "Đã tải xong mô hình Chandra.")
 
     def _pack(self):
         if QMessageBox.question(self, "Tăng tốc GPU", "Tải phần mềm tăng tốc GPU, khoảng vài GB. Tiếp tục?") \
                 != QMessageBox.StandardButton.Yes:
             return
-        self._start(lambda rep: gpupack.install(progress=lambda m: rep(m, -1)) or "Đã cài xong. Hãy khởi động lại để dùng Chandra.",
+        self._start(lambda rep: gpupack.install(progress=rep) or "Đã cài xong. Hãy khởi động lại để dùng Chandra.",
                     "Đã cài xong tăng tốc GPU. Hãy khởi động lại để dùng Chandra.")
 
 

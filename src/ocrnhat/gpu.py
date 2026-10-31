@@ -4,6 +4,7 @@ Chủ dự án chốt chỉ hỗ trợ NVIDIA; AMD/Intel bị bỏ qua. Chạy G
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -21,8 +22,21 @@ class Gpu:
         return self.vram_mb is not None and self.vram_mb >= min_vram_mb
 
 
-def detect() -> list[Gpu]:
+def _nvidia_smi() -> str | None:
+    """Đường dẫn nvidia-smi. Driver mới đặt ở System32 (có trong PATH); driver cũ chỉ ở thư mục NVSMI."""
     exe = shutil.which("nvidia-smi")
+    if exe:
+        return exe
+    for base in (os.environ.get("ProgramFiles"), os.environ.get("SystemRoot")):
+        for sub in ("NVIDIA Corporation/NVSMI", "System32"):
+            cand = os.path.join(base or "", sub, "nvidia-smi.exe")
+            if base and os.path.isfile(cand):
+                return cand
+    return None
+
+
+def detect() -> list[Gpu]:
+    exe = _nvidia_smi()
     if not exe:
         return []
     try:
@@ -56,10 +70,31 @@ def ort_cuda_available() -> bool:
         return False
 
 
-def resolve_device(pref: str = "auto") -> tuple[str, str]:
-    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). Yêu cầu cuda mà không dùng được thì lùi về cpu và nói rõ."""
+def gpu_selectable() -> bool:
+    """Ô Phần cứng có mục GPU không: có card NVIDIA (Chandra dùng qua torch) hoặc onnxruntime có CUDA (NDLOCR).
+    Trước đây chỉ xét onnxruntime nên exe CPU không bao giờ cho chọn GPU dù máy có RTX."""
+    return ort_cuda_available() or bool(detect())
+
+
+def torch_cuda_available() -> bool:
+    """torch đang cài (gói GPU) có CUDA không. Không import torch nếu chưa có."""
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+def resolve_device(pref: str = "auto", engine: str = "ndlocr") -> tuple[str, str]:
+    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). Yêu cầu cuda mà không dùng được thì lùi về cpu và nói rõ.
+    Chandra chạy bằng torch nên xét CUDA của torch; các engine ONNX xét CUDA của onnxruntime.
+    (Trước đây mọi engine xét onnxruntime: exe CPU luôn ra 'cpu' và ép Chandra chạy CPU dù có RTX.)"""
     if pref == "cpu":
         return "cpu", "chọn CPU"
+    if engine == "chandra":
+        if torch_cuda_available():
+            return "cuda", "chọn GPU" if pref == "cuda" else "tự động: torch có CUDA"
+        return "cpu", "torch không có CUDA (chưa cài gói GPU hoặc cần khởi động lại sau khi cài)"
     ort_ok = ort_cuda_available()
     if pref == "cuda":
         if ort_ok:

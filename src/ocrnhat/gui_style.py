@@ -56,6 +56,8 @@ QLabel#hint, QLabel#footTitle { color: @muted@; }
 QLabel#footTitle { font-size: @fs_small@pt; font-weight: 600; }
 QLabel#pageTitle, QLabel#pdfTitle { font-size: @fs_title@pt; font-weight: bold; }
 QLabel#dot { color: @accent@; font-size: @fs_app@pt; }
+QLabel#dot[state="busy"] { color: @amber_lo@; }
+QWidget#sideFoot:focus { border: 2px solid @accent@; }
 QWidget#sideFoot { background: @accent_soft@; border-radius: 14px; }
 QListWidget#nav { background: transparent; border: 2px solid transparent; border-radius: 14px; outline: 0; }
 QListWidget#nav:focus { border: 2px solid @accent@; }

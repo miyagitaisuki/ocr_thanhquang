@@ -248,12 +248,51 @@ def bytes_tqdm(cb):
     return _Bytes
 
 
+def _repo_cache_dir() -> "Path":
+    """Thư mục cache Hugging Face của repo Chandra (nơi file .incomplete lớn dần khi đang tải)."""
+    from pathlib import Path
+    from huggingface_hub import constants
+    return Path(constants.HF_HUB_CACHE) / ("models--" + model_repo().replace("/", "--"))
+
+
+def _dir_bytes(d) -> int:
+    import os
+    total = 0
+    for root, _dirs, files in os.walk(d):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
+
+
 def download_model(progress=None) -> str:
     """Tải trọng số Chandra từ Hugging Face vào cache (vài GB, cần Internet). Trả về đường dẫn thư mục.
-    progress(done, total) nhận số byte nếu huggingface_hub hỗ trợ tqdm_class (bản mới)."""
-    import inspect
-    from huggingface_hub import snapshot_download
-    kw = {}
-    if progress is not None and "tqdm_class" in inspect.signature(snapshot_download).parameters:
-        kw["tqdm_class"] = bytes_tqdm(progress)
-    return snapshot_download(repo_id=model_repo(), **kw)
+    progress(done, total) nhận số byte. Tiến độ lấy từ dung lượng thư mục cache (hf-xet và bản huggingface_hub mới
+    không luôn gọi tqdm theo byte, nên thanh cũ đứng yên); tổng dung lượng lấy từ metadata của repo."""
+    import threading
+    from huggingface_hub import HfApi, snapshot_download
+    if progress is None:
+        return snapshot_download(repo_id=model_repo())
+    total = 0
+    try:
+        info = HfApi().model_info(model_repo(), files_metadata=True)
+        total = sum(sib.size or 0 for sib in info.siblings or [])
+    except Exception:
+        pass   # không biết tổng: báo byte đã tải, không có phần trăm
+    blobs = _repo_cache_dir() / "blobs"   # chỉ đếm blobs: snapshots chỉ là liên kết tới blobs, đếm thêm sẽ gấp đôi
+    stop = threading.Event()
+
+    def poll():
+        while not stop.wait(1.0):
+            done = _dir_bytes(blobs) if blobs.exists() else 0
+            progress(min(done, total) if total else done, total or 0)
+
+    t = threading.Thread(target=poll, daemon=True)
+    t.start()
+    try:
+        return snapshot_download(repo_id=model_repo())
+    finally:
+        stop.set()
+        t.join(2)
