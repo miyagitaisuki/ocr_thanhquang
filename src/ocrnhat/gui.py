@@ -781,7 +781,7 @@ class MainWindow(QMainWindow):
         self.menubar_help = build_help_menu(self)
         self.menuBar().addMenu(self.menubar_help)
         view = self.settings.get("qt_view", {})
-        apply_view(QApplication.instance(), view.get("theme", "sáng"), view.get("font_pt", 10), view.get("alpha", 100), self)
+        apply_view(QApplication.instance(), view.get("theme", "sáng"), view.get("font_pt", 10))
 
         # thanh bên: logo, bốn mục, trạng thái hệ thống
         side = QWidget()
