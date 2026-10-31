@@ -16,6 +16,8 @@ PALETTES = {
         "btn_hi": "#047857", "btn_lo": "#065F46", "btn_fg": "#FFFFFF", "btn_hover_hi": "#065F46", "btn_hover_lo": "#064E3B",
         "off_bg": "#E2E8F0", "off_fg": "#5B6778",
         "ctl_border": "#8091A7",   # viền ô nhập, checkbox: >= 3:1 với nền
+        "red_hi": "#DC2626", "red_lo": "#B91C1C", "red_fg": "#FFFFFF",       # nút Dừng
+        "amber_hi": "#FBBF24", "amber_lo": "#F59E0B", "amber_fg": "#1C1917",  # nút Mở thư mục
     },
     "tối": {
         "page": "#14171C", "card": "#1F232A", "field": "#181C22", "border": "#2F3640", "text": "#E6E8EC",
@@ -25,6 +27,8 @@ PALETTES = {
         "btn_hi": "#34D399", "btn_lo": "#10B981", "btn_fg": "#052E22", "btn_hover_hi": "#6EE7B7", "btn_hover_lo": "#34D399",
         "off_bg": "#2F3640", "off_fg": "#9AA3B2",
         "ctl_border": "#6B7B90",
+        "red_hi": "#EF4444", "red_lo": "#DC2626", "red_fg": "#FFFFFF",
+        "amber_hi": "#FBBF24", "amber_lo": "#F59E0B", "amber_fg": "#1C1917",
     },
 }
 
@@ -88,6 +92,10 @@ QPushButton#runBtn:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, s
 QPushButton#runBtn:focus { border: 2px solid @text@; }
 QPushButton#runBtn:disabled { background: @off_bg@; color: @off_fg@; }
 QPushButton#dangerBtn { color: @danger@; }
+QPushButton#stopBtn, QPushButton#openBtn { border: 2px solid transparent; border-radius: 14px; padding: 9px 19px; font-weight: bold; font-size: @fs_app@pt; }
+QPushButton#stopBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 @red_hi@, stop:1 @red_lo@); color: @red_fg@; }
+QPushButton#openBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 @amber_hi@, stop:1 @amber_lo@); color: @amber_fg@; }
+QPushButton#openBtn:disabled { background: @off_bg@; color: @off_fg@; }
 QListWidget#files { background: @field@; border: 1px solid @border@; border-radius: 16px; }
 QListWidget#files:focus { border: 2px solid @accent@; }
 QListWidget#files::item { border-bottom: 1px solid @border@; }

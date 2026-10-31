@@ -109,3 +109,10 @@ def test_dong_file_dai_khong_day_rong_danh_sach(qtbot_app=None):
     names = row.findChildren(gui.ElidedLabel)
     assert names and all("…" in lbl.text() for lbl in names)
     row.close()
+
+
+def test_nut_do_va_vang_du_tuong_phan():
+    # chữ trên nút Dừng (đỏ) và nút Mở thư mục (vàng) phải đạt 4,5:1 ở cả hai giao diện
+    for theme, t in PALETTES.items():
+        assert contrast(t["red_fg"], t["red_lo"]) >= 4.5, theme
+        assert contrast(t["amber_fg"], t["amber_hi"]) >= 4.5, theme
