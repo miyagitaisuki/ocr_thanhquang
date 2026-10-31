@@ -11,8 +11,6 @@ test = ["pytest"]
 qt = ["PySide6-Essentials>=6.7"]
 # dò chữ nghi ngờ (--suspect), thử nghiệm; không đóng gói vào exe
 suspect = ["torch", "transformers", "fugashi", "unidic-lite"]
-# engine Chandra (tùy chọn, cần GPU NVIDIA); trọng số theo OpenRAIL-M, xem NOTICE.md; không đóng gói vào exe
-chandra = ["chandra-ocr[hf]==0.2.0"]
 
 [project.scripts]
 ocrnhat = "ocrnhat.cli:main"

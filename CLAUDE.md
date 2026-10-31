@@ -4,15 +4,15 @@ Phần mềm Windows (.exe) OCR file PDF scan và ảnh, **chỉ lấy tiếng N
 Chủ dự án: Nguyễn Thanh Quang. Repo: miyagitaisuki/ocr_thanhquang.
 
 ## Yêu cầu của chủ dự án
-- Chỉ giữ tiếng Nhật (bỏ tiếng Việt/Anh, bỏ furigana) — mặc định. Tùy chọn `--lang all` / ô Ngôn ngữ giữ mọi ngôn ngữ, CHỈ khi engine là chandra.
+- Chỉ giữ tiếng Nhật (bỏ tiếng Việt/Anh, bỏ furigana) — mặc định. en/zh/vi dùng PaddleOCR/VietOCR (không phải NDLOCR).
 - Đầu ra là .docx có **khối văn bản liền mạch** (gộp dòng thành đoạn), tiêu đề và bảng thật.
 - Ưu tiên exe gọn, nhanh; chấp nhận tự dựng bảng thay vì dùng engine nặng.
 - Ưu tiên công cụ miễn phí. Ưu tiên giấy phép thoáng (NDLOCR-Lite là CC BY 4.0).
 
 ## Kiến trúc (src/ocrnhat)
-- `model.py`: Page/Block/Line chung cho mọi engine. `engines/`: `base.py` (giao diện `OcrEngine`), `__init__.py` (đăng ký, `--engine`), `ndlocr.py`, `chandra.py` (engine Chandra OCR 2: parser HTML có test + `ChandraEngine` gọi `chandra-ocr`; cần GPU, trọng số theo OpenRAIL-M, xem NOTICE.md). Thêm engine: kế thừa `OcrEngine`, thêm tên vào `_NAMES` và nhánh vào `_cls` (engines/__init__.py); phiên bản đọc từ thuộc tính `version` của lớp (khóa cache).
-- `gpu.py`: dò card NVIDIA bằng nvidia-smi (đã bỏ AMD theo quyết định chủ dự án). `--engine auto` (mặc định) chọn chandra chỉ khi có GPU đủ VRAM và Chandra dùng được; `auto` chọn chandra khi có NVIDIA đủ VRAM, đã cài `ocrnhat[chandra]` và torch có CUDA; ngược lại ndlocr (AMD/Intel không được dò, nên về ndlocr). Ô Thiết bị = CPU ép Chandra chạy CPU. Batch theo VRAM (`engines.batch_size` -> `chandra.batch_for_vram`): 6 GB -> 4 trang mỗi lần suy luận, từ 8 GB -> 8 trang; Chandra chạy một luồng. Trọng số Chandra KHÔNG đóng vào exe. `ocrnhat --gpu-info` để xem.
-- Thiết bị NDLOCR: `--device auto|cpu|cuda` (GUI: ô "Thiết bị"). `gpu.resolve_device` chọn cuda chỉ khi onnxruntime có CUDAExecutionProvider; không thì lùi về CPU và in lý do. Exe trong CI dùng onnxruntime CPU nên GPU chưa chạy được trong exe: cần bản build dùng onnxruntime-gpu + CUDA/cuDNN (chưa làm; chưa thử trên máy có GPU). Bản GPU: `.github/workflows/build-exe-gpu.yml` (workflow_dispatch) cài onnxruntime-gpu, tạo `OCR-Nhat-GPU` và `ocrnhat-cli-gpu`; bản CPU `build-exe.yml` giữ nguyên.
+- `model.py`: Page/Block/Line chung cho mọi engine. `engines/`: `base.py` (giao diện `OcrEngine`), `__init__.py` (đăng ký, `--engine`), `ndlocr.py`. Thêm engine: kế thừa `OcrEngine`, thêm tên vào `_NAMES` và nhánh vào `_cls` (engines/__init__.py); phiên bản đọc từ thuộc tính `version` của lớp (khóa cache).
+- `gpu.py`: dò card NVIDIA bằng nvidia-smi (đã bỏ AMD theo quyết định chủ dự án). Engine `auto` luôn là NDLOCR; GPU chỉ đổi thiết bị chạy NDLOCR (`--device`). `ensure_ort_cuda_libs()` phải chạy trước khi tạo session CUDA, nếu không onnxruntime-gpu lặng lẽ chạy CPU. Chandra và gói GPU tải về đã bỏ hoàn toàn. `ocrnhat --gpu-info` để xem.
+- Thiết bị NDLOCR: `--device auto|cpu|cuda` (GUI: ô "Thiết bị"). `gpu.resolve_device` chọn cuda chỉ khi onnxruntime có CUDAExecutionProvider; không thì lùi về CPU và in lý do. Đã kiểm trên RTX 3060 Laptop (WSL2, onnxruntime-gpu 1.31.1 + gói nvidia-cu13): `--device cuda` chạy CUDA thật. Bản GPU: `.github/workflows/build-exe-gpu.yml` (workflow_dispatch) cài onnxruntime-gpu, tạo `OCR-Nhat-GPU` và `ocrnhat-cli-gpu`; bản CPU `build-exe.yml` giữ nguyên. Exe GPU chưa thử trên máy Windows có GPU.
 - `engines/ndlocr.py`: bọc NDLOCR-Lite (ONNX), đọc XML trang -> Block/Line (text, table 表組, ruby ルビ, 柱, ノンブル). Commit ghim: xem `scripts/fetch_ndlocr.py`.
 - `layout.py`: lọc tiếng Nhật, bỏ furigana, gộp đoạn, nhận tiêu đề, dựng bảng từ đường kẻ (OpenCV) kèm ô gộp; dự phòng theo cụm tọa độ.
 - `docx_out.py`: xuất Word (font Yu Mincho, Heading, bảng) và txt.

@@ -22,8 +22,6 @@ def collect(paths: list[str]) -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from . import gpupack
-    gpupack.activate()   # gói GPU đã cài (Chandra, torch CUDA) thì đưa vào đường dẫn import
     for st in (sys.stdout, sys.stderr):  # console Windows mặc định cp1252
         try:
             st.reconfigure(encoding="utf-8", errors="replace")
@@ -40,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--conf", type=float, default=0.8, help="ngưỡng độ tin cậy cho --review (mặc định 0.8)")
     ap.add_argument("--engine", default=engines.DEFAULT, choices=engines.available(), help="engine OCR (mặc định auto)")
     ap.add_argument("--keep-pages", action="store_true", help="giữ nguyên từng trang (mặc định: gộp các trang thành một khối liền mạch)")
-    ap.add_argument("--lang", default="ja", choices=["ja", "en", "zh", "vi", "all"], help="ja: tiếng Nhật (mặc định, NDLOCR/Chandra); en: tiếng Anh, zh: tiếng Trung (PaddleOCR); vi: tiếng Việt (VietOCR); all: mọi ngôn ngữ (chỉ Chandra)")
+    ap.add_argument("--lang", default="ja", choices=["ja", "en", "zh", "vi"], help="ja: tiếng Nhật (mặc định, NDLOCR); en: tiếng Anh, zh: tiếng Trung (PaddleOCR); vi: tiếng Việt (VietOCR)")
     ap.add_argument("--ruby", action="store_true", help="giữ furigana thành ruby thật của Word (mặc định: bỏ furigana)")
     ap.add_argument("--device", default="auto", choices=gpu_mod.DEVICES, help="auto | cpu | cuda (GPU NVIDIA, cần onnxruntime-gpu)")
     ap.add_argument("--no-vi-fix", action="store_true", help="tắt hậu xử lý tiếng Việt (bỏ nhiễu dấu mộc, sửa dấu theo tần suất)")
@@ -51,16 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--kana-reader", default="", choices=["", "tesseract", "template"], help="thử nghiệm: đọc ô bảng chữ kana bằng tesseract (cần lệnh tesseract + dữ liệu jpn) hoặc template (so khớp mẫu với IPAGothic); ô không chắc để trống, xuất file rà soát *_kana_review.html")
     ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
-    ap.add_argument("--check-gpu-pack", action="store_true", help="kiểm tra pip đóng gói sẵn có cài được gói GPU không rồi thoát (dùng trong CI)")
     a = ap.parse_args(argv)
-    if a.check_gpu_pack:
-        try:
-            gpupack.check_pip()
-        except Exception as e:
-            print(f"pip đóng gói lỗi: {e}")
-            return 1
-        print("pip đóng gói: OK")
-        return 0
     if a.gpu_info:
         from . import gpu
         for g in gpu.detect():

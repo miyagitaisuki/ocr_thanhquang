@@ -1,7 +1,7 @@
 """Kết quả và xem trước, mô hình AI, menu Hiển thị của giao diện chính.
 
 - ResultsBox: bảng kết quả, mở file Word/thư mục/file so sánh, Tìm nhanh, xem trước ảnh trang và chữ.
-- ModelBox: tải PaddleOCR/VietOCR, Chandra (có tick điều khoản), cài gói GPU; chạy nền, có tiến trình.
+- ModelBox: tải PaddleOCR/VietOCR; chạy nền, có tiến trình.
 - apply_view / build_view_menu: giao diện sáng/tối, độ trong suốt, cỡ chữ; áp dụng ngay, không cần khởi động lại.
 """
 from __future__ import annotations
@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QMessageBox, QProgressBar, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from . import gpupack
 from . import ui_logic as L
 from .gui_progress import AnimatedProgress
 from .gui_style import PALETTES
@@ -472,7 +471,7 @@ class ModelWorker(QThread):
 class ModelBox(QGroupBox):
     """Mô hình AI (tùy chọn, chỉ tải một lần). Gọn: nằm cuối mục OCR, thu gọn được."""
 
-    def __init__(self, chandra_available: bool):
+    def __init__(self):
         super().__init__("Mô hình AI (tùy chọn)")
         self.setCheckable(True)
         self.setProperty("collapsible", True)
@@ -507,22 +506,6 @@ class ModelBox(QGroupBox):
             self.rows[key] = (btn, ready)
             root.addWidget(btn)
 
-        self.license = QCheckBox("Tôi đồng ý điều khoản sử dụng của mô hình Chandra (OpenRAIL-M)")
-        self.chandra_btn = QPushButton("Tải Chandra (vài GB, một lần)")
-        self.chandra_btn.clicked.connect(self._chandra)
-        self.chandra_box = QWidget()
-        cb = QVBoxLayout(self.chandra_box)
-        cb.setContentsMargins(0, 0, 0, 0)
-        cb.addWidget(self.license)
-        cb.addWidget(self.chandra_btn)
-        self.chandra_box.setVisible(chandra_available)
-        self.chandra_on = chandra_available   # cờ riêng: isVisible() còn phụ thuộc cửa sổ cha đã hiện chưa
-        root.addWidget(self.chandra_box)
-
-        self.pack_btn = QPushButton("Cài tăng tốc GPU (vài GB)")
-        self.pack_btn.clicked.connect(self._pack)
-        self.pack_btn.setVisible(not gpupack.installed())
-        root.addWidget(self.pack_btn)
         root.addWidget(self.bar)
         root.addWidget(self.status)
         QVBoxLayout(self).addWidget(self.body)
@@ -531,17 +514,10 @@ class ModelBox(QGroupBox):
         self._refresh_status()
 
     def _refresh_status(self):
-        from .engines import chandra as ch_mod
         from .engines.paddle import PaddleEngine
         from .engines.viet import VietnameseEngine
         lines = ["PaddleOCR: " + ("đã có." if PaddleEngine.is_available()[0] else "chưa có."),
                  "VietOCR: " + ("đã có." if VietnameseEngine.is_available()[0] else "chưa có.")]
-        if self.chandra_on:
-            try:
-                ready = ch_mod.model_downloaded()
-            except ImportError:   # thiếu gói phụ thuộc của Chandra: coi như chưa có, không làm sập cửa sổ
-                ready = False
-            lines.append("Chandra: " + ("đã có trên máy." if ready else "chưa có."))
         self.status.setText("\n".join(lines))
         for btn, ready in self.rows.values():
             btn.setEnabled(not ready() and not self.busy())
@@ -552,8 +528,6 @@ class ModelBox(QGroupBox):
     def _set_busy(self, busy: bool):
         for btn, ready in self.rows.values():
             btn.setEnabled(not busy and not ready())
-        self.chandra_btn.setEnabled(not busy)
-        self.pack_btn.setEnabled(not busy)
         self.bar.setVisible(busy)
         self.bar.setActive(busy)
         if busy:
@@ -578,26 +552,6 @@ class ModelBox(QGroupBox):
         self._set_busy(False)
         self.status.setText(msg)
         self._refresh_status()
-
-    def _chandra(self):
-        if not self.license.isChecked():
-            QMessageBox.warning(self, "Chandra", "Hãy tick đồng ý điều khoản Chandra trước khi tải mô hình.")
-            return
-        from .engines.chandra import download_model
-        def report(rep, d, t):
-            if t:
-                rep(f"Đang tải Chandra: {d * 100 // t}% ({d // 2**20} / {t // 2**20} MB)", d / t)
-            else:
-                rep(f"Đang tải Chandra: {d // 2**20} MB", -1)
-        self._start(lambda rep: download_model(progress=lambda d, t: report(rep, d, t)),
-            "Đã tải xong mô hình Chandra.")
-
-    def _pack(self):
-        if QMessageBox.question(self, "Tăng tốc GPU", "Tải phần mềm tăng tốc GPU, khoảng vài GB. Tiếp tục?") \
-                != QMessageBox.StandardButton.Yes:
-            return
-        self._start(lambda rep: gpupack.install(progress=rep) or "Đã cài xong. Hãy khởi động lại để dùng Chandra.",
-                    "Đã cài xong tăng tốc GPU. Hãy khởi động lại để dùng Chandra.")
 
 
 # ---------- hiển thị ----------

@@ -101,14 +101,8 @@ def test_vung_cat_trong_o_nhap_khop_khung_tren_anh(tmp_path, store):
 
 
 def test_mo_hinh_ai_dung_trang_thai_san_co(tmp_path):
-    box = ModelBox(chandra_available=False)
-    assert "Chandra" not in box.status.text()
+    box = ModelBox()
     assert "PaddleOCR" in box.status.text() and "VietOCR" in box.status.text()
-
-
-def test_chandra_chi_hien_khi_co_engine(tmp_path):
-    box = ModelBox(chandra_available=True)
-    assert "Chandra" in box.status.text()
 
 
 def test_hien_thi_ap_dung_ngay_va_luu(store):

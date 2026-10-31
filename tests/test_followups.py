@@ -29,9 +29,9 @@ def test_preprocess_cat_roi_phong_to():
     assert out.flags["C_CONTIGUOUS"]
 
 
-def test_resolve_khong_co_gpu_ghi_ly_do(monkeypatch):
-    monkeypatch.setattr(gpu, "best_gpu", lambda: None)
-    assert engines.resolve("auto") == ("ndlocr", "không có GPU rời đủ VRAM")
+def test_auto_luon_chon_ndlocr_cho_tieng_nhat():
+    # GPU không đổi engine: chỉ đổi thiết bị chạy (--device), nên auto luôn là ndlocr
+    assert engines.resolve("auto")[0] == "ndlocr"
 
 
 def test_resolve_device_cpu_va_cuda_thieu_provider(monkeypatch):
@@ -39,17 +39,6 @@ def test_resolve_device_cpu_va_cuda_thieu_provider(monkeypatch):
     monkeypatch.setattr(gpu, "ort_cuda_available", lambda: False)
     dev, why = gpu.resolve_device("cuda")
     assert dev == "cpu" and "onnxruntime" in why
-
-
-def test_resolve_device_chandra_theo_torch_khong_theo_onnxruntime(monkeypatch):
-    monkeypatch.setattr(gpu, "ort_cuda_available", lambda: False)   # exe CPU: onnxruntime không có CUDA
-    monkeypatch.setattr(gpu, "torch_cuda_available", lambda: True)
-    assert gpu.resolve_device("auto", "chandra")[0] == "cuda"       # trước đây ra "cpu" và ép Chandra chạy CPU
-    assert gpu.resolve_device("cuda", "chandra")[0] == "cuda"
-    assert gpu.resolve_device("cpu", "chandra")[0] == "cpu"
-    monkeypatch.setattr(gpu, "torch_cuda_available", lambda: False)
-    dev, why = gpu.resolve_device("cuda", "chandra")
-    assert dev == "cpu" and "torch" in why
 
 
 def test_gpu_selectable_khi_co_card_nvidia_du_onnxruntime_cpu(monkeypatch):

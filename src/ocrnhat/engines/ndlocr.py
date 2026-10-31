@@ -69,6 +69,9 @@ class NdlocrEngine(OcrEngine):
     version = NDL_COMMIT[:8]
 
     def __init__(self, device: str = "cpu"):
+        if device == "cuda":
+            from ..gpu import ensure_ort_cuda_libs
+            ensure_ort_cuda_libs()   # trước khi tạo InferenceSession (xem gpu.ensure_ort_cuda_libs)
         src = find_ndl_src()
         if str(src) not in sys.path:
             sys.path.insert(0, str(src))

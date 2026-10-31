@@ -28,7 +28,7 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
-          --collect-all onnxruntime --collect-all docx --collect-all PySide6 --collect-all pip
+          --collect-all onnxruntime --collect-all docx --collect-all PySide6
           run_gui.py
       - name: Build exe (dòng lệnh)
         run: >
@@ -37,11 +37,8 @@ jobs:
           --add-data "vendor/ndlocr-lite/src/model;ndlocr_src/model"
           --add-data "vendor/ndlocr-lite/src/config;ndlocr_src/config"
           --add-data "src/ocrnhat/fonts;ocrnhat/fonts"
-          --collect-all onnxruntime --collect-all docx --collect-all PySide6 --collect-all pip
+          --collect-all onnxruntime --collect-all docx --collect-all PySide6
           run_gui.py
-      - name: Kiểm tra pip đóng gói sẵn (người dùng bấm "Cài tăng tốc GPU")
-        shell: pwsh
-        run: ./dist/ocrnhat-cli/ocrnhat-cli.exe --check-gpu-pack
       - name: Đóng gói bộ cài (Inno Setup)
         shell: pwsh
         run: |

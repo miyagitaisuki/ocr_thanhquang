@@ -9,17 +9,12 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
-MIN_VRAM_MB = 6000   # Chandra ~4-5B: cỡ 6 GB khi lượng tử 8-bit (ước lượng từ nguồn ngoài, chưa tự đo)
-
 
 @dataclass
 class Gpu:
     name: str
     vram_mb: int | None
     backend: str = "cuda"
-
-    def usable_for_vlm(self, min_vram_mb: int = MIN_VRAM_MB) -> bool:
-        return self.vram_mb is not None and self.vram_mb >= min_vram_mb
 
 
 def _nvidia_smi() -> str | None:
@@ -53,48 +48,42 @@ def detect() -> list[Gpu]:
     return gpus
 
 
-def best_gpu(gpus: list[Gpu] | None = None) -> Gpu | None:
-    ok = [g for g in (detect() if gpus is None else gpus) if g.usable_for_vlm()]
-    return max(ok, key=lambda g: g.vram_mb or 0) if ok else None
-
-
 DEVICES = ("auto", "cpu", "cuda")
 
 
-def ort_cuda_available() -> bool:
-    """onnxruntime đang cài có CUDAExecutionProvider không (bản CPU thì không)."""
+def ensure_ort_cuda_libs() -> None:
+    """Nạp thư viện CUDA/cuDNN (gói nvidia-* pip) cho onnxruntime-gpu. Phải gọi trước khi tạo InferenceSession.
+
+    Không làm vậy thì CUDAExecutionProvider vẫn có trong danh sách nhưng không nạp được
+    (thiếu libcublasLt.so.13) và ONNX Runtime lặng lẽ chạy trên CPU.
+    """
     try:
         import onnxruntime
-        return "CUDAExecutionProvider" in onnxruntime.get_available_providers()
+        if hasattr(onnxruntime, "preload_dlls"):
+            onnxruntime.preload_dlls()
+    except Exception:
+        pass
+
+
+def ort_cuda_available() -> bool:
+    """onnxruntime-gpu nạp được CUDA thật (không chỉ có tên trong danh sách provider)."""
+    try:
+        import onnxruntime
     except Exception:
         return False
+    ensure_ort_cuda_libs()
+    return "CUDAExecutionProvider" in onnxruntime.get_available_providers()
 
 
 def gpu_selectable() -> bool:
-    """Ô Phần cứng có mục GPU không: có card NVIDIA (Chandra dùng qua torch) hoặc onnxruntime có CUDA (NDLOCR).
-    Trước đây chỉ xét onnxruntime nên exe CPU không bao giờ cho chọn GPU dù máy có RTX."""
+    """Ô Phần cứng có mục GPU không: có card NVIDIA hoặc onnxruntime có CUDA."""
     return ort_cuda_available() or bool(detect())
 
 
-def torch_cuda_available() -> bool:
-    """torch đang cài (gói GPU) có CUDA không. Không import torch nếu chưa có."""
-    try:
-        import torch
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
-
-
-def resolve_device(pref: str = "auto", engine: str = "ndlocr") -> tuple[str, str]:
-    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). Yêu cầu cuda mà không dùng được thì lùi về cpu và nói rõ.
-    Chandra chạy bằng torch nên xét CUDA của torch; các engine ONNX xét CUDA của onnxruntime.
-    (Trước đây mọi engine xét onnxruntime: exe CPU luôn ra 'cpu' và ép Chandra chạy CPU dù có RTX.)"""
+def resolve_device(pref: str = "auto") -> tuple[str, str]:
+    """'auto'|'cpu'|'cuda' -> ('cpu'|'cuda', lý do). Yêu cầu cuda mà không dùng được thì lùi về cpu và nói rõ."""
     if pref == "cpu":
         return "cpu", "chọn CPU"
-    if engine == "chandra":
-        if torch_cuda_available():
-            return "cuda", "chọn GPU" if pref == "cuda" else "tự động: torch có CUDA"
-        return "cpu", "torch không có CUDA (chưa cài gói GPU hoặc cần khởi động lại sau khi cài)"
     ort_ok = ort_cuda_available()
     if pref == "cuda":
         if ort_ok:
