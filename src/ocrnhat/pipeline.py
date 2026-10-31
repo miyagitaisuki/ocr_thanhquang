@@ -165,7 +165,8 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
                  workers: int | None = None, cell_reocr: bool = True,
                  crop: tuple[int, int, int, int] | None = None, upscale: float = 1.0,
                  suspect: bool = False, suspect_threshold: float = 0.0005,
-                 kana_reader: str = "", vi_fix: bool = True) -> dict:
+                 kana_reader: str = "", vi_fix: bool = True,
+                 markdown: bool = False, md_conf: float = 0.8) -> dict:
     from .docx_out import write_docx, write_txt as _txt
     from .cache import PageCache, file_hash
     from .layout import Table, build_page
@@ -232,6 +233,7 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
         return [(pno, got[pno], img) for pno, img in items]
 
     results, n_tables, done, sections, n_low = [], 0, 0, [], 0
+    md_path = md_rules = None
     last_pno = None
     page_lines: list[tuple[int, list]] = []   # rà soát trong GUI: tọa độ từng dòng (hệ ảnh đã cắt/phóng to)
     suspect_rows: list[tuple[int, str]] = []
@@ -312,6 +314,12 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
         write_docx(results, docx_path, title=None, page_marker=page_marker, ruby=ruby, page_break=not merge_pages)
         if write_txt:
             _txt(results, out_dir / f"{stem}.txt")
+        if markdown:
+            from .markdown_out import write_md, write_rules
+            md_path = out_dir / f"{stem}.md"
+            write_md(results, md_path, page_marker=page_marker, conf=md_conf, ruby=ruby)
+            md_rules = out_dir / "ocr_markdown_rules.md"
+            write_rules(md_rules)
     suspect_path = None
     if suspect_rows:
         suspect_path = out_dir / f"{stem}_suspect.txt"
@@ -328,6 +336,7 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
     return {"file": str(path), "pages": done, "tables": n_tables, "docx": str(docx_path),
             "kana_review": str(kana_review) if kana_review else None,
             "review": str(review_path) if review_path else None, "low_conf": n_low,
+            "markdown": str(md_path) if md_path else None, "md_rules": str(md_rules) if md_rules else None,
             "suspect": str(suspect_path) if suspect_path else None, "suspect_lines": len(suspect_rows),
             "page_lines": page_lines, "crop": crop, "upscale": upscale, "conf_threshold": conf_threshold,
             "dpi": dpi}

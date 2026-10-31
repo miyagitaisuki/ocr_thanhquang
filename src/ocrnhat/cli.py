@@ -47,9 +47,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--upscale", type=float, default=1.0, help="phóng to ảnh trước khi OCR, ví dụ 2 cho ảnh chữ nhỏ")
     ap.add_argument("--suspect", action="store_true", help="dò chữ nghi nhận sai bằng BERT tiếng Nhật, ghi *_suspect.txt (chỉ đánh dấu; cần pip install \".[suspect]\")")
     ap.add_argument("--kana-reader", default="", choices=["", "tesseract", "template"], help="thử nghiệm: đọc ô bảng chữ kana bằng tesseract (cần lệnh tesseract + dữ liệu jpn) hoặc template (so khớp mẫu với IPAGothic); ô không chắc để trống, xuất file rà soát *_kana_review.html")
+    ap.add_argument("--markdown", action="store_true", help="xuất thêm *.md có đánh dấu theo quy tắc (tiêu đề, bảng, ⟦?…⟧ chỗ nghi ngờ) để nhờ LLM hiệu đính, kèm ocr_markdown_rules.md")
+    ap.add_argument("--md-conf", type=float, default=0.8, help="ngưỡng độ tin cậy để gắn ⟦?…⟧ trong file .md (mặc định 0.8)")
+    ap.add_argument("--md-rules", nargs="?", const="-", default=None, metavar="FILE", help="xuất quy tắc đánh dấu Markdown (để dán vào chỉ dẫn LLM) ra FILE hoặc màn hình rồi thoát")
     ap.add_argument("--gpu-info", action="store_true", help="in thông tin GPU và engine sẽ được chọn rồi thoát")
     ap.add_argument("--no-cache", action="store_true", help="không dùng cache kết quả OCR theo hash file")
     a = ap.parse_args(argv)
+    if a.md_rules is not None:
+        from .markdown_out import RULES_MD, write_rules
+        if a.md_rules == "-":
+            print(RULES_MD)
+        else:
+            write_rules(Path(a.md_rules)); print(f"-> {a.md_rules}")
+        return 0
     if a.gpu_info:
         from . import gpu
         for g in gpu.detect():
@@ -73,9 +83,11 @@ def main(argv: list[str] | None = None) -> int:
         r = pipeline.process_file(
             f, Path(a.out) if a.out else None, a.dpi, pages if f.suffix.lower() == ".pdf" else None,
             write_txt=not a.no_txt, page_marker=not a.no_page_marker,
-            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, lang=a.lang, merge_pages=not a.keep_pages, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, vi_fix=not a.no_vi_fix, crop=crop, upscale=a.upscale, suspect=a.suspect, kana_reader=a.kana_reader,
+            review=a.review, conf_threshold=a.conf, use_cache=not a.no_cache, engine=a.engine, lang=a.lang, merge_pages=not a.keep_pages, ruby=a.ruby, device=a.device, cell_reocr=not a.no_cell_reocr, vi_fix=not a.no_vi_fix, crop=crop, upscale=a.upscale, suspect=a.suspect, kana_reader=a.kana_reader, markdown=a.markdown, md_conf=a.md_conf,
             progress=lambda d, t, m: print(f"[{d}/{t}] {m}", flush=True))
         print(f"-> {r['docx']}  ({r['pages']} trang, {r['tables']} bảng)")
+        if r.get("markdown"):
+            print(f"-> {r['markdown']}  (Markdown để hiệu đính; quy tắc: {r['md_rules']})")
         if r.get("suspect"):
             print(f"-> {r['suspect']}  ({r['suspect_lines']} dòng có chữ nghi ngờ)")
         if r.get("kana_review"):
