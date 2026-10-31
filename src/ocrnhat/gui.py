@@ -12,7 +12,7 @@ from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -22,6 +22,7 @@ from .cli import collect
 from .gui_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
 from .gui_style import APP_NAME, add_soft_shadows, show_banner, state_key
 from .gui_pdf import MergeSection, SplitSection, ToolsSection
+from .gui_progress import AnimatedProgress
 
 gpupack.activate()   # trước khi đọc find_spec('chandra')
 
@@ -361,9 +362,7 @@ class OcrPage(QWidget):
 
         run_box = QGroupBox("Tiến trình")
         rb = QVBoxLayout(run_box)
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setTextVisible(False)
+        self.progress = AnimatedProgress()
         self.progress.setAccessibleName("Tiến trình OCR")
         self.status = QLabel("Sẵn sàng.")
         self.status.setWordWrap(True)
@@ -630,6 +629,7 @@ class OcrPage(QWidget):
         for i in range(len(self.files)):
             self._set_file_state(i, "Chờ")
         self.progress.setValue(0)
+        self.progress.setActive(True)
         self.banner.setVisible(False)
         self.btn_log.setVisible(False)
         self.btn_open_out.setVisible(False)
@@ -667,6 +667,7 @@ class OcrPage(QWidget):
         self._out_dir = self._run_out or (outputs[0][0].parent if outputs else None)
         self.btn_open_out.setVisible(bool(outputs) and self._out_dir is not None)
         self.btn_log.setVisible(failed)
+        self.progress.setActive(False)
         self.progress.setValue(100)
         self._set_running(False)
 

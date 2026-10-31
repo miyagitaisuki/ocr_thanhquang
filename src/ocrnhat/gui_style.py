@@ -111,6 +111,7 @@ QLabel#pill[state="error"] { background: @error_bg@; color: @error_fg@; }
 QLabel#banner { background: @accent_soft@; border: 1px solid @accent@; border-radius: 12px; padding: 8px 12px; }
 QLabel#banner[kind="error"] { background: @error_bg@; border-color: @error_fg@; color: @error_fg@; }
 QProgressBar { border: none; background: @border@; border-radius: 4px; min-height: 8px; max-height: 8px; text-align: center; }
+QProgressBar#animProgress { border: none; background: transparent; min-height: 56px; max-height: 56px; }
 QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 @accent_hi@, stop:1 @accent_lo@); border-radius: 4px; }
 QCheckBox { spacing: 8px; }
 QCheckBox:focus { color: @accent_dark@; font-weight: 600; }

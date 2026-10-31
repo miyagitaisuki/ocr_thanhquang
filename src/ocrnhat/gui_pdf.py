@@ -16,12 +16,13 @@ from PySide6.QtCore import QThread, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QProgressBar, QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import pdf_extract as pe
 from . import pdf_ops
 from . import ui_logic as L
+from .gui_progress import AnimatedProgress
 from .gui_style import show_banner
 
 log = logging.getLogger("ocrnhat.gui")
@@ -262,8 +263,7 @@ class PdfSection(QGroupBox):
         self.output = PdfOutputBox(with_bookmarks=True)
         self.tabs = QTabWidget()
         self.run_buttons: list[QPushButton] = []
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
+        self.progress = AnimatedProgress()
         self.status = QLabel("Thêm file PDF, chọn thao tác rồi bấm Thực hiện.")
         self.status.setWordWrap(True)
         self.title_label = QLabel(title)
@@ -308,9 +308,9 @@ class PdfSection(QGroupBox):
         opened = QPushButton("Mở thư mục kết quả")
         opened.setObjectName("openBtn")
         opened.clicked.connect(self._open_folder)
-        h.addWidget(btn, 3)
-        h.addWidget(stop, 2)
-        h.addWidget(opened, 3)
+        h.addWidget(btn, 1)
+        h.addWidget(stop, 1)
+        h.addWidget(opened, 1)
         self.run_buttons.append(btn)
         return row
 
@@ -335,6 +335,7 @@ class PdfSection(QGroupBox):
     def _set_busy(self, busy: bool):
         for b in self.run_buttons:
             b.setEnabled(not busy)
+        self.progress.setActive(busy)
         self.files_box.setEnabled(not busy)
         self.output.setEnabled(not busy)
 

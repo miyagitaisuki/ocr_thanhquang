@@ -622,6 +622,7 @@ def apply_view(app, theme: str, font_pt: int, alpha: int, window) -> None:
     qss = stylesheet(theme, font_pt)
     app.setStyle("Fusion")
     app.setPalette(_palette(theme))
+    app.setProperty("ocr_theme", theme)   # thanh tiến trình tự vẽ, cần biết giao diện đang chọn
     if app.styleSheet() != qss:   # đặt lại QSS tốn ~0,5 s (vẽ lại mọi widget): chỉ làm khi đổi giao diện
         app.setStyleSheet(qss)
     font = QFont(app.font())

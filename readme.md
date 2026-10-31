@@ -43,7 +43,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `gpu.py` | Dò GPU NVIDIA, chọn thiết bị cho NDLOCR (cuda chỉ khi onnxruntime có CUDA provider). |
 | `cli.py` | Dòng lệnh `ocrnhat`. |
 | `gui.py` | Giao diện chính PySide6: thanh bên 4 mục (OCR, Tách PDF, Ghép PDF, Công cụ khác), mục OCR đầy đủ, nhớ tùy chọn (`qt_ocr`), phím tắt, thu gọn khi cửa sổ hẹp. |
-| `gui_pdf.py` | Ba mục Công cụ PDF: Tách PDF (trích xuất, tách file), Ghép PDF (ghép, xen kẽ, chèn trang lặp lại), Công cụ khác (xoay, nén, tự động theo thư mục). Danh sách kéo-thả sắp xếp được; chạy nền, hủy giữa các file; nhớ tùy chọn trong `qt_pdf`. Hàng nút dưới cùng mỗi tab: Chạy (xanh), Dừng (đỏ), Mở thư mục kết quả (vàng). |
+| `gui_pdf.py` | Ba mục Công cụ PDF: Tách PDF (trích xuất, tách file), Ghép PDF (ghép, xen kẽ, chèn trang lặp lại), Công cụ khác (xoay, nén, tự động theo thư mục). Danh sách kéo-thả sắp xếp được; chạy nền, hủy giữa các file; nhớ tùy chọn trong `qt_pdf`. Hàng nút dưới cùng mỗi tab: Chạy (xanh), Dừng (đỏ), Mở thư mục kết quả (vàng), ba nút cùng kích cỡ và co giãn theo cửa sổ. Thanh tiến trình động (`gui_progress.py`): phần trăm bên phải, tờ giấy minh hoạ bên trái, dải sáng khi đang chạy. |
 | `gui_style.py` | Khuôn màu và kiểu (QSS) dùng chung: sáng/tối, thẻ bo góc, nút xanh, nhãn trạng thái file. Màu đạt WCAG AA (`contrast()`). Tên hiển thị **OCR-Thanh Quang**. |
 | `gui_extra.py` | Kết quả và xem trước (ảnh và chữ, khung dòng), chọn vùng cắt bằng chuột, Tìm nhanh, mô hình AI (tải model, cài gói GPU, chạy nền), menu Hiển thị (áp dụng ngay). |
 | `ui_logic.py` | Nhãn, ánh xạ nhãn -> khóa và đọc tùy chọn OCR. Không phụ thuộc giao diện (test được không cần cửa sổ). |
