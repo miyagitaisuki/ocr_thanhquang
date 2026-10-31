@@ -98,7 +98,7 @@ class AnimatedProgress(QProgressBar):
         p.setFont(font)
         p.setPen(QColor(t["text"]))
         p.drawText(QRectF(w - pct_w, 0, pct_w, h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                   f"{self.value()}%")
+                   f"{max(0, self.value())}%")   # QProgressBar mới tạo có value = -1
         p.end()
 
     def _paint_page(self, p: QPainter, r: QRectF, t: dict):

@@ -179,7 +179,7 @@ def process_file(path: Path, out_dir: Path | None, dpi: int = 200, pages: list[i
     from . import engines
     engine, why = engines.resolve_for_lang(engine or engines.DEFAULT, lang)
     from .gpu import resolve_device
-    dev, dev_why = resolve_device(device)
+    dev, dev_why = resolve_device(device, engine)
     if progress:
         progress(0, total, f"Engine: {engine} ({why}); thiết bị: {dev} ({dev_why})")
     regions = normalize_regions(crop)

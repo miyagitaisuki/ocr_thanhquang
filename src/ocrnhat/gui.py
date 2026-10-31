@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from . import gpu, gpupack, pipeline
 from . import ui_logic as L
 from .cli import collect
+from .gui_about import SystemDialog, SysInfoWorker, build_help_menu
 from .gui_extra import SCAN_DPI, ModelBox, PageView, ResultsBox, apply_view, build_view_menu, source_image
 from .gui_style import APP_NAME, add_soft_shadows, show_banner, state_key
 from .gui_pdf import MergeSection, SplitSection, ToolsSection
@@ -275,7 +276,7 @@ class OcrPage(QWidget):
         self.device = QComboBox()
         for key in ENGINES:
             self.engine.addItem(L.ENGINE_LABELS[key], key)
-        for key, label in L.dev_labels(gpu.ort_cuda_available()).items():
+        for key, label in L.dev_labels(gpu.gpu_selectable()).items():
             self.device.addItem(label, key)
         self.out = QLineEdit()
         self.out.setPlaceholderText("Trống = cạnh file gốc")
@@ -586,7 +587,7 @@ class OcrPage(QWidget):
     def options(self) -> dict:
         """Tùy chọn đầy đủ cho pipeline. Ném ValueError với thông báo tiếng Việt nếu sai.
         Giá trị lấy theo nhãn hiển thị để dùng chung quy tắc trong ui_logic."""
-        dev_map = L.dev_labels(gpu.ort_cuda_available())
+        dev_map = L.dev_labels(gpu.gpu_selectable())
         vals = {
             "conf": self.conf.text(), "upscale": self.upscale.text(), "crop": self.crop.text(),
             "dpi": str(self.dpi.currentData()),
@@ -716,6 +717,42 @@ class OcrPage(QWidget):
         L.save_settings(self.settings)
 
 
+class ClickableFoot(QWidget):
+    """Ô trạng thái hệ thống ở thanh bên: bấm hoặc Enter/Space để mở thông tin chi tiết."""
+    clicked = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)   # lớp con QWidget không tự vẽ nền QSS
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.clicked.emit()
+        else:
+            super().keyPressEvent(e)
+
+
+class HardwareProbe(QThread):
+    """Dò phần cứng một lần lúc mở app, trả về một dòng ngắn cho ô trạng thái."""
+    ready = Signal(str)
+
+    def run(self):
+        gpus = gpu.detect()
+        if not gpus:
+            self.ready.emit("Chỉ có CPU (không thấy card NVIDIA)")
+            return
+        g = max(gpus, key=lambda x: x.vram_mb or 0)
+        vram = f" · {round(g.vram_mb / 1024)} GB" if g.vram_mb else ""
+        use = "GPU sẵn sàng" if gpupack.installed() else "bấm Mô hình AI để cài tăng tốc GPU"
+        self.ready.emit(f"{g.name}{vram}\n{use}")
+
+
 SECTION_TITLES = ("Xử lý tài liệu OCR", "Tách PDF", "Ghép PDF", "Công cụ khác")
 
 
@@ -728,6 +765,8 @@ class MainWindow(QMainWindow):
 
         self.menubar_view = build_view_menu(self, QApplication.instance(), self.settings, self._save_view)
         self.menuBar().addMenu(self.menubar_view)
+        self.menubar_help = build_help_menu(self)
+        self.menuBar().addMenu(self.menubar_help)
         view = self.settings.get("qt_view", {})
         apply_view(QApplication.instance(), view.get("theme", "sáng"), view.get("font_pt", 10), view.get("alpha", 100), self)
 
@@ -766,20 +805,27 @@ class MainWindow(QMainWindow):
             self.nav.addItem(item)
         sl.addWidget(self.nav, 1)
 
-        foot = QWidget()
+        foot = ClickableFoot()
         foot.setObjectName("sideFoot")
+        foot.setToolTip("Bấm để xem thông tin hệ thống: GPU, torch, Chandra")
+        foot.setAccessibleName("Trạng thái hệ thống. Bấm để xem chi tiết")
+        foot.clicked.connect(lambda: SystemDialog(self).exec())
         fl = QVBoxLayout(foot)
         fl.setContentsMargins(14, 12, 14, 12)
         foot_title = QLabel("TRẠNG THÁI HỆ THỐNG")
         foot_title.setObjectName("footTitle")
         state_row = QHBoxLayout()
-        dot = QLabel("●")
-        dot.setObjectName("dot")
+        self.dot = QLabel("●")
+        self.dot.setObjectName("dot")
         self.sys_status = QLabel("Sẵn sàng hoạt động")
-        state_row.addWidget(dot)
+        state_row.addWidget(self.dot)
         state_row.addWidget(self.sys_status, 1)
+        self.sys_hw = QLabel("Đang dò phần cứng…")   # dòng thứ hai: GPU đang dùng được hay chỉ CPU
+        self.sys_hw.setObjectName("hint")
+        self.sys_hw.setWordWrap(True)
         fl.addWidget(foot_title)
         fl.addLayout(state_row)
+        fl.addWidget(self.sys_hw)
         sl.addWidget(foot)
         self.side_foot = foot
 
@@ -844,6 +890,9 @@ class MainWindow(QMainWindow):
         self._status_timer = QTimer(self)
         self._status_timer.timeout.connect(self._refresh_sys_status)
         self._status_timer.start(500)
+        self._hw_probe = HardwareProbe(self)   # nvidia-smi có thể chậm: dò ở luồng nền
+        self._hw_probe.ready.connect(self.sys_hw.setText)
+        self._hw_probe.start()
 
     def _setup_shortcuts(self):
         def add(keys, slot):
@@ -904,7 +953,13 @@ class MainWindow(QMainWindow):
 
     def _refresh_sys_status(self):
         busy = bool(self._busy_pages())
-        self.sys_status.setText("Đang xử lý…" if busy else "Sẵn sàng hoạt động")
+        loading = self.ocr.models.busy()
+        state = "busy" if busy or loading else "ready"
+        self.sys_status.setText("Đang xử lý…" if busy else "Đang tải mô hình…" if loading else "Sẵn sàng hoạt động")
+        if self.dot.property("state") != state:   # màu chấm đổi theo trạng thái (QSS theo thuộc tính)
+            self.dot.setProperty("state", state)
+            self.dot.style().unpolish(self.dot)
+            self.dot.style().polish(self.dot)
         n = len(self.ocr.files)
         self.file_badge.setText(f"{n} file" if n else "")
         self.file_badge.setVisible(self.stack.currentIndex() == 0 and n > 0)

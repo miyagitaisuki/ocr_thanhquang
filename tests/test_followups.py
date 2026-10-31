@@ -41,6 +41,25 @@ def test_resolve_device_cpu_va_cuda_thieu_provider(monkeypatch):
     assert dev == "cpu" and "onnxruntime" in why
 
 
+def test_resolve_device_chandra_theo_torch_khong_theo_onnxruntime(monkeypatch):
+    monkeypatch.setattr(gpu, "ort_cuda_available", lambda: False)   # exe CPU: onnxruntime không có CUDA
+    monkeypatch.setattr(gpu, "torch_cuda_available", lambda: True)
+    assert gpu.resolve_device("auto", "chandra")[0] == "cuda"       # trước đây ra "cpu" và ép Chandra chạy CPU
+    assert gpu.resolve_device("cuda", "chandra")[0] == "cuda"
+    assert gpu.resolve_device("cpu", "chandra")[0] == "cpu"
+    monkeypatch.setattr(gpu, "torch_cuda_available", lambda: False)
+    dev, why = gpu.resolve_device("cuda", "chandra")
+    assert dev == "cpu" and "torch" in why
+
+
+def test_gpu_selectable_khi_co_card_nvidia_du_onnxruntime_cpu(monkeypatch):
+    monkeypatch.setattr(gpu, "ort_cuda_available", lambda: False)
+    monkeypatch.setattr(gpu, "detect", lambda: [gpu.Gpu("NVIDIA GeForce RTX 3060", 12288)])
+    assert gpu.gpu_selectable() is True
+    monkeypatch.setattr(gpu, "detect", lambda: [])
+    assert gpu.gpu_selectable() is False
+
+
 def test_kana_core_bo_rac_va_giu_nhan():
     assert _kana_core("きょう OC") == "きょう"
     assert _kana_core("$ ちょうしつ") == "ちょうしつ"
