@@ -136,11 +136,6 @@ def test_mau_tai_lieu_dat_san_tuy_chon(window):
     assert ocr.upscale.text() == "1" and not ocr.cell_reocr.isChecked()
 
 
-def test_do_trong_suot_khong_qua_90(window):
-    from ocrnhat.gui_extra import ALPHA_LEVELS
-    assert min(ALPHA_LEVELS) >= 90   # chữ mờ hơn thì khó đọc
-
-
 def test_o_nhap_co_ten_truy_cap(window):
     from PySide6.QtWidgets import QComboBox, QLineEdit, QSpinBox
     hidden = {window.ocr.crop_src, window.ocr.crop_page}   # điều khiển ẩn, chỉ giữ để đồng bộ logic

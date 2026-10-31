@@ -2,7 +2,7 @@
 
 - ResultsBox: bảng kết quả, mở file Word/thư mục/file so sánh, Tìm nhanh, xem trước ảnh trang và chữ.
 - ModelBox: tải PaddleOCR/VietOCR; chạy nền, có tiến trình.
-- apply_view / build_view_menu: giao diện sáng/tối, độ trong suốt, cỡ chữ; áp dụng ngay, không cần khởi động lại.
+- apply_view / build_view_menu: giao diện sáng/tối, cỡ chữ; áp dụng ngay, không cần khởi động lại.
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from .gui_style import PALETTES
 
 log = logging.getLogger("ocrnhat.gui")
 
-ALPHA_LEVELS = (100, 95, 90)   # dưới 90% chữ mờ, khó đọc: không cho chọn
 FONT_SIZES = {"Nhỏ": 9, "Vừa": 10, "Lớn": 12, "Rất lớn": 14}
 THEMES = ("sáng", "tối")
 
@@ -508,7 +507,9 @@ class ModelBox(QGroupBox):
 
         root.addWidget(self.bar)
         root.addWidget(self.status)
-        QVBoxLayout(self).addWidget(self.body)
+        wrap = QVBoxLayout(self)
+        wrap.setContentsMargins(0, 0, 0, 0)
+        wrap.addWidget(self.body)
         self.body.setVisible(False)
         self.toggled.connect(self.body.setVisible)
         self._refresh_status()
@@ -645,8 +646,8 @@ def _palette(theme: str) -> QPalette:
     return p
 
 
-def apply_view(app, theme: str, font_pt: int, alpha: int, window) -> None:
-    """Áp dụng giao diện ngay: màu, cỡ chữ, độ trong suốt cửa sổ."""
+def apply_view(app, theme: str, font_pt: int) -> None:
+    """Áp dụng giao diện ngay: màu và cỡ chữ."""
     from .gui_style import stylesheet
     qss = stylesheet(theme, font_pt)
     app.setStyle("Fusion")
@@ -657,7 +658,6 @@ def apply_view(app, theme: str, font_pt: int, alpha: int, window) -> None:
     font = QFont(app.font())
     font.setPointSize(font_pt)
     app.setFont(font)
-    window.setWindowOpacity(alpha / 100)
 
 
 def build_view_menu(window, app, settings: dict, save) -> QMenu:
@@ -675,20 +675,11 @@ def build_view_menu(window, app, settings: dict, save) -> QMenu:
         act = QAction(f"{label} ({pt})", window)
         act.triggered.connect(lambda _=False, p=pt: _set(window, app, settings, save, font_pt=p))
         size_menu.addAction(act)
-    trans = view.addMenu("Độ trong suốt cửa sổ")
-    alpha_group = QActionGroup(window)
-    current = settings.get("qt_view", {}).get("alpha", 100)
-    for pct in ALPHA_LEVELS:
-        act = QAction(f"{pct}%", window, checkable=True)
-        act.setChecked(pct == current)
-        act.triggered.connect(lambda _=False, p=pct: _set(window, app, settings, save, alpha=p))
-        alpha_group.addAction(act)
-        trans.addAction(act)
     return view
 
 
 def _set(window, app, settings: dict, save, **change) -> None:
-    view = settings.setdefault("qt_view", {"theme": "sáng", "font_pt": 10, "alpha": 100})
+    view = settings.setdefault("qt_view", {"theme": "sáng", "font_pt": 10})
     view.update(change)
-    apply_view(app, view["theme"], view["font_pt"], view["alpha"], window)
+    apply_view(app, view["theme"], view["font_pt"])
     save()

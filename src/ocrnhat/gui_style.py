@@ -67,9 +67,12 @@ QListWidget#nav::item:hover:!selected { background: @hover@; }
 QListWidget#nav[compact="true"]::item { padding: 10px 2px; margin: 2px 2px; border-left: none; }
 QListWidget#nav[compact="true"]::item:selected { border-left: none; }
 QLabel#fileName { font-weight: 600; }
-QGroupBox { background: @card@; border: 1px solid @border@; border-radius: 16px; margin-top: 16px; padding: 14px 12px 12px 12px; font-weight: bold; }
-QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 14px; padding: 0 4px; }
-QGroupBox[collapsible="true"] { margin-top: 24px; }   /* tiêu đề có ô tích: nằm hẳn trên viền, không đè lên khung */
+/* tiêu đề khung nằm TRONG ô trắng (không nằm trên viền) */
+QGroupBox { background: @card@; border: 1px solid @border@; border-radius: 16px; margin-top: 0px; padding: 30px 12px 12px 12px; font-weight: bold; }
+QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; left: 14px; top: 6px; padding: 0 4px; }
+/* khung thu gọn: ô tích tiêu đề nằm TRONG khung trắng; khung tự cao theo nội dung khi mở */
+QGroupBox[collapsible="true"] { margin-top: 0px; padding: 26px 12px 6px 12px; }
+QGroupBox[collapsible="true"]::title { subcontrol-origin: padding; subcontrol-position: top left; left: 12px; top: 4px; padding: 0 4px; }
 QGroupBox::indicator { width: 16px; height: 16px; margin: 0 6px 0 0; border: 1px solid @ctl_border@; border-radius: 4px; background: @field@; }
 QGroupBox::indicator:checked { background: @accent@; border-color: @accent@; }
 QGroupBox::indicator:focus { border: 2px solid @accent@; }

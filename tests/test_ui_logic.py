@@ -78,3 +78,17 @@ def test_image_quality_gioi_han_1_den_95():
 def test_name_or_dung_mac_dinh_khi_trong():
     assert L.name_or("  ", "ghep") == "ghep"
     assert L.name_or(" tong ", "ghep") == "tong"
+
+
+def test_yomitoku_chi_nhan_tieng_nhat_va_bao_thieu_thu_vien():
+    assert L.ENGINE_LANGS["yomitoku"] == ("ja",)
+    assert L.engine_key(L.ENGINE_LABELS["yomitoku"]) == "yomitoku"
+    opts = L.read_options(_get({"engine": L.ENGINE_LABELS["yomitoku"]}))
+    assert opts["engine"] == "yomitoku" and opts["lang"] == "ja"
+
+    class Missing:
+        @classmethod
+        def is_available(cls):
+            return False, "chưa cài yomitoku"
+    why = L.engine_problem(opts, {"yomitoku": Missing}.get)
+    assert why and "YomiToku" in why and "chưa cài" in why

@@ -109,11 +109,11 @@ def test_hien_thi_ap_dung_ngay_va_luu(store):
     w = gui.MainWindow()
     w.settings.setdefault("qt_view", {})
     from ocrnhat import gui_extra as ex
-    ex._set(w, QApplication.instance(), w.settings, w._save_view, theme="tối", alpha=90, font_pt=12)
-    assert w.windowOpacity() == pytest.approx(0.9, abs=0.01)
+    ex._set(w, QApplication.instance(), w.settings, w._save_view, theme="tối", font_pt=12)
+    assert w.windowOpacity() == pytest.approx(1.0)   # không còn độ trong suốt
     assert QApplication.instance().font().pointSize() == 12
     assert store["qt_view"]["theme"] == "tối"
-    apply_view(QApplication.instance(), "sáng", 10, 100, w)   # trả lại mặc định cho các test khác
+    apply_view(QApplication.instance(), "sáng", 10)   # trả lại mặc định cho các test khác
     w.close()
 
 
