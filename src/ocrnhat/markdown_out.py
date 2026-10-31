@@ -35,10 +35,11 @@ Mục tiêu: sửa lỗi nhận dạng chữ để ra bản cuối đúng với 
 
 ## Cách làm việc
 1. Chỉ sửa khi lỗi rõ ràng theo ngữ cảnh. Không viết lại, không diễn đạt lại, không "làm mượt" câu, không dịch.
-2. Giữ nguyên cấu trúc: tiêu đề, danh sách, bảng, thứ tự đoạn. Không tự thêm hoặc bớt nội dung.
-3. Chỗ không chắc: giữ nguyên và gắn thêm `<!-- ? lý do ngắn -->`; KHÔNG đoán.
-4. Ưu tiên các đoạn có `⟦?…⟧`, nhưng vẫn đọc cả các đoạn không đánh dấu.
-5. Cuối cùng liệt kê các chỗ đã sửa dạng `trang N: 「cũ」→「mới」` để người dùng đối chiếu với bản scan.
+2. Giữ nguyên cấu trúc: tiêu đề, danh sách, bảng, thứ tự đoạn. Không tự thêm hoặc bớt nội dung ngoài mục 3.
+3. Với `⟦?…⟧` mà chữ bị lỗi hoặc không đọc được (rối, sai nghĩa, rỗng): hãy điền một cách đọc hợp lý nhất theo ngữ cảnh xung quanh (câu, mục, bảng). Không cần chính xác từng chữ, chỉ cần hợp nghĩa với tài liệu. Giữ nguyên cặp `⟦?` `⟧` quanh phần điền để người dùng nhận ra đó là phỏng đoán. Nếu không đoán nổi thì giữ nguyên.
+4. Chỗ không chắc khác (không phải không đọc được): giữ nguyên và gắn thêm `<!-- ? lý do ngắn -->`.
+5. Ưu tiên các đoạn có `⟦?…⟧`, nhưng vẫn đọc cả các đoạn không đánh dấu.
+6. Cuối cùng liệt kê hai nhóm: (a) các chỗ đã sửa dạng `trang N: 「cũ」→「mới」`; (b) các chỗ đã điền phỏng đoán dạng `trang N: 「cũ」→「điền」`. Người dùng sẽ đối chiếu nhóm (b) với bản scan.
 """
 
 
