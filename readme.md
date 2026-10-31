@@ -7,7 +7,10 @@ hướng dẫn dùng nằm trong `README.md`.
 ## Mục tiêu
 - Công cụ OCR file PDF scan và ảnh, **chỉ giữ tiếng Nhật**, xuất **.docx** (kèm .txt).
 - Đoạn văn liền mạch, có tiêu đề và bảng thật. Bỏ tiếng Việt, tiếng Anh và furigana (mặc định).
-- Chạy offline, miễn phí, không cần GPU. Đóng gói Windows .exe.
+- **Hướng mới: độ chính xác cao nhất** là ưu tiên số một. Dùng GPU NVIDIA khi có, và chấp nhận tải thêm thư viện CUDA/cuDNN khi bật GPU.
+- Đóng gói Windows .exe; ghi chú dưới đây về "chạy hoàn toàn offline" không còn là yêu cầu.
+- Không còn ưu tiên exe nhẹ hoặc gọn; không còn ràng buộc chạy trên máy yếu. Bản CPU vẫn là đường dự phòng.
+- Đã bỏ các mục cũ: "chạy offline, miễn phí, không cần GPU" và "ưu tiên exe gọn, nhanh" (CLAUDE.md vẫn còn các dòng này, cần cập nhật riêng).
 - Chủ dự án: Nguyễn Thanh Quang. Repo: `miyagitaisuki/ocr_thanhquang`.
 
 ## Luồng xử lý
@@ -56,7 +59,7 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - `scripts/`: `fetch_ndlocr.py` (tải engine), `fetch_models.py` (model PaddleOCR, kiểm SHA-256), `export_vi.py` (tạo lại `assets/vi-ocr/` từ VietOCR gốc, cần torch), `smoke_test.py` (OCR ảnh mẫu, dựng bảng), `compare_engines.py` (đối chiếu với YomiToku, chỉ để so sánh, không đóng gói vì giấy phép CC BY-NC-SA).
 - `tests/`: pytest (`test_vi_text` không cần model, `test_pdf_extract` (PDF tạo trong test), `test_layout`, `test_output`, `test_pipeline`, `test_followups`, `test_suspect`, `test_engines_lang` không cần model, `test_engines_models` chạy khi có `models/`, `test_ui_logic` không cần cửa sổ; `test_gui`, `test_gui_pdf`, `test_gui_extra`, `test_gui_style` cần PySide6 (offscreen; trên Linux cần libEGL, bỏ qua nếu thiếu)).
 - `tests/data/pretest_sample.pdf`: sổ tay tiếng Nhật thương mại 4 trang, file mẫu chính cho các test và đo độ chính xác từ nay.
-- `.github/workflows/`: `qt-windows.yml` (mỗi push: test giao diện Qt trên Windows, `run_gui.py --selftest`), `test.yml` (mỗi push/PR), `build-exe.yml` (exe chính `OCR-Nhat` bằng PySide6, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`; chạy thủ công), `build-exe-gpu.yml` (exe GPU: onnxruntime-gpu + CUDA/cuDNN qua gói nvidia-*; chạy thủ công). Ô Thiết bị chỉ có "GPU (NVIDIA)" khi onnxruntime nạp được CUDA. Không còn gói GPU tải về.
+- `.github/workflows/`: `qt-windows.yml` (mỗi push: test giao diện Qt trên Windows, `run_gui.py --selftest`), `test.yml` (mỗi push/PR), `build-exe.yml` (exe chính `OCR-Nhat` bằng PySide6, kèm bộ cài `OCR-Nhat-setup.exe` bằng Inno Setup từ `installer/OCR-Nhat.iss`; chạy thủ công), `build-exe-gpu.yml` (exe GPU: onnxruntime-gpu + CUDA/cuDNN qua gói nvidia-*; chạy thủ công). Ô Thiết bị chỉ có "GPU (NVIDIA)" khi onnxruntime nạp được CUDA. Quyết định cũ (không tải gói GPU) đã được đảo: xem "Hướng phát triển mới" bên dưới.
 - `requirements.txt`: nguồn duy nhất của dependency. `pyproject.toml` đọc từ đó. Extra: `test`, `suspect`.
 - `.claude/agents/`: agent `developer` và `code-reviewer`.
 - `run_gui.py`: điểm vào. Không tham số = mở giao diện; có tham số = dòng lệnh; `--selftest` kiểm cửa sổ rồi thoát.
@@ -89,7 +92,14 @@ Mã NDLOCR-Lite **không nằm trong repo**: `python scripts/fetch_ndlocr.py` t�
 - GUI đã có đủ `--review`, `--crop`, `--upscale`, `--ruby`, `--kana-reader`.
 - Chưa kiểm trên Windows thật: giao diện PySide6, exe và bộ cài sau khi bỏ Tkinter (build chỉ chạy được trên GitHub Actions). Chưa thử trình đọc màn hình thật.
 - `ocr_vi` đã chạy trên PDF scan thật (quyết định 1196/QĐ-ĐHQN, 43 trang, CPU ~11 s/trang, có cache). Hậu xử lý `vi_text.py` giảm âm tiết ngoài từ điển từ 4,5% xuống 3,8% trên tài liệu này (đo bằng từ điển pyvi, chưa có bản đối chiếu chuẩn). Vẫn còn: nhiễu dấu mộc in hoa (ví dụ "INTERSING"), "Căn cử" (cặp không đủ bằng chứng để sửa), lỗi nhận dạng chữ không phải dấu (ví dụ "đôi" → "đối" đã sửa, nhưng "thi"/"thì" lẫn trong ngữ cảnh chưa chắc).
-- Chưa làm: GPU chạy thật trong exe (exe dùng onnxruntime CPU); tùy chọn Loại tài liệu chưa lưu; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
+- Chưa làm: GPU chạy thật trong exe CPU (exe dùng onnxruntime CPU; xem "Hướng phát triển mới"); tùy chọn Loại tài liệu chưa lưu; xem trước kết quả tiếng Việt/Anh chưa kiểm trên tài liệu thật.
+
+## Hướng phát triển mới (chọn độ chính xác cao nhất)
+Chủ dự án chấp nhận đảo quyết định cũ: không còn "không tải gói GPU", và không còn ưu tiên exe gọn hay chạy offline. Trạng thái: **chưa triển khai**, mới là hướng đã chốt.
+- **Bật GPU theo yêu cầu.** Nút "Bật GPU" trong GUI: kiểm `nvidia-smi`; nếu có card NVIDIA thì tải gói GPU (onnxruntime-gpu + DLL CUDA/cuDNN) vào `%LOCALAPPDATA%\OCR-Nhat\gpu\`, có thanh tiến trình và kiểm SHA-256 (tái dùng `models.download_files`).
+- **Chạy qua tiến trình con.** Exe đóng gói onnxruntime CPU nên không nạp chung hai bản trong một tiến trình. Tiến trình con (`--gpu-worker`) thêm thư mục gói GPU vào `sys.path` và `os.add_dll_directory`, rồi OCR và trả kết quả. Nếu lỗi thì lùi về CPU và ghi log.
+- **Ghi nhớ lựa chọn** trong `settings.json`. Chưa đo kích thước gói; cần đo trước khi phát hành.
+- **Độ chính xác là tiêu chí chọn engine và cấu hình.** Các đánh đổi tốc độ hay dung lượng chỉ xét khi không ảnh hưởng độ chính xác.
 
 ## Lỗi và giới hạn đã biết
 - PaddleOCR/VietOCR: engine có thể bỏ khoảng trắng trong câu tiếng Anh (ví dụ "agreementis"); chữ dọc chưa hỗ trợ; dò dòng dùng cạnh dài tối đa 960 px nên ảnh rất lớn có thể mất chữ nhỏ.
