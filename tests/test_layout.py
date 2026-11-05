@@ -151,3 +151,30 @@ def test_lang_all_giu_chu_latin_con_ja_van_loc():
     texts = [i.text for i in build_page(page, lang="all") if isinstance(i, Para)]
     assert "Hello world" in "".join(texts) and "日本語です。" in "".join(texts)
     assert [i.text for i in build_page(page) if isinstance(i, Para)] == ["日本語です。"]
+
+
+def test_o_chi_co_anh_thi_ghi_chu_co_anh():
+    """Ô không có chữ nhưng phủ đậm điểm không trắng (ảnh) phải được đánh dấu; ô có vài nét chữ thì không."""
+    rng = np.random.default_rng(0)
+    img = _grid_image()
+    img[320:480, 520:880] = rng.integers(0, 150, size=(160, 360, 3), dtype=np.uint8)   # ô (1,1): ảnh
+    img[150:170, 520:540] = 0                                                         # ô (0,1): vài nét chữ, không phải ảnh
+    lines = [_line("社外文書", 130, 110, 1)]                                          # ô (0,0) có chữ
+    page = Page(1000, 600, [Block("table", 100, 100, 800, 400, lines)])
+    t = next(i for i in build_page(page, img) if isinstance(i, Table))
+    got = {(c.r, c.c): c for c in t.cells}
+    assert got[(1, 1)].image and got[(1, 1)].text == ""
+    assert not got[(0, 1)].image and not got[(1, 0)].image
+    assert got[(0, 0)].text == "社外文書" and not got[(0, 0)].image
+
+
+def test_ghi_chu_anh_xuat_ra_txt_va_docx(tmp_path):
+    from docx import Document
+    from ocrnhat.docx_out import write_docx, write_txt
+    from ocrnhat.layout import Cell
+    t = Table(1, 2, [Cell(0, 0, text="会社"), Cell(0, 1, image=True)])
+    write_txt([(1, [t])], tmp_path / "a.txt")
+    assert "会社\t[Có ảnh]" in (tmp_path / "a.txt").read_text(encoding="utf-8")
+    write_docx([(1, [t])], tmp_path / "a.docx", page_marker=False)
+    cells = Document(str(tmp_path / "a.docx")).tables[0].rows[0].cells
+    assert cells[1].text == "[Có ảnh]"

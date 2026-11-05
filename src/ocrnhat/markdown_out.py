@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .layout import Para, Table
+from .layout import PICTURE_NOTE, Para, Table
 
 LOW_OPEN, LOW_CLOSE = "⟦?", "⟧"
 
@@ -69,7 +69,7 @@ def _mark(text: str, conf: float, threshold: float) -> str:
 def _table_md(t: Table, threshold: float) -> str:
     grid = [[""] * t.n_cols for _ in range(t.n_rows)]
     for c in t.cells:
-        grid[c.r][c.c] = _mark(_esc_cell(c.text), c.conf, threshold) if c.text else ""
+        grid[c.r][c.c] = _mark(_esc_cell(c.text), c.conf, threshold) if c.text else (PICTURE_NOTE if c.image else "")
     rows = ["| " + " | ".join(r) + " |" for r in grid]
     rows.insert(1, "|" + "|".join([" --- "] * t.n_cols) + "|")
     merged = [f"r{c.r + 1}c{c.c + 1} {c.rs}x{c.cs}" for c in t.cells if c.rs > 1 or c.cs > 1]

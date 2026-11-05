@@ -116,6 +116,10 @@ class Cell:
     cs: int = 1
     text: str = ""
     conf: float = 1.0
+    image: bool = False        # ô không có chữ nhưng có hình (ảnh trong ô): xuất ghi chú "[Có ảnh]"
+
+
+PICTURE_NOTE = "[Có ảnh]"
 
 
 @dataclass
@@ -443,6 +447,15 @@ def _has_ink(img_rgb: np.ndarray, x0: float, y0: float, x1: float, y1: float) ->
     return float((g < np.median(g) - 40).mean()) > 0.01
 
 
+def _has_picture(img_rgb: np.ndarray, x0: float, y0: float, x1: float, y1: float) -> bool:
+    """Ô trống nhưng phủ đậm điểm không trắng: hình/ảnh chứ không phải chữ (chữ thưa hơn nhiều)."""
+    crop = img_rgb[int(y0) + 3:int(y1) - 3, int(x0) + 3:int(x1) - 3]
+    if crop.size == 0:
+        return False
+    g = crop.mean(axis=2) if crop.ndim == 3 else crop
+    return float((g < 230).mean()) > 0.2
+
+
 def _reocr_cells(ls: list[Line], ys, xs, cells, img_rgb, reocr, flt: _Filter) -> list[Line]:
     """Nhận dạng lại ô có dòng vượt đường kẻ hoặc ô trống có nét chữ, từ ảnh cắt của riêng ô đó (ô gộp được cắt cả vùng)."""
     dirty = set()
@@ -606,6 +619,8 @@ def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
                 cl = [l for l in cl if not re.fullmatch(r"[\d０-９.,]{1,3}", l.text.strip())] or cl
             cell.text = _cell_text(cl)
             cell.conf = min((l.conf for l in cl), default=1.0)
+            if not cell.text and img_rgb is not None and _has_picture(img_rgb, *_cell_box(cell, ys, xs)):
+                cell.image = True
         _fix_circled(cells)
         return Table(len(ys) - 1, len(xs) - 1, cells)
     return _table_by_clustering(ls)
