@@ -178,3 +178,20 @@ def test_ghi_chu_anh_xuat_ra_txt_va_docx(tmp_path):
     write_docx([(1, [t])], tmp_path / "a.docx", page_marker=False)
     cells = Document(str(tmp_path / "a.docx")).tables[0].rows[0].cells
     assert cells[1].text == "[Có ảnh]"
+
+
+def test_anh_co_chu_rac_ben_trong_thi_bo_het_chu():
+    """Engine đọc rác trong ô ảnh: ô vẫn được đánh dấu có ảnh và chữ trong ô bị bỏ; ô chữ dày vẫn giữ chữ."""
+    rng = np.random.default_rng(1)
+    img = _grid_image()
+    photo = rng.integers(80, 130, size=(160, 360, 1), dtype=np.uint8).repeat(3, axis=2)   # ảnh mô phỏng: xám đậm, nhiễu từng điểm
+    img[320:480, 520:880] = photo                                                       # ô (1,1): ảnh
+    lines = [_line("社外文書", 130, 110, 1),
+             _line("ξ?|", 540, 340, 2),                                               # rác engine đọc trong ô ảnh
+             _line("電話", 540, 160, 3)]                                                 # ô (0,1) có chữ thật
+    page = Page(1000, 600, [Block("table", 100, 100, 800, 400, lines)])
+    t = next(i for i in build_page(page, img) if isinstance(i, Table))
+    got = {(c.r, c.c): c for c in t.cells}
+    assert got[(1, 1)].image and got[(1, 1)].text == ""
+    assert not got[(0, 1)].image and got[(0, 1)].text == "電話"      # ô chữ không bị coi là ảnh
+    assert got[(0, 0)].text == "社外文書"
