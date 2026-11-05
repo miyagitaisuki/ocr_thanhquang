@@ -8,7 +8,7 @@ from docx.enum.text import WD_BREAK
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from .layout import Para, Table
+from .layout import PICTURE_NOTE, Para, Table
 
 FONT = "Yu Mincho"
 
@@ -76,7 +76,10 @@ def _add_table(d, t: Table):
             try: cell = cell.merge(tb.cell(c.r + c.rs - 1, c.c + c.cs - 1))
             except Exception: pass
         cell.text = ""
-        _font(cell.paragraphs[0].add_run(c.text), 9.5)
+        if not c.text and c.image:   # ô chỉ có hình: ghi chú để người đọc biết có ảnh ở đây
+            _font(cell.paragraphs[0].add_run(PICTURE_NOTE), 9.5, gray=True)
+        else:
+            _font(cell.paragraphs[0].add_run(c.text), 9.5)
     d.add_paragraph()
 
 
@@ -105,7 +108,7 @@ def write_txt(pages, out: Path) -> None:
             for it in items:
                 if isinstance(it, Table):
                     grid = [[""] * it.n_cols for _ in range(it.n_rows)]
-                    for c in it.cells: grid[c.r][c.c] = c.text.replace("\n", " / ")
+                    for c in it.cells: grid[c.r][c.c] = c.text.replace("\n", " / ") or (PICTURE_NOTE if c.image else "")
                     f.write("\n".join("\t".join(r) for r in grid) + "\n")
                 else:
                     f.write(it.text + "\n")

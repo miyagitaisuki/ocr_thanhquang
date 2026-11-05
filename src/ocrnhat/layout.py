@@ -116,6 +116,10 @@ class Cell:
     cs: int = 1
     text: str = ""
     conf: float = 1.0
+    image: bool = False        # ô không có chữ nhưng có hình (ảnh trong ô): xuất ghi chú "[Có ảnh]"
+
+
+PICTURE_NOTE = "[Có ảnh]"
 
 
 @dataclass
@@ -356,6 +360,11 @@ def _ruling_masks(gray: np.ndarray, div: int) -> tuple[np.ndarray, np.ndarray]:
     H, W = gray.shape
     paper = float(np.median(gray))                    # độ sáng nền giấy
     b = (gray < paper - 40).astype(np.uint8) * 255    # bắt cả đường kẻ xám mờ
+    # Vùng dày (ảnh, khối tô đậm) không phải đường kẻ: phép mở giữ nguyên cả khối nên cạnh của nó bị nhận nhầm là kẻ.
+    # Đường kẻ bảng mảnh (vài px) bị erode bỏ qua, nên không mất.
+    k7 = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+    thick = cv2.dilate(cv2.erode(b, k7), k7)
+    b = cv2.bitwise_and(b, cv2.bitwise_not(thick))
     hor = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(40, W // div), 1)))
     ver = cv2.morphologyEx(b, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(40, H // div))))
     return hor, ver
@@ -441,6 +450,15 @@ def _has_ink(img_rgb: np.ndarray, x0: float, y0: float, x1: float, y1: float) ->
         return False
     g = crop.mean(axis=2) if crop.ndim == 3 else crop
     return float((g < np.median(g) - 40).mean()) > 0.01
+
+
+def _has_picture(img_rgb: np.ndarray, x0: float, y0: float, x1: float, y1: float, has_text: bool = False) -> bool:
+    """Ô phủ đậm điểm không trắng: hình/ảnh. Chữ dày nhất đo được ~0,27 nên ô có chữ cần ngưỡng cao hơn (0,45)."""
+    crop = img_rgb[int(y0) + 3:int(y1) - 3, int(x0) + 3:int(x1) - 3]
+    if crop.size == 0:
+        return False
+    g = crop.mean(axis=2) if crop.ndim == 3 else crop
+    return float((g < 230).mean()) > (0.45 if has_text else 0.2)
 
 
 def _reocr_cells(ls: list[Line], ys, xs, cells, img_rgb, reocr, flt: _Filter) -> list[Line]:
@@ -606,6 +624,9 @@ def _table(block: Block, flt: _Filter, gray: np.ndarray | None,
                 cl = [l for l in cl if not re.fullmatch(r"[\d０-９.,]{1,3}", l.text.strip())] or cl
             cell.text = _cell_text(cl)
             cell.conf = min((l.conf for l in cl), default=1.0)
+            if img_rgb is not None and _has_picture(img_rgb, *_cell_box(cell, ys, xs), has_text=bool(cell.text)):
+                cell.image = True          # ô có hình: bỏ hết chữ engine đọc ra trong ô (thường là rác)
+                cell.text, cell.conf = "", 1.0
         _fix_circled(cells)
         return Table(len(ys) - 1, len(xs) - 1, cells)
     return _table_by_clustering(ls)

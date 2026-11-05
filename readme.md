@@ -34,7 +34,7 @@ PDF/ảnh -> render trang (pypdfium2, 200 dpi) -> crop/upscale tùy chọn
 | `engines/ocr_onnx.py` | Thành phần chung ONNX: hậu xử lý DB bằng OpenCV (không pyclipper), sắp thứ tự đọc, nắn phối cảnh, CTC, ghép Page. |
 | `engines/models.py` | Tìm và tải model: `OCRNHAT_MODELS`, `models/` cạnh exe/gốc repo, `%LOCALAPPDATA%\OCR-Nhat\models`. `download_paddle()` tải PaddleOCR có báo tiến độ, kiểm SHA-256 (GUI và `scripts/fetch_models.py` dùng chung). |
 | `pipeline.py` | `process_file`: OCR song song (ThreadPool, cửa sổ trượt, giữ thứ tự trang), cache, gọi layout, ghi file. |
-| `layout.py` | Lõi dựng văn bản: lọc tiếng Nhật, bỏ furigana, gộp đoạn (ngắt theo khoảng trống dọc bất thường so với khoảng thông thường của khối), nhận tiêu đề (dòng ngắn đứng riêng, kể cả cùng cỡ chữ), dò đường kẻ bảng (OpenCV), ô gộp, nhận dạng lại ô vượt kẻ, sửa số khoanh tròn, ruby. |
+| `layout.py` | Lõi dựng văn bản: lọc tiếng Nhật, bỏ furigana, gộp đoạn (ngắt theo khoảng trống dọc bất thường so với khoảng thông thường của khối), nhận tiêu đề (dòng ngắn đứng riêng, kể cả cùng cỡ chữ), dò đường kẻ bảng (OpenCV), ô gộp, nhận dạng lại ô vượt kẻ, sửa số khoanh tròn, ruby, đánh dấu ô có ảnh (`Cell.image`: phủ đậm điểm không trắng; ô đó bỏ hết chữ engine đọc ra và xuất `[Có ảnh]` ở docx, txt, md). Vùng dày không được tính là đường kẻ (`_ruling_masks`). |
 | `docx_out.py` | Xuất Word (font Yu Mincho, Heading, bảng, ruby) và txt. |
 | `cache.py` | Cache kết quả OCR theo hash file, dpi, crop/upscale, engine và version. Lưu ở `<out>/.cache`. |
 | `review.py` | `--review`: HTML đối chiếu ảnh trang với text, tô đỏ dòng độ tin cậy thấp. |
@@ -120,6 +120,7 @@ Chủ dự án chấp nhận đảo quyết định cũ: không còn "không t�
 - Bảng dày (trang 10 sổ tay mẫu): NDLOCR bỏ sót nhiều dòng. Nhận dạng lại ô giúp một phần. Còn nhầm chữ (稟議書→實識書, 私見→私覚).
 - Furigana có thể còn sót trong ô bảng. Ruby chưa hỗ trợ trong ô bảng và chữ dọc.
 - Chữ dọc xuất thành chiều ngang trong Word.
+- Ô có ảnh: ngưỡng 0,2 nếu ô trống, 0,45 nếu ô có chữ (chữ dày nhất đo ~0,27). Ngưỡng chưa kiểm trên trang scan thật.
 - Ảnh chụp chữ nhỏ cần `--crop` và `--upscale` (ví dụ trang 38).
 - Dòng lệnh Windows dùng cp1252: luôn `reconfigure(encoding="utf-8")` khi in tiếng Nhật/Việt.
 
